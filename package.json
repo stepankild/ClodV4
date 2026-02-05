@@ -2,7 +2,7 @@
   "name": "farm-portal",
   "private": true,
   "scripts": {
-    "build": "cd client && npm ci && npm run build",
+    "build": "cd client && npm ci && npm run build && cd ../server && npm ci",
     "start": "cd server && node server.js",
     "dev:server": "cd server && npm run dev",
     "dev:client": "cd client && npm run dev",
