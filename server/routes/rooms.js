@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   getRooms,
+  getRoomsSummary,
   getRoom,
   updateRoom,
   startCycle,
@@ -14,6 +15,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/', getRooms);
+router.get('/summary', getRoomsSummary);
 router.get('/:id', getRoom);
 router.put('/:id', updateRoom);
 router.post('/:id/start', startCycle);
