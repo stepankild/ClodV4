@@ -25,6 +25,16 @@ export const archiveService = {
     await api.delete(`/archive/${id}`);
   },
 
+  async getDeleted() {
+    const response = await api.get('/archive/deleted');
+    return response.data;
+  },
+
+  async restore(id) {
+    const response = await api.post(`/archive/deleted/${id}/restore`);
+    return response.data;
+  },
+
   /** period: 'all' | 'year' | '6months' | '3months' */
   async getStats(period = 'all') {
     const response = await api.get('/archive/stats', { params: { period } });

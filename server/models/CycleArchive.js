@@ -154,13 +154,15 @@ const cycleArchiveSchema = new mongoose.Schema({
     detectedAt: Date,
     resolvedAt: Date,
     solution: String
-  }]
+  }],
+  deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
 });
 
 // Индексы
 cycleArchiveSchema.index({ room: 1, createdAt: -1 });
+cycleArchiveSchema.index({ deletedAt: 1 });
 cycleArchiveSchema.index({ strain: 1 });
 cycleArchiveSchema.index({ harvestDate: -1 });
 

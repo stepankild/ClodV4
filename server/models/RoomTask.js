@@ -93,13 +93,15 @@ const roomTaskSchema = new mongoose.Schema({
     type: String,
     enum: ['low', 'medium', 'high'],
     default: 'medium'
-  }
+  },
+  deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
 });
 
 // Индексы
 roomTaskSchema.index({ room: 1, completed: 1 });
+roomTaskSchema.index({ deletedAt: 1 });
 roomTaskSchema.index({ room: 1, cycleId: 1 });
 
 const RoomTask = mongoose.model('RoomTask', roomTaskSchema);

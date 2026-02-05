@@ -24,5 +24,15 @@ export const selectionService = {
   async delete(id) {
     const response = await api.delete(`/selection/${id}`);
     return response.data;
+  },
+
+  async getDeleted() {
+    const response = await api.get('/selection/deleted');
+    return response.data;
+  },
+
+  async restore(id) {
+    const response = await api.post(`/selection/deleted/${id}/restore`);
+    return response.data;
   }
 };

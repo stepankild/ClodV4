@@ -2,6 +2,7 @@ import PlannedCycle from '../models/PlannedCycle.js';
 import FlowerRoom from '../models/FlowerRoom.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
 // @desc    Get planned cycles (all or by roomId)
 // @route   GET /api/rooms/plans
@@ -39,7 +40,7 @@ export const createPlan = async (req, res) => {
     };
 
     const plan = await PlannedCycle.findOneAndUpdate(
-      { room: roomId },
+      { room: roomId, ...notDeleted },
       { $set: data },
       { new: true, upsert: true }
     );
@@ -78,13 +79,14 @@ export const updatePlan = async (req, res) => {
 // @route   DELETE /api/rooms/plans/:id
 export const deletePlan = async (req, res) => {
   try {
-    const plan = await PlannedCycle.findById(req.params.id);
+    const plan = await PlannedCycle.findOne({ _id: req.params.id, ...notDeleted });
     if (!plan) return res.status(404).json({ message: 'План не найден' });
     const roomId = plan.room?.toString();
     const cycleName = plan.cycleName;
-    await plan.deleteOne();
     await createAuditLog(req, { action: 'plan.delete', entityType: 'PlannedCycle', entityId: req.params.id, details: { roomId, cycleName } });
-    res.json({ message: 'План удалён' });
+    plan.deletedAt = new Date();
+    await plan.save();
+    res.json({ message: 'План удалён (можно восстановить)' });
   } catch (error) {
     console.error('Delete plan error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });

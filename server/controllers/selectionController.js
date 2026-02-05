@@ -1,12 +1,13 @@
 import SelectionBatch from '../models/SelectionBatch.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
 // @desc    Get all selection batches
 // @route   GET /api/selection
 export const getSelectionBatches = async (req, res) => {
   try {
     const { status } = req.query;
-    const filter = {};
+    const filter = { ...notDeleted };
     if (status && ['active', 'archived'].includes(status)) filter.status = status;
     const list = await SelectionBatch.find(filter).sort({ startedAt: -1, createdAt: -1 });
     res.json(list);
@@ -20,7 +21,7 @@ export const getSelectionBatches = async (req, res) => {
 // @route   GET /api/selection/:id
 export const getSelectionBatch = async (req, res) => {
   try {
-    const doc = await SelectionBatch.findById(req.params.id);
+    const doc = await SelectionBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч селекции не найден' });
     res.json(doc);
   } catch (error) {
@@ -66,7 +67,7 @@ export const createSelectionBatch = async (req, res) => {
 // @route   PUT /api/selection/:id
 export const updateSelectionBatch = async (req, res) => {
   try {
-    const doc = await SelectionBatch.findById(req.params.id);
+    const doc = await SelectionBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч селекции не найден' });
     const { name, strain, startedAt, notes, plants, status } = req.body;
 
@@ -92,15 +93,41 @@ export const updateSelectionBatch = async (req, res) => {
 // @route   DELETE /api/selection/:id
 export const deleteSelectionBatch = async (req, res) => {
   try {
-    const doc = await SelectionBatch.findById(req.params.id);
+    const doc = await SelectionBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч селекции не найден' });
     const id = doc._id;
     const name = doc.name;
-    await doc.deleteOne();
-    await createAuditLog(req, { action: 'selection.delete', entityType: 'SelectionBatch', entityId: id, details: { name } });
-    res.json({ message: 'Удалено' });
+    const details = { name, strain: doc.strain, plantsCount: Array.isArray(doc.plants) ? doc.plants.length : 0 };
+    await createAuditLog(req, { action: 'selection.delete', entityType: 'SelectionBatch', entityId: id, details });
+    doc.deletedAt = new Date();
+    await doc.save();
+    res.json({ message: 'Удалено (можно восстановить)' });
   } catch (error) {
     console.error('Delete selection batch error:', error);
     res.status(500).json({ message: error.message || 'Ошибка сервера' });
+  }
+};
+
+export const getDeletedSelectionBatches = async (req, res) => {
+  try {
+    const list = await SelectionBatch.find(deletedOnly).sort({ deletedAt: -1 });
+    res.json(list);
+  } catch (error) {
+    console.error('Get deleted selection batches error:', error);
+    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+  }
+};
+
+export const restoreSelectionBatch = async (req, res) => {
+  try {
+    const doc = await SelectionBatch.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!doc) return res.status(404).json({ message: 'Р‘СЌС‚С‡ РЅРµ РЅР°Р№РґРµРЅ РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ' });
+    doc.deletedAt = null;
+    await doc.save();
+    await createAuditLog(req, { action: 'selection.restore', entityType: 'SelectionBatch', entityId: doc._id, details: { name: doc.name } });
+    res.json(doc);
+  } catch (error) {
+    console.error('Restore selection batch error:', error);
+    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
   }
 };

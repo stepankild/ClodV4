@@ -23,5 +23,15 @@ export const vegBatchService = {
 
   async delete(id) {
     await api.delete(`/veg-batches/${id}`);
+  },
+
+  async getDeleted() {
+    const response = await api.get('/veg-batches/deleted');
+    return response.data;
+  },
+
+  async restore(id) {
+    const response = await api.post(`/veg-batches/deleted/${id}/restore`);
+    return response.data;
   }
 };

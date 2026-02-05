@@ -61,7 +61,7 @@ export const getRoomsSummary = async (req, res) => {
       const [tasks, lastArchive, plannedCycle] = await Promise.all([
         RoomTask.find({ room: roomId, completed: true }).lean(),
         CycleArchive.findOne({ room: roomId }).sort({ harvestDate: -1 }).lean(),
-        PlannedCycle.findOne({ room: roomId }).lean()
+        PlannedCycle.findOne({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
       ]);
       const trimWeek2 = tasks.find(t => t.type === 'trim');
       const defoliationWeek4 = tasks.find(t => t.type === 'defoliation');

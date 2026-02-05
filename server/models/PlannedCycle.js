@@ -11,12 +11,14 @@ const plannedCycleSchema = new mongoose.Schema({
   plannedStartDate: { type: Date, default: null },
   plantsCount: { type: Number, default: 0 },
   floweringDays: { type: Number, default: 56 },
-  notes: { type: String, default: '' }
+  notes: { type: String, default: '' },
+  deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
 });
 
 plannedCycleSchema.index({ room: 1 });
+plannedCycleSchema.index({ deletedAt: 1 });
 
 const PlannedCycle = mongoose.model('PlannedCycle', plannedCycleSchema);
 

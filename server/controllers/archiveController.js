@@ -5,6 +5,7 @@ import RoomLog from '../models/RoomLog.js';
 import VegBatch from '../models/VegBatch.js';
 import CloneCut from '../models/CloneCut.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
 // @desc    Get all archives
 // @route   GET /api/archive
@@ -12,7 +13,7 @@ export const getArchives = async (req, res) => {
   try {
     const { roomId, strain, limit = 50, skip = 0 } = req.query;
 
-    const query = {};
+    const query = { ...notDeleted };
     if (roomId) query.room = roomId;
     if (strain) query.strain = new RegExp(strain, 'i');
 
@@ -34,7 +35,7 @@ export const getArchives = async (req, res) => {
 // @route   GET /api/archive/:id
 export const getArchive = async (req, res) => {
   try {
-    const archive = await CycleArchive.findById(req.params.id)
+    const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted })
       .populate('completedTasks.completedBy', 'name');
 
     if (!archive) {
@@ -71,7 +72,7 @@ export const getArchiveStats = async (req, res) => {
 
     // Общая статистика
     const totalStats = await CycleArchive.aggregate([
-      { $match: dateFilter },
+      { $match: { $and: [dateFilter, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] } },
       {
         $group: {
           _id: null,
@@ -337,7 +338,7 @@ export const updateArchive = async (req, res) => {
   try {
     const { harvestData, issues, notes } = req.body;
 
-    const archive = await CycleArchive.findById(req.params.id);
+    const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!archive) {
       return res.status(404).json({ message: 'Архив не найден' });
@@ -377,15 +378,18 @@ export const updateArchive = async (req, res) => {
 // @route   DELETE /api/archive/:id
 export const deleteArchive = async (req, res) => {
   try {
-    const archive = await CycleArchive.findById(req.params.id);
+    const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!archive) {
       return res.status(404).json({ message: 'Архив не найден' });
     }
 
-    await archive.deleteOne();
+    const roomId = archive.room?.toString?.() || archive.room;
+    await createAuditLog(req, { action: 'archive.delete', entityType: 'CycleArchive', entityId: archive._id, details: { cycleName: archive.cycleName, roomId, harvestDate: archive.harvestDate } });
+    archive.deletedAt = new Date();
+    await archive.save();
 
-    res.json({ message: 'Архив удалён' });
+    res.json({ message: 'Архив удалён (можно восстановить)' });
   } catch (error) {
     console.error('Delete archive error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
@@ -411,5 +415,29 @@ export const getRoomLogs = async (req, res) => {
   } catch (error) {
     console.error('Get room logs error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getDeletedArchives = async (req, res) => {
+  try {
+    const list = await CycleArchive.find(deletedOnly).sort({ deletedAt: -1 }).limit(100);
+    res.json(list);
+  } catch (error) {
+    console.error('Get deleted archives error:', error);
+    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+  }
+};
+
+export const restoreArchive = async (req, res) => {
+  try {
+    const doc = await CycleArchive.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!doc) return res.status(404).json({ message: 'РђСЂС…РёРІ РЅРµ РЅР°Р№РґРµРЅ РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ' });
+    doc.deletedAt = null;
+    await doc.save();
+    await createAuditLog(req, { action: 'archive.restore', entityType: 'CycleArchive', entityId: doc._id, details: { cycleName: doc.cycleName } });
+    res.json(doc);
+  } catch (error) {
+    console.error('Restore archive error:', error);
+    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
   }
 };

@@ -47,12 +47,14 @@ const selectionBatchSchema = new mongoose.Schema({
     type: String,
     enum: ['active', 'archived'],
     default: 'active'
-  }
+  },
+  deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
 });
 
 selectionBatchSchema.index({ status: 1 });
+selectionBatchSchema.index({ deletedAt: 1 });
 selectionBatchSchema.index({ startedAt: -1 });
 
 const SelectionBatch = mongoose.model('SelectionBatch', selectionBatchSchema);

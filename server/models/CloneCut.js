@@ -14,12 +14,14 @@ const cloneCutSchema = new mongoose.Schema({
   strain: { type: String, default: '' },
   quantity: { type: Number, default: 0 },
   isDone: { type: Boolean, default: false },
-  notes: { type: String, default: '' }
+  notes: { type: String, default: '' },
+  deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
 });
 
 cloneCutSchema.index({ room: 1 });
+cloneCutSchema.index({ deletedAt: 1 });
 cloneCutSchema.index({ cutDate: 1 });
 
 const CloneCut = mongoose.model('CloneCut', cloneCutSchema);

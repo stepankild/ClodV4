@@ -2,6 +2,7 @@ import VegBatch from '../models/VegBatch.js';
 import FlowerRoom from '../models/FlowerRoom.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
 const ACTIVE_ROOM_MESSAGE = 'В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.';
 
@@ -23,7 +24,7 @@ const normalizeStrains = (strains, legacyStrain, legacyQuantity) => {
 export const getVegBatches = async (req, res) => {
   try {
     const { inVeg, flowerRoom } = req.query;
-    const filter = {};
+    const filter = { ...notDeleted };
     if (inVeg === 'true') filter.flowerRoom = null;
     if (flowerRoom && mongoose.Types.ObjectId.isValid(flowerRoom)) filter.flowerRoom = flowerRoom;
     const list = await VegBatch.find(filter)
@@ -71,7 +72,7 @@ export const createVegBatch = async (req, res) => {
 // @route   PUT /api/veg-batches/:id
 export const updateVegBatch = async (req, res) => {
   try {
-    const doc = await VegBatch.findById(req.params.id);
+    const doc = await VegBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч не найден' });
     const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes } = req.body;
     if (name !== undefined) doc.name = String(name).trim();
@@ -116,15 +117,45 @@ export const updateVegBatch = async (req, res) => {
 // @route   DELETE /api/veg-batches/:id
 export const deleteVegBatch = async (req, res) => {
   try {
-    const doc = await VegBatch.findById(req.params.id);
+    const doc = await VegBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч не найден' });
-    const name = doc.name;
     const id = doc._id;
-    await doc.deleteOne();
-    await createAuditLog(req, { action: 'veg_batch.delete', entityType: 'VegBatch', entityId: id, details: { name } });
-    res.json({ message: 'Удалено' });
+    const details = { name: doc.name, quantity: doc.quantity, flowerRoom: doc.flowerRoom?.toString?.() || doc.flowerRoom };
+    await createAuditLog(req, { action: 'veg_batch.delete', entityType: 'VegBatch', entityId: id, details });
+    doc.deletedAt = new Date();
+    await doc.save();
+    res.json({ message: 'Удалено (можно восстановить)' });
   } catch (error) {
     console.error('Delete veg batch error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getDeletedVegBatches = async (req, res) => {
+  try {
+    const list = await VegBatch.find(deletedOnly)
+      .populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } })
+      .populate('flowerRoom', 'name roomNumber')
+      .sort({ deletedAt: -1 });
+    res.json(list);
+  } catch (error) {
+    console.error('Get deleted veg batches error:', error);
+    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+  }
+};
+
+export const restoreVegBatch = async (req, res) => {
+  try {
+    const doc = await VegBatch.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!doc) return res.status(404).json({ message: 'Р‘СЌС‚С‡ РЅРµ РЅР°Р№РґРµРЅ РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ' });
+    doc.deletedAt = null;
+    await doc.save();
+    await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
+    await doc.populate('flowerRoom', 'name roomNumber');
+    await createAuditLog(req, { action: 'veg_batch.restore', entityType: 'VegBatch', entityId: doc._id, details: { name: doc.name } });
+    res.json(doc);
+  } catch (error) {
+    console.error('Restore veg batch error:', error);
+    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
   }
 };

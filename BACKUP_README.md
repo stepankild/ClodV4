@@ -1,17 +1,21 @@
 # Резервное копирование проекта
 
-## Быстрый бэкап (уже настроен)
+**Полная политика сохранности данных (аудит, бэкапы, восстановление):** см. [DATA_SAFETY.md](DATA_SAFETY.md).
 
-В папке проекта есть скрипт **`backup.ps1`**.
+---
 
-**Как сделать копию:**
-1. Откройте PowerShell.
-2. Перейдите в папку проекта: `cd "C:\Users\Stepa\Desktop\Harvest scale\ClodV4"`.
-3. Выполните: `.\backup.ps1`.
+## Быстрый бэкап кода и конфига
 
-Рядом с папкой `ClodV4` появится папка вида **`ClodV4-backup-ГГГГ-ММ-ДД_ЧЧ-ММ`** — это и есть резервная копия. В ней нет `node_modules` (их можно заново установить через `npm install` в `client/` и `server/`).
+Скрипт **`backup.ps1`** копирует проект (без `node_modules` и `.git`) и **копию `server\.env`** в папку рядом с проектом.
 
-**Если выполнение скриптов запрещено**, в PowerShell один раз выполните:
+1. PowerShell: `cd "C:\Users\Stepa\Desktop\Harvest scale\ClodV4"`.
+2. Выполните: `.\backup.ps1`.
+
+Появится папка **`ClodV4-backup-ГГГГ-ММ-ДД_ЧЧ-ММ`**. В ней уже есть `server\.env` для восстановления.
+
+**Бэкап базы данных (обязательно для сохранности данных):** выполните также `.\backup-db.ps1` (нужен `mongodump` в PATH и `MONGODB_URI` в `server\.env`). Либо используйте бэкапы MongoDB Atlas.
+
+Если выполнение скриптов запрещено:
 ```powershell
 Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 ```
@@ -20,12 +24,10 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 ## Восстановление из копии
 
-1. Скопируйте нужную папку бэкапа (например, `ClodV4-backup-2026-02-05_12-09`) в удобное место.
-2. Переименуйте её, если нужно (например, в `ClodV4`).
-3. В этой папке откройте терминал и выполните:
-   - `cd client` → `npm install`
-   - `cd ../server` → `npm install`
-4. Файл `.env` с паролем БД и настройками нужно скопировать вручную из старой папки, если вы его не включали в бэкап.
+1. Скопируйте папку бэкапа в нужное место (при необходимости переименуйте в `ClodV4`).
+2. В папке: `npm install`, в `client` и `server` — `npm install`.
+3. Файл `server\.env` уже лежит в бэкапе; при смене БД поправьте `MONGODB_URI`.
+4. БД восстанавливайте из дампа (`mongorestore`) или из бэкапов Atlas — см. [DATA_SAFETY.md](DATA_SAFETY.md).
 
 ---
 

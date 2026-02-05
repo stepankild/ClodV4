@@ -1,6 +1,7 @@
 import CloneCut from '../models/CloneCut.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
 const normalizeStrains = (strains, legacyStrain, legacyQuantity) => {
   if (Array.isArray(strains) && strains.length > 0) {
@@ -19,7 +20,7 @@ const normalizeStrains = (strains, legacyStrain, legacyQuantity) => {
 // @route   GET /api/clone-cuts
 export const getCloneCuts = async (req, res) => {
   try {
-    const list = await CloneCut.find().populate('room', 'name roomNumber').sort({ cutDate: 1 });
+    const list = await CloneCut.find(notDeleted).populate('room', 'name roomNumber').sort({ cutDate: 1 });
     res.json(list);
   } catch (error) {
     console.error('Get clone cuts error:', error);
@@ -71,7 +72,7 @@ export const upsertCloneCut = async (req, res) => {
     };
 
     let doc = await CloneCut.findOneAndUpdate(
-      { room: roomId },
+      { room: roomId, ...notDeleted },
       { $set: { ...data, room: roomId } },
       { new: true, upsert: true }
     );
@@ -89,7 +90,7 @@ export const upsertCloneCut = async (req, res) => {
 export const updateCloneCut = async (req, res) => {
   try {
     const { cutDate, strain, quantity, strains, isDone, notes } = req.body;
-    const doc = await CloneCut.findById(req.params.id);
+    const doc = await CloneCut.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Запись не найдена' });
 
     if (cutDate !== undefined) doc.cutDate = new Date(cutDate);
@@ -118,18 +119,49 @@ export const updateCloneCut = async (req, res) => {
 };
 
 
-// @desc    Delete clone cut (e.g. order batch)
+// @desc    Delete clone cut (soft delete — можно восстановить)
 // @route   DELETE /api/clone-cuts/:id
 export const deleteCloneCut = async (req, res) => {
   try {
-    const doc = await CloneCut.findById(req.params.id);
+    const doc = await CloneCut.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Запись не найдена' });
     const id = doc._id;
-    await doc.deleteOne();
-    await createAuditLog(req, { action: 'clone_cut.delete', entityType: 'CloneCut', entityId: id, details: {} });
-    res.json({ message: 'Удалено' });
+    const details = { cutDate: doc.cutDate, strain: doc.strain, quantity: doc.quantity, isOrder: !doc.room };
+    await createAuditLog(req, { action: 'clone_cut.delete', entityType: 'CloneCut', entityId: id, details });
+    doc.deletedAt = new Date();
+    await doc.save();
+    res.json({ message: 'Удалено (можно восстановить)' });
   } catch (error) {
     console.error('Delete clone cut error:', error);
+    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+  }
+};
+
+// @desc    List deleted clone cuts (for restore)
+// @route   GET /api/clone-cuts/deleted
+export const getDeletedCloneCuts = async (req, res) => {
+  try {
+    const list = await CloneCut.find(deletedOnly).populate('room', 'name roomNumber').sort({ deletedAt: -1 });
+    res.json(list);
+  } catch (error) {
+    console.error('Get deleted clone cuts error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Restore clone cut
+// @route   POST /api/clone-cuts/deleted/:id/restore
+export const restoreCloneCut = async (req, res) => {
+  try {
+    const doc = await CloneCut.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!doc) return res.status(404).json({ message: 'Запись не найдена или уже восстановлена' });
+    doc.deletedAt = null;
+    await doc.save();
+    await doc.populate('room', 'name roomNumber');
+    await createAuditLog(req, { action: 'clone_cut.restore', entityType: 'CloneCut', entityId: doc._id, details: { strain: doc.strain } });
+    res.json(doc);
+  } catch (error) {
+    console.error('Restore clone cut error:', error);
     res.status(500).json({ message: error.message || 'Ошибка сервера' });
   }
 };

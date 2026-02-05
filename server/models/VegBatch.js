@@ -22,12 +22,14 @@ const vegBatchSchema = new mongoose.Schema({
     default: null
   },
   transplantedToFlowerAt: { type: Date, default: null },
-  notes: { type: String, default: '' }
+  notes: { type: String, default: '' },
+  deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
 });
 
 vegBatchSchema.index({ flowerRoom: 1 });
+vegBatchSchema.index({ deletedAt: 1 });
 vegBatchSchema.index({ transplantedToVegAt: -1 });
 
 const VegBatch = mongoose.model('VegBatch', vegBatchSchema);

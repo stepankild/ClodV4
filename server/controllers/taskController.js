@@ -1,6 +1,8 @@
 import RoomTask, { TASK_TYPES, TASK_LABELS } from '../models/RoomTask.js';
 import FlowerRoom from '../models/FlowerRoom.js';
 import RoomLog from '../models/RoomLog.js';
+import { createAuditLog } from '../utils/auditLog.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
 // @desc    Get task types
 // @route   GET /api/tasks/types
@@ -24,7 +26,7 @@ export const getRoomTasks = async (req, res) => {
     const { roomId } = req.params;
     const { completed, limit = 50 } = req.query;
 
-    const query = { room: roomId };
+    const query = { room: roomId, ...notDeleted };
     if (completed !== undefined) {
       query.completed = completed === 'true';
     }
@@ -87,7 +89,7 @@ export const createTask = async (req, res) => {
 // @route   PUT /api/tasks/:id/toggle
 export const toggleTask = async (req, res) => {
   try {
-    const task = await RoomTask.findById(req.params.id);
+    const task = await RoomTask.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!task) {
       return res.status(404).json({ message: 'Задача не найдена' });
@@ -147,7 +149,7 @@ export const updateTask = async (req, res) => {
       priority
     } = req.body;
 
-    const task = await RoomTask.findById(req.params.id);
+    const task = await RoomTask.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!task) {
       return res.status(404).json({ message: 'Задача не найдена' });
@@ -175,15 +177,19 @@ export const updateTask = async (req, res) => {
 // @route   DELETE /api/tasks/:id
 export const deleteTask = async (req, res) => {
   try {
-    const task = await RoomTask.findById(req.params.id);
+    const task = await RoomTask.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!task) {
       return res.status(404).json({ message: 'Задача не найдена' });
     }
 
-    await task.deleteOne();
+    const taskTitle = task.title || task.type || '';
+    const roomId = task.room?.toString?.() || task.room;
+    await createAuditLog(req, { action: 'task.delete', entityType: 'RoomTask', entityId: task._id, details: { title: taskTitle, roomId } });
+    task.deletedAt = new Date();
+    await task.save();
 
-    res.json({ message: 'Задача удалена' });
+    res.json({ message: 'Задача удалена (можно восстановить)' });
   } catch (error) {
     console.error('Delete task error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
@@ -245,5 +251,30 @@ export const quickAddTask = async (req, res) => {
   } catch (error) {
     console.error('Quick add task error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getDeletedTasks = async (req, res) => {
+  try {
+    const list = await RoomTask.find(deletedOnly).populate('room', 'name roomNumber').populate('completedBy', 'name').sort({ deletedAt: -1 }).limit(100);
+    res.json(list);
+  } catch (error) {
+    console.error('Get deleted tasks error:', error);
+    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+  }
+};
+
+export const restoreTask = async (req, res) => {
+  try {
+    const task = await RoomTask.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!task) return res.status(404).json({ message: 'Р—Р°РґР°С‡Р° РЅРµ РЅР°Р№РґРµРЅР° РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР°' });
+    task.deletedAt = null;
+    await task.save();
+    await task.populate('room', 'name roomNumber');
+    await createAuditLog(req, { action: 'task.restore', entityType: 'RoomTask', entityId: task._id, details: { title: task.title } });
+    res.json(task);
+  } catch (error) {
+    console.error('Restore task error:', error);
+    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
   }
 };

@@ -16,6 +16,7 @@ import Selection from './pages/Selection/Selection';
 import Workers from './pages/Workers/Workers';
 import Statistics from './pages/Statistics/Statistics';
 import AuditLog from './pages/AuditLog/AuditLog';
+import Trash from './pages/Trash/Trash';
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -71,6 +72,14 @@ function App() {
           element={
             <ProtectedRoute permission="audit:read">
               <AuditLog />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/trash"
+          element={
+            <ProtectedRoute permission="audit:read">
+              <Trash />
             </ProtectedRoute>
           }
         />
