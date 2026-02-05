@@ -22,6 +22,10 @@ const Selection = () => {
   const [saving, setSaving] = useState(false);
   const [addForm, setAddForm] = useState({ name: '', strain: '', startedAt: new Date().toISOString().slice(0, 10), notes: '' });
   const [detailForm, setDetailForm] = useState(null);
+  const [selectedPlantIndex, setSelectedPlantIndex] = useState(null);
+  const [addPlantsModal, setAddPlantsModal] = useState(false);
+  const [addPlantsCount, setAddPlantsCount] = useState(10);
+  const [addPlantsPrefix, setAddPlantsPrefix] = useState('Куст ');
   const [newLogEntry, setNewLogEntry] = useState({ date: new Date().toISOString().slice(0, 10), text: '' });
   const [newRatingCriterion, setNewRatingCriterion] = useState('');
 
@@ -50,20 +54,26 @@ const Selection = () => {
 
   useEffect(() => {
     if (selected) {
-      const hasRatings = Array.isArray(selected.ratings) && selected.ratings.length > 0;
+      const plants = Array.isArray(selected.plants) && selected.plants.length > 0
+        ? selected.plants.map((p) => ({
+            name: p.name || '',
+            firstCloneCutAt: p.firstCloneCutAt ? new Date(p.firstCloneCutAt).toISOString().slice(0, 10) : '',
+            traitsDescription: p.traitsDescription || '',
+            ratings: Array.isArray(p.ratings) && p.ratings.length > 0
+              ? p.ratings.map((r) => ({ criterion: r.criterion || '', score: r.score ?? 0 }))
+              : DEFAULT_CRITERIA.map((c) => ({ criterion: c, score: 0 })),
+            developmentLog: Array.isArray(p.developmentLog) ? [...p.developmentLog] : []
+          }))
+        : [];
       setDetailForm({
         name: selected.name || '',
         strain: selected.strain || '',
         startedAt: selected.startedAt ? new Date(selected.startedAt).toISOString().slice(0, 10) : '',
-        firstCloneCutAt: selected.firstCloneCutAt ? new Date(selected.firstCloneCutAt).toISOString().slice(0, 10) : '',
         notes: selected.notes || '',
-        traitsDescription: selected.traitsDescription || '',
-        ratings: hasRatings
-          ? selected.ratings.map((r) => ({ criterion: r.criterion || '', score: r.score ?? 0 }))
-          : DEFAULT_CRITERIA.map((c) => ({ criterion: c, score: 0 })),
-        developmentLog: Array.isArray(selected.developmentLog) ? [...selected.developmentLog] : [],
-        status: selected.status || 'active'
+        status: selected.status || 'active',
+        plants
       });
+      setSelectedPlantIndex(plants.length > 0 ? 0 : null);
     }
   }, [selected]);
 
@@ -100,12 +110,15 @@ const Selection = () => {
         name: detailForm.name.trim(),
         strain: (detailForm.strain || '').trim(),
         startedAt: detailForm.startedAt || null,
-        firstCloneCutAt: detailForm.firstCloneCutAt || null,
         notes: (detailForm.notes || '').trim(),
-        traitsDescription: (detailForm.traitsDescription || '').trim(),
-        ratings: (detailForm.ratings || []).filter((r) => (r.criterion || '').trim()),
-        developmentLog: (detailForm.developmentLog || []).map((e) => ({ date: e.date, text: String(e.text || '') })),
-        status: detailForm.status
+        status: detailForm.status,
+        plants: (detailForm.plants || []).map((p) => ({
+          name: (p.name || '').trim(),
+          firstCloneCutAt: p.firstCloneCutAt || null,
+          traitsDescription: (p.traitsDescription || '').trim(),
+          ratings: (p.ratings || []).filter((r) => (r.criterion || '').trim()),
+          developmentLog: (p.developmentLog || []).map((e) => ({ date: e.date, text: String(e.text || '') }))
+        }))
       };
       const updated = await selectionService.update(selected._id, payload);
       setSelected(updated);
@@ -117,45 +130,84 @@ const Selection = () => {
     }
   };
 
-  const addLogEntry = () => {
-    if (!detailForm || !newLogEntry.text.trim()) return;
+  const addPlantsToBatch = () => {
+    const n = Math.min(100, Math.max(1, parseInt(addPlantsCount, 10) || 10));
+    const prefix = (addPlantsPrefix || '').trim();
+    const newPlants = Array.from({ length: n }, (_, i) => ({
+      name: prefix ? `${prefix}${i + 1}` : String(i + 1),
+      firstCloneCutAt: '',
+      traitsDescription: '',
+      ratings: DEFAULT_CRITERIA.map((c) => ({ criterion: c, score: 0 })),
+      developmentLog: []
+    }));
+    setDetailForm((f) => ({ ...f, plants: [...(f.plants || []), ...newPlants] }));
+    setAddPlantsModal(false);
+    setSelectedPlantIndex(detailForm?.plants?.length ?? 0);
+  };
+
+  const removePlant = (index) => {
+    if (!confirm('Удалить этот куст из бэтча?')) return;
     setDetailForm((f) => ({
       ...f,
-      developmentLog: [...(f.developmentLog || []), { date: newLogEntry.date, text: newLogEntry.text.trim() }]
+      plants: (f.plants || []).filter((_, i) => i !== index)
+    }));
+    if (selectedPlantIndex === index) setSelectedPlantIndex(null);
+    else if (selectedPlantIndex > index) setSelectedPlantIndex(selectedPlantIndex - 1);
+  };
+
+  const selectedPlant = detailForm?.plants != null && selectedPlantIndex != null && detailForm.plants[selectedPlantIndex] ? detailForm.plants[selectedPlantIndex] : null;
+
+  const updatePlant = (plantIndex, updater) => {
+    setDetailForm((f) => {
+      const plants = [...(f.plants || [])];
+      if (plantIndex < 0 || plantIndex >= plants.length) return f;
+      plants[plantIndex] = typeof updater === 'function' ? updater(plants[plantIndex]) : updater;
+      return { ...f, plants };
+    });
+  };
+
+  const addLogEntry = () => {
+    if (!detailForm || selectedPlantIndex == null || !newLogEntry.text.trim()) return;
+    updatePlant(selectedPlantIndex, (p) => ({
+      ...p,
+      developmentLog: [...(p.developmentLog || []), { date: newLogEntry.date, text: newLogEntry.text.trim() }]
     }));
     setNewLogEntry({ date: new Date().toISOString().slice(0, 10), text: '' });
   };
 
   const removeLogEntry = (index) => {
-    setDetailForm((f) => ({
-      ...f,
-      developmentLog: (f.developmentLog || []).filter((_, i) => i !== index)
+    if (selectedPlantIndex == null) return;
+    updatePlant(selectedPlantIndex, (p) => ({
+      ...p,
+      developmentLog: (p.developmentLog || []).filter((_, i) => i !== index)
     }));
   };
 
-  const setRating = (index, score) => {
-    setDetailForm((f) => {
-      const ratings = [...(f.ratings || [])];
-      if (!ratings[index]) return f;
-      ratings[index] = { ...ratings[index], score: Math.min(10, Math.max(0, Number(score) || 0)) };
-      return { ...f, ratings };
+  const setRating = (ratingIndex, score) => {
+    if (selectedPlantIndex == null) return;
+    updatePlant(selectedPlantIndex, (p) => {
+      const ratings = [...(p.ratings || [])];
+      if (!ratings[ratingIndex]) return p;
+      ratings[ratingIndex] = { ...ratings[ratingIndex], score: Math.min(10, Math.max(0, Number(score) || 0)) };
+      return { ...p, ratings };
     });
   };
 
   const addRatingCriterion = () => {
     const c = (newRatingCriterion || '').trim();
-    if (!c) return;
-    setDetailForm((f) => ({
-      ...f,
-      ratings: [...(f.ratings || []), { criterion: c, score: 0 }]
+    if (!c || selectedPlantIndex == null) return;
+    updatePlant(selectedPlantIndex, (p) => ({
+      ...p,
+      ratings: [...(p.ratings || []), { criterion: c, score: 0 }]
     }));
     setNewRatingCriterion('');
   };
 
   const removeRating = (index) => {
-    setDetailForm((f) => ({
-      ...f,
-      ratings: (f.ratings || []).filter((_, i) => i !== index)
+    if (selectedPlantIndex == null) return;
+    updatePlant(selectedPlantIndex, (p) => ({
+      ...p,
+      ratings: (p.ratings || []).filter((_, i) => i !== index)
     }));
   };
 
@@ -178,6 +230,17 @@ const Selection = () => {
     const sum = ratings.reduce((s, r) => s + (Number(r.score) || 0), 0);
     return (sum / ratings.length).toFixed(1);
   };
+
+  const batchAvgRating = (batch) => {
+    if (Array.isArray(batch.plants) && batch.plants.length > 0) {
+      const avgs = batch.plants.map((p) => avgRating(p.ratings)).filter(Boolean);
+      if (avgs.length === 0) return null;
+      return (avgs.reduce((s, a) => s + parseFloat(a), 0) / avgs.length).toFixed(1);
+    }
+    return avgRating(batch.ratings);
+  };
+
+  const batchPlantsCount = (batch) => (Array.isArray(batch.plants) ? batch.plants.length : 0);
 
   if (loading && batches.length === 0) {
     return (
@@ -234,7 +297,7 @@ const Selection = () => {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase">Название</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase">Сорт / линия</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase">Старт</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase">Первые клоны</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase">Кустов</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase">Оценка</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase">Статус</th>
                 </tr>
@@ -256,8 +319,8 @@ const Selection = () => {
                       <td className="px-4 py-3 font-medium text-white">{b.name || '—'}</td>
                       <td className="px-4 py-3 text-dark-300">{b.strain || '—'}</td>
                       <td className="px-4 py-3 text-dark-300">{formatDate(b.startedAt)}</td>
-                      <td className="px-4 py-3 text-dark-300">{formatDate(b.firstCloneCutAt)}</td>
-                      <td className="px-4 py-3 text-dark-300">{avgRating(b.ratings) ?? '—'}</td>
+                      <td className="px-4 py-3 text-dark-300">{batchPlantsCount(b) || '—'}</td>
+                      <td className="px-4 py-3 text-dark-300">{batchAvgRating(b) ?? '—'}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 text-xs rounded ${b.status === 'archived' ? 'bg-dark-600 text-dark-400' : 'bg-green-900/50 text-green-400'}`}>
                           {b.status === 'archived' ? 'В архиве' : 'Активный'}
@@ -274,176 +337,165 @@ const Selection = () => {
 
       {/* Панель деталей */}
       {selected && detailForm && (
-        <div className="w-full lg:w-[420px] shrink-0 bg-dark-800 rounded-xl border border-dark-700 p-6 space-y-6 max-h-[calc(100vh-8rem)] overflow-y-auto">
+        <div className="w-full lg:w-[440px] shrink-0 bg-dark-800 rounded-xl border border-dark-700 p-6 space-y-4 max-h-[calc(100vh-8rem)] overflow-y-auto">
           <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold text-white">{detailForm.name || 'Бэтч'}</h2>
             <button type="button" onClick={() => setSelected(null)} className="text-dark-400 hover:text-white p-1">×</button>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-3">
             <div>
-              <label className="block text-xs text-dark-400 mb-1">Название</label>
-              <input
-                type="text"
-                value={detailForm.name}
-                onChange={(e) => setDetailForm((f) => ({ ...f, name: e.target.value }))}
-                disabled={!canCreate}
-                className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-              />
+              <label className="block text-xs text-dark-400 mb-1">Название бэтча</label>
+              <input type="text" value={detailForm.name} onChange={(e) => setDetailForm((f) => ({ ...f, name: e.target.value }))} disabled={!canCreate} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </div>
             <div>
               <label className="block text-xs text-dark-400 mb-1">Сорт / линия</label>
-              <input
-                type="text"
-                value={detailForm.strain}
-                onChange={(e) => setDetailForm((f) => ({ ...f, strain: e.target.value }))}
-                disabled={!canCreate}
-                className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-dark-400 mb-1">Старт селекции</label>
-                <input
-                  type="date"
-                  value={detailForm.startedAt}
-                  onChange={(e) => setDetailForm((f) => ({ ...f, startedAt: e.target.value }))}
-                  disabled={!canCreate}
-                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-dark-400 mb-1">Первые клоны нарезаны</label>
-                <input
-                  type="date"
-                  value={detailForm.firstCloneCutAt}
-                  onChange={(e) => setDetailForm((f) => ({ ...f, firstCloneCutAt: e.target.value }))}
-                  disabled={!canCreate}
-                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                />
-              </div>
+              <input type="text" value={detailForm.strain} onChange={(e) => setDetailForm((f) => ({ ...f, strain: e.target.value }))} disabled={!canCreate} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </div>
             <div>
-              <label className="block text-xs text-dark-400 mb-1">Заметки</label>
-              <textarea
-                value={detailForm.notes}
-                onChange={(e) => setDetailForm((f) => ({ ...f, notes: e.target.value }))}
-                disabled={!canCreate}
-                rows={2}
-                className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none"
-              />
+              <label className="block text-xs text-dark-400 mb-1">Старт селекции</label>
+              <input type="date" value={detailForm.startedAt} onChange={(e) => setDetailForm((f) => ({ ...f, startedAt: e.target.value }))} disabled={!canCreate} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </div>
-
             <div>
-              <label className="block text-xs text-dark-400 mb-1">Описание признаков</label>
-              <textarea
-                value={detailForm.traitsDescription}
-                onChange={(e) => setDetailForm((f) => ({ ...f, traitsDescription: e.target.value }))}
-                disabled={!canCreate}
-                rows={3}
-                placeholder="Внешний вид, запах, устойчивость..."
-                className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none"
-              />
+              <label className="block text-xs text-dark-400 mb-1">Заметки по бэтчу</label>
+              <textarea value={detailForm.notes} onChange={(e) => setDetailForm((f) => ({ ...f, notes: e.target.value }))} disabled={!canCreate} rows={2} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none" />
             </div>
-
-            <div>
-              <label className="block text-xs text-dark-400 mb-2">Лог развития</label>
-              <div className="space-y-2 mb-2">
-                {(detailForm.developmentLog || []).map((e, idx) => (
-                  <div key={idx} className="flex items-start gap-2 p-2 bg-dark-700 rounded-lg">
-                    <span className="text-dark-500 text-xs shrink-0">{formatDate(e.date)}</span>
-                    <span className="text-dark-300 text-sm flex-1">{e.text || '—'}</span>
-                    {canCreate && (
-                      <button type="button" onClick={() => removeLogEntry(idx)} className="text-red-400 hover:text-red-300 text-xs">×</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {canCreate && (
-                <div className="flex gap-2">
-                  <input
-                    type="date"
-                    value={newLogEntry.date}
-                    onChange={(e) => setNewLogEntry((n) => ({ ...n, date: e.target.value }))}
-                    className="px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm w-36"
-                  />
-                  <input
-                    type="text"
-                    value={newLogEntry.text}
-                    onChange={(e) => setNewLogEntry((n) => ({ ...n, text: e.target.value }))}
-                    placeholder="Запись о развитии..."
-                    className="flex-1 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm"
-                  />
-                  <button type="button" onClick={addLogEntry} className="px-3 py-1.5 bg-primary-600 text-white rounded text-sm hover:bg-primary-500">
-                    Добавить
-                  </button>
-                </div>
-              )}
-            </div>
-
-            <div>
-              <label className="block text-xs text-dark-400 mb-2">Оценки (1–10)</label>
-              <div className="space-y-2 mb-2">
-                {(detailForm.ratings || []).map((r, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <span className="text-dark-300 text-sm w-28 truncate" title={r.criterion}>{r.criterion || '—'}</span>
-                    <input
-                      type="range"
-                      min="0"
-                      max="10"
-                      step="1"
-                      value={r.score ?? 0}
-                      onChange={(e) => setRating(idx, e.target.value)}
-                      disabled={!canCreate}
-                      className="flex-1 h-2 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-primary-500"
-                    />
-                    <span className="text-white text-sm w-6">{r.score ?? 0}</span>
-                    {canCreate && (
-                      <button type="button" onClick={() => removeRating(idx)} className="text-red-400 hover:text-red-300 text-xs p-1">×</button>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {canCreate && (
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newRatingCriterion}
-                    onChange={(e) => setNewRatingCriterion(e.target.value)}
-                    placeholder="Новый критерий"
-                    className="flex-1 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm"
-                  />
-                  <button type="button" onClick={addRatingCriterion} className="px-3 py-1.5 bg-primary-600 text-white rounded text-sm hover:bg-primary-500">
-                    Добавить
-                  </button>
-                </div>
-              )}
-            </div>
-
             <div>
               <label className="block text-xs text-dark-400 mb-1">Статус</label>
-              <select
-                value={detailForm.status}
-                onChange={(e) => setDetailForm((f) => ({ ...f, status: e.target.value }))}
-                disabled={!canCreate}
-                className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-              >
+              <select value={detailForm.status} onChange={(e) => setDetailForm((f) => ({ ...f, status: e.target.value }))} disabled={!canCreate} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm">
                 <option value="active">Активный</option>
                 <option value="archived">В архиве</option>
               </select>
             </div>
           </div>
 
-          {canCreate && (
-            <div className="flex flex-wrap gap-2 pt-4 border-t border-dark-700">
-              <button type="button" onClick={handleSaveDetail} disabled={saving} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">
-                {saving ? 'Сохранение...' : 'Сохранить'}
-              </button>
-              <button type="button" onClick={handleDelete} disabled={saving} className="px-4 py-2 bg-red-900/50 text-red-400 rounded-lg hover:bg-red-900/70">
-                Удалить
-              </button>
+          <div className="border-t border-dark-700 pt-4">
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-medium text-dark-400 uppercase">Кусты</label>
+              {canCreate && (
+                <button type="button" onClick={() => setAddPlantsModal(true)} className="text-primary-400 hover:text-primary-300 text-sm font-medium">
+                  + Добавить кусты
+                </button>
+              )}
+            </div>
+            {(detailForm.plants || []).length === 0 ? (
+              <p className="text-dark-500 text-sm py-2">Нет кустов. Нажмите «Добавить кусты», чтобы забить список (например, 10 или 20 кустов), затем оценивайте каждый отдельно.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2 max-h-32 overflow-y-auto">
+                {(detailForm.plants || []).map((p, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => setSelectedPlantIndex(idx)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${selectedPlantIndex === idx ? 'bg-primary-600 text-white' : 'bg-dark-700 text-dark-300 hover:bg-dark-600'}`}
+                  >
+                    {p.name || `#${idx + 1}`} {avgRating(p.ratings) != null ? `(${avgRating(p.ratings)})` : ''}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {selectedPlant != null && (
+            <div className="border-t border-dark-700 pt-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-white">Оценка куста: {selectedPlant.name || `#${selectedPlantIndex + 1}`}</h3>
+                {canCreate && (
+                  <button type="button" onClick={() => removePlant(selectedPlantIndex)} className="text-red-400 hover:text-red-300 text-xs">Удалить куст</button>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Первые клоны нарезаны</label>
+                <input
+                  type="date"
+                  value={selectedPlant.firstCloneCutAt || ''}
+                  onChange={(e) => updatePlant(selectedPlantIndex, (p) => ({ ...p, firstCloneCutAt: e.target.value }))}
+                  disabled={!canCreate}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Описание признаков (этого куста)</label>
+                <textarea
+                  value={selectedPlant.traitsDescription || ''}
+                  onChange={(e) => updatePlant(selectedPlantIndex, (p) => ({ ...p, traitsDescription: e.target.value }))}
+                  disabled={!canCreate}
+                  rows={2}
+                  placeholder="Внешний вид, запах, устойчивость..."
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">Лог развития</label>
+                <div className="space-y-2 mb-2">
+                  {(selectedPlant.developmentLog || []).map((e, idx) => (
+                    <div key={idx} className="flex items-start gap-2 p-2 bg-dark-700 rounded-lg">
+                      <span className="text-dark-500 text-xs shrink-0">{formatDate(e.date)}</span>
+                      <span className="text-dark-300 text-sm flex-1">{e.text || '—'}</span>
+                      {canCreate && <button type="button" onClick={() => removeLogEntry(idx)} className="text-red-400 hover:text-red-300 text-xs">×</button>}
+                    </div>
+                  ))}
+                </div>
+                {canCreate && (
+                  <div className="flex gap-2">
+                    <input type="date" value={newLogEntry.date} onChange={(e) => setNewLogEntry((n) => ({ ...n, date: e.target.value }))} className="px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm w-36" />
+                    <input type="text" value={newLogEntry.text} onChange={(e) => setNewLogEntry((n) => ({ ...n, text: e.target.value }))} placeholder="Запись..." className="flex-1 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm" />
+                    <button type="button" onClick={addLogEntry} className="px-3 py-1.5 bg-primary-600 text-white rounded text-sm hover:bg-primary-500">Добавить</button>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">Оценки (1–10)</label>
+                <div className="space-y-2 mb-2">
+                  {(selectedPlant.ratings || []).map((r, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <span className="text-dark-300 text-sm w-28 truncate" title={r.criterion}>{r.criterion || '—'}</span>
+                      <input type="range" min="0" max="10" step="1" value={r.score ?? 0} onChange={(e) => setRating(idx, e.target.value)} disabled={!canCreate} className="flex-1 h-2 bg-dark-700 rounded-lg appearance-none cursor-pointer accent-primary-500" />
+                      <span className="text-white text-sm w-6">{r.score ?? 0}</span>
+                      {canCreate && <button type="button" onClick={() => removeRating(idx)} className="text-red-400 hover:text-red-300 text-xs p-1">×</button>}
+                    </div>
+                  ))}
+                </div>
+                {canCreate && (
+                  <div className="flex gap-2">
+                    <input type="text" value={newRatingCriterion} onChange={(e) => setNewRatingCriterion(e.target.value)} placeholder="Новый критерий" className="flex-1 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm" />
+                    <button type="button" onClick={addRatingCriterion} className="px-3 py-1.5 bg-primary-600 text-white rounded text-sm hover:bg-primary-500">Добавить</button>
+                  </div>
+                )}
+              </div>
             </div>
           )}
+
+          {canCreate && (
+            <div className="flex flex-wrap gap-2 pt-4 border-t border-dark-700">
+              <button type="button" onClick={handleSaveDetail} disabled={saving} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">{saving ? 'Сохранение...' : 'Сохранить'}</button>
+              <button type="button" onClick={handleDelete} disabled={saving} className="px-4 py-2 bg-red-900/50 text-red-400 rounded-lg hover:bg-red-900/70">Удалить бэтч</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Модалка: добавить кусты */}
+      {addPlantsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setAddPlantsModal(false)}>
+          <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-4">Добавить кусты</h3>
+            <p className="text-dark-400 text-sm mb-4">Укажите количество — создадутся кусты с номерами (или префикс + номер). Потом каждый можно оценить отдельно.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Количество</label>
+                <input type="number" min="1" max="100" value={addPlantsCount} onChange={(e) => setAddPlantsCount(e.target.value)} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Префикс (например «Куст » → Куст 1, Куст 2…)</label>
+                <input type="text" value={addPlantsPrefix} onChange={(e) => setAddPlantsPrefix(e.target.value)} placeholder="Куст " className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setAddPlantsModal(false)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
+                <button type="button" onClick={addPlantsToBatch} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500">Добавить</button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

@@ -10,11 +10,29 @@ const ratingSchema = new mongoose.Schema({
   score: { type: Number, min: 0, max: 10, default: 0 }
 }, { _id: false });
 
+const plantSchema = new mongoose.Schema({
+  name: { type: String, trim: true, default: '' },
+  firstCloneCutAt: { type: Date, default: null },
+  developmentLog: {
+    type: [developmentLogEntrySchema],
+    default: []
+  },
+  traitsDescription: { type: String, default: '' },
+  ratings: {
+    type: [ratingSchema],
+    default: []
+  }
+}, { _id: false });
+
 const selectionBatchSchema = new mongoose.Schema({
   name: { type: String, trim: true, required: true },
   strain: { type: String, trim: true, default: '' },
   startedAt: { type: Date, default: null },
   notes: { type: String, default: '' },
+  plants: {
+    type: [plantSchema],
+    default: []
+  },
   firstCloneCutAt: { type: Date, default: null },
   developmentLog: {
     type: [developmentLogEntrySchema],

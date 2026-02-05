@@ -29,11 +29,19 @@ export const getSelectionBatch = async (req, res) => {
   }
 };
 
+const normalizePlant = (p) => ({
+  name: String(p.name || '').trim(),
+  firstCloneCutAt: p.firstCloneCutAt ? new Date(p.firstCloneCutAt) : null,
+  traitsDescription: String(p.traitsDescription || '').trim(),
+  developmentLog: Array.isArray(p.developmentLog) ? p.developmentLog.map((e) => ({ date: new Date(e.date), text: String(e.text || '') })) : [],
+  ratings: Array.isArray(p.ratings) ? p.ratings.map((r) => ({ criterion: String(r.criterion || '').trim(), score: Math.min(10, Math.max(0, Number(r.score) || 0)) })) : []
+});
+
 // @desc    Create selection batch
 // @route   POST /api/selection
 export const createSelectionBatch = async (req, res) => {
   try {
-    const { name, strain, startedAt, notes, traitsDescription, ratings, developmentLog, firstCloneCutAt } = req.body;
+    const { name, strain, startedAt, notes, plants } = req.body;
     if (!name || !String(name).trim()) {
       return res.status(400).json({ message: 'Укажите название бэтча селекции' });
     }
@@ -42,10 +50,7 @@ export const createSelectionBatch = async (req, res) => {
       strain: strain != null ? String(strain).trim() : '',
       startedAt: startedAt ? new Date(startedAt) : null,
       notes: notes != null ? String(notes).trim() : '',
-      firstCloneCutAt: firstCloneCutAt ? new Date(firstCloneCutAt) : null,
-      traitsDescription: traitsDescription != null ? String(traitsDescription).trim() : '',
-      developmentLog: Array.isArray(developmentLog) ? developmentLog.map((e) => ({ date: new Date(e.date), text: String(e.text || '') })) : [],
-      ratings: Array.isArray(ratings) ? ratings.map((r) => ({ criterion: String(r.criterion || '').trim(), score: Math.min(10, Math.max(0, Number(r.score) || 0)) })) : [],
+      plants: Array.isArray(plants) ? plants.map(normalizePlant) : [],
       status: 'active'
     });
     await doc.save();
@@ -63,19 +68,14 @@ export const updateSelectionBatch = async (req, res) => {
   try {
     const doc = await SelectionBatch.findById(req.params.id);
     if (!doc) return res.status(404).json({ message: 'Бэтч селекции не найден' });
-    const { name, strain, startedAt, notes, traitsDescription, ratings, developmentLog, firstCloneCutAt, status } = req.body;
+    const { name, strain, startedAt, notes, plants, status } = req.body;
 
     if (name !== undefined) doc.name = String(name).trim();
     if (strain !== undefined) doc.strain = String(strain).trim();
     if (startedAt !== undefined) doc.startedAt = startedAt ? new Date(startedAt) : null;
     if (notes !== undefined) doc.notes = String(notes).trim();
-    if (firstCloneCutAt !== undefined) doc.firstCloneCutAt = firstCloneCutAt ? new Date(firstCloneCutAt) : null;
-    if (traitsDescription !== undefined) doc.traitsDescription = String(traitsDescription).trim();
-    if (Array.isArray(ratings)) {
-      doc.ratings = ratings.map((r) => ({ criterion: String(r.criterion || '').trim(), score: Math.min(10, Math.max(0, Number(r.score) || 0)) }));
-    }
-    if (Array.isArray(developmentLog)) {
-      doc.developmentLog = developmentLog.map((e) => ({ date: new Date(e.date), text: String(e.text || '') }));
+    if (Array.isArray(plants)) {
+      doc.plants = plants.map(normalizePlant);
     }
     if (status !== undefined && ['active', 'archived'].includes(status)) doc.status = status;
 
