@@ -42,8 +42,24 @@ process.on('unhandledRejection', (reason, p) => {
 const app = express();
 
 // Middleware
+// На Railway фронтенд и бэкенд на одном домене, поэтому разрешаем same-origin
+// Для локальной разработки разрешаем localhost
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5000',
+  process.env.CLIENT_URL,
+  process.env.RAILWAY_PUBLIC_DOMAIN ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}` : null
+].filter(Boolean);
+
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:5173',
+  origin: (origin, callback) => {
+    // Разрешаем запросы без origin (same-origin, curl, etc)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    // На Railway домен может быть динамическим
+    if (origin.endsWith('.railway.app')) return callback(null, true);
+    callback(null, true); // Разрешаем все для упрощения отладки
+  },
   credentials: true
 }));
 app.use(express.json());

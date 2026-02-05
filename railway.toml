@@ -3,6 +3,8 @@
 builder = "nixpacks"
 
 [deploy]
-startCommand = "npm run start"
+startCommand = "cd server && node server.js"
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 3
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
