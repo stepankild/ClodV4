@@ -28,6 +28,14 @@ const formatStrainsShort = (strains) => {
   return strains.map((s) => (s.strain ? `${s.strain} (${s.quantity})` : s.quantity)).filter(Boolean).join(', ') || '—';
 };
 
+/** Есть ли хотя бы один сорт с количеством > 0 */
+const rowHasStrainData = (row) => {
+  const list = row?.strains || [];
+  return list.some((s) => Number(s?.quantity) > 0);
+};
+
+const orderCutHasStrainData = (cut) => getStrainsFromCut(cut).some((s) => Number(s?.quantity) > 0);
+
 const getCutDateForRoom = (room) => {
   if (room.plannedCycle?.plannedStartDate) {
     const d = new Date(room.plannedCycle.plannedStartDate);
@@ -202,6 +210,10 @@ const Clones = () => {
     const strains = (modalStrains || [])
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
+    if (editForm.isDone && (strains.length === 0 || strains.every((s) => s.quantity === 0))) {
+      setError('При отметке «Нарезано» укажите хотя бы один сорт и количество нарезанного.');
+      return;
+    }
     try {
       setSavingId(room._id);
       const payload = {
@@ -367,6 +379,10 @@ const Clones = () => {
     const strains = (orderModalStrains || [])
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
+    if (orderEditForm.isDone && (strains.length === 0 || strains.every((s) => s.quantity === 0))) {
+      setError('При отметке «Нарезано» укажите хотя бы один сорт и количество нарезанного.');
+      return;
+    }
     try {
       setSavingOrderId(orderEditModal._id);
       await cloneCutService.update(orderEditModal._id, {
@@ -385,6 +401,12 @@ const Clones = () => {
   };
 
   const toggleOrderDone = async (cut) => {
+    if (!cut.isDone && !orderCutHasStrainData(cut)) {
+      setError('');
+      openEditOrder(cut);
+      setOrderEditForm((f) => ({ ...f, isDone: true }));
+      return;
+    }
     try {
       setSavingOrderId(cut._id);
       const strains = getStrainsFromCut(cut);
@@ -418,6 +440,12 @@ const Clones = () => {
 
   const toggleDone = async (row) => {
     const { room, cutDate, cutId, isDone } = row;
+    if (!isDone && !rowHasStrainData(row)) {
+      setError('');
+      openEdit(row);
+      setEditForm((f) => ({ ...f, isDone: true }));
+      return;
+    }
     try {
       setSavingId(room._id);
       const payload = {
@@ -639,6 +667,11 @@ const Clones = () => {
           >
             <h3 className="text-lg font-semibold text-white mb-1">Нарезка клонов · {editRow.room.name}</h3>
             <p className="text-dark-400 text-sm mb-4">Дата нарезки: {formatDate(editRow.cutDate)}. Сортов без ограничения — добавляйте строки кнопкой «+».</p>
+            {editForm.isDone && !rowHasStrainData(editRow) && (
+              <p className="text-amber-400 text-sm mb-3 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
+                Укажите, сколько какого сорта нарезано (хотя бы один сорт и количество), затем нажмите «Сохранить».
+              </p>
+            )}
             <div className="space-y-4">
               <div>
                 <label className="block text-xs text-dark-400 mb-2">Сорта и количество (сейчас строк: {(modalStrains || []).length})</label>
@@ -833,6 +866,11 @@ const Clones = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setOrderEditModal(null)}>
           <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
             <h3 className="text-lg font-semibold text-white mb-4">Редактировать бэтч на заказ</h3>
+            {orderEditForm.isDone && !(orderModalStrains || []).some((s) => Number(s.quantity) > 0) && (
+              <p className="text-amber-400 text-sm mb-3 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
+                Укажите, сколько какого сорта нарезано (хотя бы один сорт и количество), затем нажмите «Сохранить».
+              </p>
+            )}
             <div className="space-y-4">
               <div>
                 <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
