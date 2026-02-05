@@ -51,18 +51,30 @@ app.use('/api/clone-cuts', cloneCutRoutes);
 app.use('/api/veg-batches', vegBatchRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 
-// Health check
+// Health check (Railway and load balancers often ping this or /)
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Production: serve frontend build (one server for API + SPA)
-if (process.env.NODE_ENV === 'production') {
-  const clientDist = path.join(__dirname, '../client/dist');
+const clientDist = path.join(__dirname, '../client/dist');
+
+// Production: serve frontend build (one server for API + SPA). Default to production when PORT is set (e.g. Railway).
+const isProduction = process.env.NODE_ENV === 'production' || process.env.PORT;
+if (isProduction) {
   app.use(express.static(clientDist));
+  // Root and all non-API routes → index.html (SPA)
+  app.get('/', (req, res, next) => {
+    res.sendFile(path.join(clientDist, 'index.html'), (err) => {
+      if (err) {
+        res.status(500).send('Frontend not built. Set NODE_ENV=production and run npm run build.');
+      }
+    });
+  });
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(clientDist, 'index.html'));
+    res.sendFile(path.join(clientDist, 'index.html'), (err) => {
+      if (err) next();
+    });
   });
 }
 
