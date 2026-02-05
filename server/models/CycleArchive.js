@@ -4,7 +4,8 @@ const cycleArchiveSchema = new mongoose.Schema({
   room: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'FlowerRoom',
-    required: true
+    required: true,
+    index: false // use compound indexes below only
   },
   roomNumber: {
     type: Number,
@@ -13,11 +14,6 @@ const cycleArchiveSchema = new mongoose.Schema({
   roomName: {
     type: String,
     required: true
-  },
-  // Название/код цикла
-  cycleName: {
-    type: String,
-    default: ''
   },
   // Основные данные цикла
   strain: {

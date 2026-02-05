@@ -13,12 +13,7 @@ const flowerRoomSchema = new mongoose.Schema({
       return `Комната ${this.roomNumber}`;
     }
   },
-  // Название/код цикла (задаётся при старте)
-  cycleName: {
-    type: String,
-    trim: true,
-    default: ''
-  },
+  cycleName: { type: String, trim: true, default: '' },
   strain: {
     type: String,
     trim: true,

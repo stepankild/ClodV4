@@ -4,8 +4,7 @@ import mongoose from 'mongoose';
 export const TASK_TYPES = {
   SPRAY: 'spray',           // Опрыскивание
   NET: 'net',               // Натяжка сетки
-  TRIM: 'trim',             // Подрезка (нед.2)
-  DEFOLIATION: 'defoliation', // Убрать листики (нед.4)
+  TRIM: 'trim',             // Подрезка/дефолиация
   FEED: 'feed',             // Подкормка
   WATER: 'water',           // Полив
   FLUSH: 'flush',           // Промывка
@@ -19,8 +18,7 @@ export const TASK_TYPES = {
 export const TASK_LABELS = {
   spray: 'Опрыскивание',
   net: 'Натяжка сетки',
-  trim: 'Подрезка (нед.2)',
-  defoliation: 'Убрать листики (нед.4)',
+  trim: 'Подрезка/Дефолиация',
   feed: 'Подкормка',
   water: 'Полив',
   flush: 'Промывка',
@@ -35,7 +33,8 @@ const roomTaskSchema = new mongoose.Schema({
   room: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'FlowerRoom',
-    required: true
+    required: true,
+    index: false // use compound indexes below only
   },
   cycleId: {
     type: mongoose.Schema.Types.ObjectId,

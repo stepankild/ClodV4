@@ -5,7 +5,8 @@ const roomLogSchema = new mongoose.Schema({
   room: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'FlowerRoom',
-    required: true
+    required: true,
+    index: false // use compound indexes below only
   },
   cycleId: {
     type: mongoose.Schema.Types.ObjectId,

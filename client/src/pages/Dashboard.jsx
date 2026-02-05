@@ -1,25 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { roomService } from '../services/roomService';
-import { archiveService } from '../services/archiveService';
 import RoomCard from '../components/FlowerRoom/RoomCard';
-
-const formatDate = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleDateString('ru-RU');
-};
 
 const Dashboard = () => {
   const { user } = useAuth();
   const [rooms, setRooms] = useState([]);
-  const [recentArchives, setRecentArchives] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     loadRooms();
-    loadRecentArchives();
   }, []);
 
   const loadRooms = async () => {
@@ -32,15 +23,6 @@ const Dashboard = () => {
       console.error(err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const loadRecentArchives = async () => {
-    try {
-      const { archives } = await archiveService.getArchives({ limit: 5 });
-      setRecentArchives(archives || []);
-    } catch (err) {
-      console.error(err);
     }
   };
 
@@ -62,9 +44,16 @@ const Dashboard = () => {
     }
   };
 
-  const handleArchiveComplete = (updatedRoom) => {
-    setRooms(rooms.map(r => r._id === updatedRoom._id ? updatedRoom : r));
-    loadRecentArchives();
+  const handleHarvest = async (id) => {
+    if (!confirm('Вы уверены, что хотите собрать урожай? Данные комнаты будут сброшены.')) {
+      return;
+    }
+    try {
+      const updated = await roomService.harvestRoom(id);
+      setRooms(rooms.map(r => r._id === id ? updated : r));
+    } catch (err) {
+      console.error('Harvest error:', err);
+    }
   };
 
   // Calculate stats
@@ -169,101 +158,31 @@ const Dashboard = () => {
         ))}
       </div>
 
-      {/* 1. Сейчас цветёт — активные комнаты */}
-      <section className="mb-10">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-semibold text-white flex items-center gap-2">
-            <span className="w-2 h-6 rounded bg-primary-500" />
-            Сейчас цветёт
-          </h2>
-          <button
-            onClick={() => { loadRooms(); loadRecentArchives(); }}
-            className="text-dark-400 hover:text-white p-2 hover:bg-dark-800 rounded-lg transition"
-            title="Обновить"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-          </button>
-        </div>
-        {rooms.filter(r => r.isActive).length === 0 ? (
-          <p className="text-dark-400 text-sm mb-4">Нет активных циклов. Запустите цикл в блоке «Планируется».</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {rooms.filter(r => r.isActive).map((room) => (
-              <RoomCard
-                key={room._id}
-                room={room}
-                onUpdate={handleUpdateRoom}
-                onStartCycle={handleStartCycle}
-                onArchiveComplete={handleArchiveComplete}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Flower rooms header */}
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-semibold text-white">Комнаты цветения</h2>
+        <button
+          onClick={loadRooms}
+          className="text-dark-400 hover:text-white p-2 hover:bg-dark-800 rounded-lg transition"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        </button>
+      </div>
 
-      {/* 2. Собрано / Прошедшие циклы — архив */}
-      <section className="mb-10">
-        <h2 className="text-xl font-semibold text-white flex items-center gap-2 mb-4">
-          <span className="w-2 h-6 rounded bg-green-600" />
-          Собрано (прошедшие циклы)
-        </h2>
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-4">
-          {recentArchives.length === 0 ? (
-            <p className="text-dark-400 text-sm">Пока нет завершённых циклов. Архивированные циклы появятся здесь.</p>
-          ) : (
-            <ul className="space-y-2">
-              {recentArchives.map((a) => (
-                <li key={a._id}>
-                  <Link
-                    to={`/archive/${a._id}`}
-                    className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-dark-700 text-white"
-                  >
-                    <span>
-                      {a.cycleName ? (
-                        <span className="font-medium">{a.cycleName}</span>
-                      ) : null}
-                      {a.cycleName && (a.roomName || a.strain) ? ' · ' : null}
-                      {a.roomName || `Комната ${a.roomNumber}`} — {a.strain || '—'}
-                    </span>
-                    <span className="text-dark-400 text-sm">{formatDate(a.harvestDate)}</span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
-          )}
-          <Link
-            to="/archive"
-            className="inline-block mt-3 text-primary-400 hover:text-primary-300 text-sm font-medium"
-          >
-            Весь архив →
-          </Link>
-        </div>
-      </section>
-
-      {/* 3. Планируется — свободные комнаты для следующего цикла */}
-      <section>
-        <h2 className="text-xl font-semibold text-white flex items-center gap-2 mb-4">
-          <span className="w-2 h-6 rounded bg-dark-500" />
-          Планируется (следующий цикл)
-        </h2>
-        {rooms.filter(r => !r.isActive).length === 0 ? (
-          <p className="text-dark-400 text-sm">Все комнаты заняты текущими циклами.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-            {rooms.filter(r => !r.isActive).map((room) => (
-              <RoomCard
-                key={room._id}
-                room={room}
-                onUpdate={handleUpdateRoom}
-                onStartCycle={handleStartCycle}
-                onArchiveComplete={handleArchiveComplete}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Flower rooms grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {rooms.map((room) => (
+          <RoomCard
+            key={room._id}
+            room={room}
+            onUpdate={handleUpdateRoom}
+            onStartCycle={handleStartCycle}
+            onHarvest={handleHarvest}
+          />
+        ))}
+      </div>
     </div>
   );
 };

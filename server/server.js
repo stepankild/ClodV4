@@ -28,12 +28,10 @@ import './models/CloneCut.js';
 import './models/VegBatch.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-dotenv.config();
+// Load .env from server folder (Railway uses Variables, so MONGODB_URI must be set there)
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
-
-// Connect to database
-connectDB();
 
 // Middleware
 app.use(cors({
@@ -76,6 +74,11 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
-app.listen(PORT, () => {
+// Listen first so Railway gets a response (no 502). DB connects after.
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
+  connectDB().catch((err) => {
+    console.error('MongoDB connection failed:', err.message);
+    // Don't exit — server stays up; API will return errors until DB is fixed
+  });
 });

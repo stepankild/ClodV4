@@ -1,13 +1,14 @@
 import mongoose from 'mongoose';
 
 const connectDB = async () => {
-  try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI);
-    console.log(`MongoDB Connected: ${conn.connection.host}`);
-  } catch (error) {
-    console.error(`Error: ${error.message}`);
-    process.exit(1);
+  const uri = process.env.MONGODB_URI;
+  if (!uri || typeof uri !== 'string') {
+    const msg = 'MONGODB_URI is not set. On Railway: Variables → add MONGODB_URI, then redeploy.';
+    console.error(msg);
+    throw new Error(msg);
   }
+  const conn = await mongoose.connect(uri);
+  console.log(`MongoDB Connected: ${conn.connection.host}`);
 };
 
 export default connectDB;

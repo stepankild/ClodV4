@@ -19,10 +19,10 @@ const ProtectedRoute = ({ children, permission }) => {
 
   if (permission && !hasPermission(permission)) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0f0f0f]">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="text-center">
-          <h1 className="text-4xl font-bold text-dark-400 mb-4">403</h1>
-          <p className="text-dark-500">У вас нет доступа к этой странице</p>
+          <h1 className="text-4xl font-bold text-gray-800 mb-4">403</h1>
+          <p className="text-gray-600">У вас нет доступа к этой странице</p>
         </div>
       </div>
     );

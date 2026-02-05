@@ -34,14 +34,8 @@ export const login = async (req, res) => {
     user.lastLogin = new Date();
     await user.save();
 
-    // Get permissions (always array for frontend)
-    let permissions = [];
-    try {
-      permissions = await user.getPermissions();
-    } catch (e) {
-      console.error('getPermissions error:', e);
-    }
-    if (!Array.isArray(permissions)) permissions = [];
+    // Get permissions
+    const permissions = await user.getPermissions();
 
     res.json({
       accessToken,
@@ -50,7 +44,7 @@ export const login = async (req, res) => {
         id: user._id,
         email: user.email,
         name: user.name,
-        roles: (user.roles || []).map(r => ({ id: r._id, name: r.name })),
+        roles: user.roles.map(r => ({ id: r._id, name: r.name })),
         permissions
       }
     });
@@ -128,19 +122,13 @@ export const getMe = async (req, res) => {
         populate: { path: 'permissions' }
       });
 
-    let permissions = [];
-    try {
-      permissions = await user.getPermissions();
-    } catch (e) {
-      console.error('getPermissions error:', e);
-    }
-    if (!Array.isArray(permissions)) permissions = [];
+    const permissions = await user.getPermissions();
 
     res.json({
       id: user._id,
       email: user.email,
       name: user.name,
-      roles: (user.roles || []).map(r => ({ id: r._id, name: r.name })),
+      roles: user.roles.map(r => ({ id: r._id, name: r.name })),
       permissions
     });
   } catch (error) {

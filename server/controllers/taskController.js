@@ -190,30 +190,25 @@ export const deleteTask = async (req, res) => {
   }
 };
 
-// @desc    Quick add common task (mark action as done with optional date)
+// @desc    Quick add common task
 // @route   POST /api/tasks/quick
 export const quickAddTask = async (req, res) => {
   try {
-    const { roomId, type, product, dosage, completedAt, description } = req.body;
+    const { roomId, type, product, dosage } = req.body;
 
     const room = await FlowerRoom.findById(roomId);
     if (!room) {
       return res.status(404).json({ message: 'Комната не найдена' });
     }
 
-    const doneAt = completedAt ? new Date(completedAt) : new Date();
-    const dayOfCycle = room.startDate && room.floweringDays
-      ? Math.max(1, Math.min(room.floweringDays, Math.floor((doneAt - new Date(room.startDate)) / (1000 * 60 * 60 * 24)) + 1))
-      : (room.currentDay || null);
-
     const taskData = {
       room: roomId,
       cycleId: room.currentCycleId,
       type,
-      title: TASK_LABELS[type] || type,
-      dayOfCycle,
+      title: TASK_LABELS[type],
+      dayOfCycle: room.currentDay || null,
       completed: true,
-      completedAt: doneAt,
+      completedAt: new Date(),
       completedBy: req.user._id
     };
 
@@ -224,8 +219,6 @@ export const quickAddTask = async (req, res) => {
       taskData.feedProduct = product || '';
       taskData.feedDosage = dosage || '';
       taskData.title = product ? `Подкормка: ${product}` : 'Подкормка';
-    } else if (description) {
-      taskData.description = description;
     }
 
     const task = await RoomTask.create(taskData);

@@ -6,15 +6,18 @@ const plannedCycleSchema = new mongoose.Schema({
     ref: 'FlowerRoom',
     required: true
   },
-  cycleName: { type: String, trim: true, default: '' },
-  strain: { type: String, trim: true, default: '' },
+  cycleName: { type: String, default: '' },
+  strain: { type: String, default: '' },
   plannedStartDate: { type: Date, default: null },
-  plantsCount: { type: Number, default: 0, min: 0 },
-  floweringDays: { type: Number, default: 56, min: 1 },
+  plantsCount: { type: Number, default: 0 },
+  floweringDays: { type: Number, default: 56 },
   notes: { type: String, default: '' }
-}, { timestamps: true });
+}, {
+  timestamps: true
+});
 
-plannedCycleSchema.index({ room: 1 }, { unique: true });
+plannedCycleSchema.index({ room: 1 });
 
 const PlannedCycle = mongoose.model('PlannedCycle', plannedCycleSchema);
+
 export default PlannedCycle;

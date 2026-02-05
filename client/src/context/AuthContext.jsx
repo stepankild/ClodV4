@@ -21,14 +21,8 @@ export const AuthProvider = ({ children }) => {
       if (savedUser && authService.isAuthenticated()) {
         try {
           const userData = await authService.getMe();
-          const u = userData || {};
-          const normalized = {
-            ...u,
-            permissions: Array.isArray(u.permissions) ? u.permissions : [],
-            roles: Array.isArray(u.roles) ? u.roles : []
-          };
-          setUser(normalized);
-          localStorage.setItem('user', JSON.stringify(normalized));
+          setUser(userData);
+          localStorage.setItem('user', JSON.stringify(userData));
         } catch (error) {
           console.error('Auth init error:', error);
           localStorage.removeItem('accessToken');
@@ -44,17 +38,11 @@ export const AuthProvider = ({ children }) => {
 
   const login = async (email, password) => {
     const data = await authService.login(email, password);
-    const u = data.user || {};
-    const normalizedUser = {
-      ...u,
-      permissions: Array.isArray(u.permissions) ? u.permissions : [],
-      roles: Array.isArray(u.roles) ? u.roles : []
-    };
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
-    localStorage.setItem('user', JSON.stringify(normalizedUser));
-    setUser(normalizedUser);
-    return normalizedUser;
+    localStorage.setItem('user', JSON.stringify(data.user));
+    setUser(data.user);
+    return data.user;
   };
 
   const logout = async () => {
@@ -63,14 +51,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   const hasPermission = (permission) => {
-    if (!user) return false;
-    const perms = user.permissions;
-    if (!Array.isArray(perms)) return false;
-    return perms.includes('*') || perms.includes(permission);
+    if (!user || !user.permissions) return false;
+    return user.permissions.includes('*') || user.permissions.includes(permission);
   };
 
   const hasAnyPermission = (permissions) => {
-    if (!Array.isArray(permissions)) return false;
     return permissions.some(p => hasPermission(p));
   };
 

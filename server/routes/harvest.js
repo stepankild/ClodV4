@@ -9,16 +9,18 @@ import {
   getSessions
 } from '../controllers/harvestController.js';
 import { protect } from '../middleware/auth.js';
+import { checkPermission } from '../middleware/rbac.js';
 
 const router = express.Router();
+
 router.use(protect);
 
 router.get('/scale', getScaleReading);
-router.get('/session', getSessionByRoom);
-router.post('/session', createSession);
-router.get('/sessions', getSessions);
-router.post('/session/:sessionId/plant', addPlant);
-router.patch('/session/:sessionId/plant/:plantNumber', setPlantErrorNote);
-router.post('/session/:sessionId/complete', completeSession);
+router.get('/session', checkPermission('harvest:view'), getSessionByRoom);
+router.post('/session', checkPermission('harvest:do'), createSession);
+router.post('/session/:sessionId/plant', checkPermission('harvest:do'), addPlant);
+router.patch('/session/:sessionId/plant/:plantNumber', checkPermission('harvest:do'), setPlantErrorNote);
+router.post('/session/:sessionId/complete', checkPermission('harvest:do'), completeSession);
+router.get('/sessions', checkPermission('harvest:view'), getSessions);
 
 export default router;

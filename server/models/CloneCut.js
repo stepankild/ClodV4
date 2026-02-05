@@ -4,22 +4,24 @@ const cloneCutSchema = new mongoose.Schema({
   room: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'FlowerRoom',
-    required: true,
-    unique: true
+    required: true
   },
   cutDate: { type: Date, required: true },
-  strain: { type: String, trim: true, default: '' },
-  quantity: { type: Number, default: 0, min: 0 },
   strains: [{
-    strain: { type: String, trim: true, default: '' },
-    quantity: { type: Number, default: 0, min: 0 }
-  }], // default [] if not set
+    strain: { type: String, default: '' },
+    quantity: { type: Number, default: 0 }
+  }],
+  strain: { type: String, default: '' },
+  quantity: { type: Number, default: 0 },
   isDone: { type: Boolean, default: false },
   notes: { type: String, default: '' }
-}, { timestamps: true });
+}, {
+  timestamps: true
+});
 
-cloneCutSchema.index({ room: 1 }, { unique: true });
+cloneCutSchema.index({ room: 1 });
 cloneCutSchema.index({ cutDate: 1 });
 
 const CloneCut = mongoose.model('CloneCut', cloneCutSchema);
+
 export default CloneCut;
