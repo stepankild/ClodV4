@@ -4,7 +4,7 @@ const cloneCutSchema = new mongoose.Schema({
   room: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'FlowerRoom',
-    required: true
+    default: null
   },
   cutDate: { type: Date, required: true },
   strains: [{

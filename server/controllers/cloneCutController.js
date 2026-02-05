@@ -27,11 +27,32 @@ export const getCloneCuts = async (req, res) => {
   }
 };
 
-// @desc    Upsert clone cut by room (one per room)
+// @desc    Create clone cut "на заказ" (вне комнаты) or upsert by room
 // @route   POST /api/clone-cuts
 export const upsertCloneCut = async (req, res) => {
   try {
-    const { roomId, cutDate, strain, quantity, strains, isDone, notes } = req.body;
+    const { roomId, forOrder, cutDate, strain, quantity, strains, isDone, notes } = req.body;
+    const isOrderBatch = Boolean(forOrder) || !roomId;
+
+    if (isOrderBatch) {
+      if (!cutDate) {
+        return res.status(400).json({ message: 'Укажите дату нарезки (cutDate)' });
+      }
+      const { strains: normalizedStrains, strain: derivedStrain, quantity: derivedQuantity } = normalizeStrains(strains, strain, quantity);
+      const doc = new CloneCut({
+        room: null,
+        cutDate: new Date(cutDate),
+        strains: normalizedStrains,
+        strain: derivedStrain,
+        quantity: derivedQuantity,
+        isDone: Boolean(isDone),
+        notes: notes != null ? String(notes).trim() : ''
+      });
+      await doc.save();
+      await createAuditLog(req, { action: 'clone_cut.create_order', entityType: 'CloneCut', entityId: doc._id, details: { cutDate: doc.cutDate, isDone: doc.isDone } });
+      return res.status(201).json(doc);
+    }
+
     if (!roomId || !mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({ message: 'Укажите комнату (roomId)' });
     }
@@ -87,7 +108,7 @@ export const updateCloneCut = async (req, res) => {
     if (notes !== undefined) doc.notes = String(notes).trim();
 
     await doc.save();
-    await doc.populate('room', 'name roomNumber');
+    if (doc.room) await doc.populate('room', 'name roomNumber');
     await createAuditLog(req, { action: 'clone_cut.update', entityType: 'CloneCut', entityId: doc._id, details: { roomId: doc.room?.toString(), isDone: doc.isDone } });
     res.json(doc);
   } catch (error) {
@@ -95,3 +116,21 @@ export const updateCloneCut = async (req, res) => {
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
+
+
+// @desc    Delete clone cut (e.g. order batch)
+// @route   DELETE /api/clone-cuts/:id
+export const deleteCloneCut = async (req, res) => {
+  try {
+    const doc = await CloneCut.findById(req.params.id);
+    if (!doc) return res.status(404).json({ message: 'Запись не найдена' });
+    const id = doc._id;
+    await doc.deleteOne();
+    await createAuditLog(req, { action: 'clone_cut.delete', entityType: 'CloneCut', entityId: id, details: {} });
+    res.json({ message: 'Удалено' });
+  } catch (error) {
+    console.error('Delete clone cut error:', error);
+    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+  }
+};
+

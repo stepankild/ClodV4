@@ -62,6 +62,13 @@ const Clones = () => {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [modalStrains, setModalStrains] = useState([]);
   const editModalWasOpen = useRef(false);
+  const [addOrderModal, setAddOrderModal] = useState(false);
+  const [orderForm, setOrderForm] = useState({ cutDate: new Date().toISOString().slice(0, 10), strains: [{ strain: '', quantity: '' }], notes: '' });
+  const [orderEditModal, setOrderEditModal] = useState(null);
+  const [orderEditForm, setOrderEditForm] = useState({ cutDate: '', isDone: false, notes: '' });
+  const [orderModalStrains, setOrderModalStrains] = useState([]);
+  const orderModalStrainKey = useRef(0);
+  const [savingOrderId, setSavingOrderId] = useState(null);
 
   useEffect(() => {
     load();
@@ -156,6 +163,8 @@ const Clones = () => {
   const logBatches = (Array.isArray(vegBatches) ? vegBatches : [])
     .filter((b) => b.sourceCloneCut != null)
     .sort((a, b) => new Date(b.transplantedToVegAt) - new Date(a.transplantedToVegAt));
+
+  const orderCuts = (Array.isArray(cloneCuts) ? cloneCuts : []).filter((c) => !c.room);
 
   const openEdit = (row) => {
     setEditRow(row);
@@ -275,6 +284,135 @@ const Clones = () => {
       console.error(err);
     } finally {
       setSavingId(null);
+    }
+  };
+
+  const openAddOrderModal = () => {
+    setOrderForm({ cutDate: new Date().toISOString().slice(0, 10), strains: [{ strain: '', quantity: '' }], notes: '' });
+    setAddOrderModal(true);
+  };
+
+  const addOrderFormStrainRow = () => {
+    setOrderForm((f) => ({ ...f, strains: [...(f.strains || []), { strain: '', quantity: '' }] }));
+  };
+
+  const removeOrderFormStrainRow = (index) => {
+    setOrderForm((f) => ({ ...f, strains: (f.strains || []).filter((_, i) => i !== index) }));
+  };
+
+  const updateOrderFormStrainRow = (index, field, value) => {
+    setOrderForm((f) => ({
+      ...f,
+      strains: (f.strains || []).map((s, i) => (i === index ? { ...s, [field]: value } : s))
+    }));
+  };
+
+  const handleAddOrderSubmit = async (e) => {
+    e.preventDefault();
+    const strains = (orderForm.strains || [])
+      .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
+      .filter((s) => s.strain !== '' || s.quantity > 0);
+    if (strains.length === 0) {
+      setError('Укажите хотя бы один сорт и количество');
+      return;
+    }
+    try {
+      setSavingOrderId('add');
+      await cloneCutService.createOrder({
+        cutDate: orderForm.cutDate,
+        strains,
+        notes: (orderForm.notes || '').trim()
+      });
+      setAddOrderModal(false);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка создания бэтча');
+    } finally {
+      setSavingOrderId(null);
+    }
+  };
+
+  const openEditOrder = (cut) => {
+    const list = getStrainsFromCut(cut);
+    const withKeys = (list.length ? list : [{ strain: '', quantity: 0 }]).map((s) => ({
+      strain: String(s.strain ?? ''),
+      quantity: String(s.quantity ?? ''),
+      _key: orderModalStrainKey.current++
+    }));
+    setOrderModalStrains(withKeys.length >= 2 ? withKeys : [...withKeys, { strain: '', quantity: '', _key: orderModalStrainKey.current++ }]);
+    setOrderEditForm({
+      cutDate: cut.cutDate ? new Date(cut.cutDate).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
+      isDone: Boolean(cut.isDone),
+      notes: (cut.notes || '').trim()
+    });
+    setOrderEditModal(cut);
+  };
+
+  const addOrderEditStrainRow = () => {
+    setOrderModalStrains((prev) => [...(prev || []), { strain: '', quantity: '', _key: orderModalStrainKey.current++ }]);
+  };
+
+  const removeOrderEditStrainRow = (index) => {
+    setOrderModalStrains((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateOrderEditStrainRow = (index, field, value) => {
+    setOrderModalStrains((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, [field]: value } : s))
+    );
+  };
+
+  const handleSaveOrderEdit = async () => {
+    if (!orderEditModal) return;
+    const strains = (orderModalStrains || [])
+      .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
+      .filter((s) => s.strain !== '' || s.quantity > 0);
+    try {
+      setSavingOrderId(orderEditModal._id);
+      await cloneCutService.update(orderEditModal._id, {
+        cutDate: orderEditForm.cutDate,
+        strains: strains.length ? strains : [{ strain: '', quantity: 0 }],
+        isDone: orderEditForm.isDone,
+        notes: (orderEditForm.notes || '').trim()
+      });
+      setOrderEditModal(null);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка сохранения');
+    } finally {
+      setSavingOrderId(null);
+    }
+  };
+
+  const toggleOrderDone = async (cut) => {
+    try {
+      setSavingOrderId(cut._id);
+      const strains = getStrainsFromCut(cut);
+      await cloneCutService.update(cut._id, {
+        cutDate: cut.cutDate,
+        strains: strains.length ? strains : [{ strain: cut.strain, quantity: cut.quantity }],
+        isDone: !cut.isDone,
+        notes: (cut.notes || '').trim()
+      });
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка');
+    } finally {
+      setSavingOrderId(null);
+    }
+  };
+
+  const deleteOrderCut = async (cut) => {
+    if (!confirm('Удалить этот бэтч на заказ?')) return;
+    try {
+      setSavingOrderId(cut._id);
+      await cloneCutService.delete(cut._id);
+      setOrderEditModal(null);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка удаления');
+    } finally {
+      setSavingOrderId(null);
     }
   };
 
@@ -414,6 +552,77 @@ const Clones = () => {
                     </td>
                   </tr>
                 ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Бэтчи на заказ (вне комнаты) */}
+      <div className="mt-8 bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
+        <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">Бэтчи на заказ (вне комнаты)</h2>
+        <p className="text-dark-400 text-sm px-4 py-2">
+          Клоны, которые режут на заказ — не идут в вегетацию и цветение. Только учёт нарезки.
+        </p>
+        {canCreateClones && (
+          <div className="px-4 pb-3">
+            <button
+              type="button"
+              onClick={openAddOrderModal}
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition font-medium"
+            >
+              Добавить бэтч на заказ
+            </button>
+          </div>
+        )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-dark-900">
+              <tr>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Дата нарезки</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Сорт / кол-во</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Заметки</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Статус</th>
+                {canCreateClones && (
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">Действия</th>
+                )}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-dark-700">
+              {orderCuts.length === 0 ? (
+                <tr>
+                  <td colSpan={canCreateClones ? 5 : 4} className="px-4 py-6 text-center text-dark-500">
+                    Нет бэтчей на заказ. Добавьте, если клоны режутся кому-то на заказ и не пойдут в вегу/цвет.
+                  </td>
+                </tr>
+              ) : (
+                orderCuts.map((cut) => {
+                  const strains = getStrainsFromCut(cut);
+                  const quantity = strains.reduce((s, x) => s + x.quantity, 0);
+                  return (
+                    <tr key={cut._id} className={`hover:bg-dark-700/50 ${cut.isDone ? 'bg-green-900/10' : ''}`}>
+                      <td className="px-4 py-3 text-dark-300">{formatDate(cut.cutDate)}</td>
+                      <td className="px-4 py-3 text-dark-300">{formatStrainsShort(strains)}</td>
+                      <td className="px-4 py-3 text-dark-500 text-xs max-w-[200px] truncate" title={cut.notes}>{cut.notes || '—'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${cut.isDone ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
+                          {cut.isDone ? 'Нарезано' : 'Не нарезано'}
+                        </span>
+                      </td>
+                      {canCreateClones && (
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end gap-2 flex-wrap">
+                            <button type="button" onClick={() => openEditOrder(cut)} className="px-2 py-1 text-primary-400 hover:bg-dark-700 rounded text-xs">Изменить</button>
+                            <button type="button" onClick={() => toggleOrderDone(cut)} disabled={savingOrderId === cut._id} className={`px-2 py-1 rounded text-xs ${cut.isDone ? 'bg-red-900/30 text-red-400' : 'bg-green-900/30 text-green-400'}`}>
+                              {cut.isDone ? 'Снять отметку' : 'Отметить нарезано'}
+                            </button>
+                            <button type="button" onClick={() => deleteOrderCut(cut)} disabled={savingOrderId === cut._id} className="px-2 py-1 text-red-400 hover:bg-red-900/30 rounded text-xs">Удалить</button>
+                          </div>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -571,6 +780,92 @@ const Clones = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка: добавить бэтч на заказ */}
+      {addOrderModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setAddOrderModal(false)}>
+          <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-2">Добавить бэтч на заказ</h3>
+            <p className="text-dark-400 text-sm mb-4">Клоны режутся кому-то на заказ — не идут в вегетацию и цветение.</p>
+            <form onSubmit={handleAddOrderSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                <input
+                  type="date"
+                  value={orderForm.cutDate}
+                  onChange={(e) => setOrderForm((f) => ({ ...f, cutDate: e.target.value }))}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <div className="space-y-2">
+                  {(orderForm.strains || []).map((s, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <input type="text" value={s.strain} onChange={(e) => updateOrderFormStrainRow(idx, 'strain', e.target.value)} placeholder="Сорт" className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateOrderFormStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      {(orderForm.strains || []).length > 1 && (
+                        <button type="button" onClick={() => removeOrderFormStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" onClick={addOrderFormStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <textarea value={orderForm.notes} onChange={(e) => setOrderForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setAddOrderModal(false)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
+                <button type="submit" disabled={!!savingOrderId} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">{savingOrderId ? 'Сохранение...' : 'Добавить'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка: редактировать бэтч на заказ */}
+      {orderEditModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setOrderEditModal(null)}>
+          <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-4">Редактировать бэтч на заказ</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                <input type="date" value={orderEditForm.cutDate} onChange={(e) => setOrderEditForm((f) => ({ ...f, cutDate: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <div className="space-y-2">
+                  {(orderModalStrains || []).map((s, idx) => (
+                    <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
+                      <input type="text" value={s.strain} onChange={(e) => updateOrderEditStrainRow(idx, 'strain', e.target.value)} placeholder="Сорт" className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateOrderEditStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      {(orderModalStrains || []).length > 1 && (
+                        <button type="button" onClick={() => removeOrderEditStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" onClick={addOrderEditStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <textarea value={orderEditForm.notes} onChange={(e) => setOrderEditForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none" />
+              </div>
+              <label className="flex items-center gap-2 text-dark-300 cursor-pointer">
+                <input type="checkbox" checked={orderEditForm.isDone} onChange={(e) => setOrderEditForm((f) => ({ ...f, isDone: e.target.checked }))} className="rounded" />
+                <span>Нарезано</span>
+              </label>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setOrderEditModal(null)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
+                <button type="button" onClick={handleSaveOrderEdit} disabled={!!savingOrderId} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">Сохранить</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
