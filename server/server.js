@@ -85,6 +85,10 @@ const indexPath = path.join(clientDist, 'index.html');
 let hasFrontend = false;
 try {
   hasFrontend = fs.existsSync(clientDist) && fs.existsSync(indexPath);
+  console.log('Frontend check:', { clientDist, indexPath, hasFrontend });
+  if (hasFrontend) {
+    console.log('dist contents:', fs.readdirSync(clientDist));
+  }
 } catch (e) {
   console.warn('Frontend check failed:', e.message);
 }
