@@ -1,6 +1,9 @@
 import VegBatch from '../models/VegBatch.js';
+import FlowerRoom from '../models/FlowerRoom.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
+
+const ACTIVE_ROOM_MESSAGE = 'В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.';
 
 const normalizeStrains = (strains, legacyStrain, legacyQuantity) => {
   if (Array.isArray(strains) && strains.length > 0) {
@@ -86,7 +89,16 @@ export const updateVegBatch = async (req, res) => {
     if (cutDate !== undefined) doc.cutDate = new Date(cutDate);
     if (transplantedToVegAt !== undefined) doc.transplantedToVegAt = new Date(transplantedToVegAt);
     if (vegDaysTarget !== undefined) doc.vegDaysTarget = parseInt(vegDaysTarget, 10) || 21;
-    if (flowerRoom !== undefined) doc.flowerRoom = flowerRoom || null;
+    if (flowerRoom !== undefined) {
+      const roomId = flowerRoom || null;
+      if (roomId && mongoose.Types.ObjectId.isValid(roomId)) {
+        const room = await FlowerRoom.findById(roomId).select('isActive').lean();
+        if (room?.isActive) {
+          return res.status(400).json({ message: ACTIVE_ROOM_MESSAGE });
+        }
+      }
+      doc.flowerRoom = roomId;
+    }
     if (transplantedToFlowerAt !== undefined) doc.transplantedToFlowerAt = transplantedToFlowerAt ? new Date(transplantedToFlowerAt) : null;
     if (notes !== undefined) doc.notes = String(notes).trim();
     await doc.save();

@@ -148,9 +148,13 @@ const Vegetation = () => {
   const handleSendToFlower = async (e) => {
     e.preventDefault();
     if (!sendToFlowerModal || !sendRoomId) return;
+    const room = rooms.find((r) => r._id === sendRoomId);
+    if (room?.isActive) {
+      setError('В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.');
+      return;
+    }
     setSaving(true);
     try {
-      const room = rooms.find((r) => r._id === sendRoomId);
       if (room && !room.isActive) {
         await roomService.startCycle(sendRoomId, {
           cycleName: sendToFlowerModal.strain || '',
@@ -165,6 +169,7 @@ const Vegetation = () => {
         transplantedToFlowerAt: sendDate
       });
       setSendToFlowerModal(null);
+      setError('');
       await load();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка');
@@ -334,7 +339,10 @@ const Vegetation = () => {
             className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-md p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-4">Добавить бэтч в вегетацию</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">Добавить бэтч в вегетацию</h3>
+            <p className="text-dark-400 text-sm mb-4 p-3 bg-dark-700/50 border border-dark-600 rounded-lg">
+              Бэтч здесь создаётся только если растите <strong className="text-dark-300">с семечек</strong> или <strong className="text-dark-300">привозные кусты</strong>. Если клоны из своей нарезки — добавляйте нарезку в разделе <strong className="text-primary-400">Клоны</strong>, затем бэтч появится в вегетации.
+            </p>
             <form onSubmit={handleAddSubmit} className="space-y-4">
               <div>
                 <label className="block text-xs text-dark-400 mb-1">Название бэтча</label>
@@ -463,11 +471,16 @@ const Vegetation = () => {
                 >
                   <option value="">— Выберите комнату</option>
                   {rooms.map((r) => (
-                    <option key={r._id} value={r._id}>
-                      {r.name} {r.isActive ? '(активна)' : '(свободна)'}
+                    <option key={r._id} value={r._id} disabled={r.isActive}>
+                      {r.name} {r.isActive ? '(активна — сначала завершите цикл)' : '(свободна)'}
                     </option>
                   ))}
                 </select>
+                {sendRoomId && rooms.find((r) => r._id === sendRoomId)?.isActive && (
+                  <p className="mt-2 text-amber-400 text-sm">
+                    В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-xs text-dark-400 mb-1">Дата пересадки в цвет</label>
