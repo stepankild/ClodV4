@@ -104,6 +104,29 @@ const cycleArchiveSchema = new mongoose.Schema({
     type: String,
     default: ''
   },
+  // Название/код цикла
+  cycleName: {
+    type: String,
+    default: ''
+  },
+  // Данные о клонировании (источник растений)
+  cloneData: {
+    cutDate: Date,           // Когда были нарезаны клоны
+    quantity: Number,        // Сколько клонов было
+    strains: [{
+      strain: String,
+      quantity: Number
+    }],
+    notes: String
+  },
+  // Данные о веге
+  vegData: {
+    transplantedToVegAt: Date,  // Когда пересадили в вегу
+    vegDaysTarget: Number,       // Планируемые дни веги
+    vegDaysActual: Number,       // Фактические дни веги
+    transplantedToFlowerAt: Date, // Когда пересадили на цвет
+    notes: String
+  },
   // Все выполненные задачи за цикл
   completedTasks: [{
     type: {

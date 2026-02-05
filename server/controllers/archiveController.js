@@ -2,6 +2,8 @@ import CycleArchive from '../models/CycleArchive.js';
 import FlowerRoom from '../models/FlowerRoom.js';
 import RoomTask from '../models/RoomTask.js';
 import RoomLog from '../models/RoomLog.js';
+import VegBatch from '../models/VegBatch.js';
+import CloneCut from '../models/CloneCut.js';
 import { createAuditLog } from '../utils/auditLog.js';
 
 // @desc    Get all archives
@@ -196,6 +198,50 @@ export const harvestAndArchive = async (req, res) => {
       completed: true
     }).populate('completedBy', 'name');
 
+    // Получаем связанную вегу (последнюю пересаженную в эту комнату)
+    const vegBatch = await VegBatch.findOne({ flowerRoom: roomId })
+      .sort({ transplantedToFlowerAt: -1 });
+
+    // Получаем данные о клонах если есть вега
+    let cloneData = null;
+    let vegData = null;
+
+    if (vegBatch) {
+      // Данные веги
+      const vegDaysActual = vegBatch.transplantedToFlowerAt && vegBatch.transplantedToVegAt
+        ? Math.floor((new Date(vegBatch.transplantedToFlowerAt) - new Date(vegBatch.transplantedToVegAt)) / (1000 * 60 * 60 * 24))
+        : null;
+
+      vegData = {
+        transplantedToVegAt: vegBatch.transplantedToVegAt,
+        vegDaysTarget: vegBatch.vegDaysTarget,
+        vegDaysActual,
+        transplantedToFlowerAt: vegBatch.transplantedToFlowerAt,
+        notes: vegBatch.notes || ''
+      };
+
+      // Получаем данные клонов из источника веги
+      if (vegBatch.sourceCloneCut) {
+        const cloneCut = await CloneCut.findById(vegBatch.sourceCloneCut);
+        if (cloneCut) {
+          cloneData = {
+            cutDate: cloneCut.cutDate,
+            quantity: cloneCut.quantity || cloneCut.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
+            strains: cloneCut.strains || [],
+            notes: cloneCut.notes || ''
+          };
+        }
+      } else {
+        // Если нет прямой связи, берём из самой веги
+        cloneData = {
+          cutDate: vegBatch.cutDate,
+          quantity: vegBatch.quantity || vegBatch.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
+          strains: vegBatch.strains || [],
+          notes: ''
+        };
+      }
+    }
+
     const harvestDate = new Date();
     const actualDays = room.currentDay;
 
@@ -224,6 +270,8 @@ export const harvestAndArchive = async (req, res) => {
       },
       environment: environment || room.environment,
       notes: room.notes,
+      cloneData,
+      vegData,
       completedTasks: completedTasks.map(t => ({
         type: t.type,
         title: t.title,
