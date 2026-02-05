@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import MainLayout from './components/Layout/MainLayout';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
-import { ErrorBoundary } from './components/ErrorBoundary';
+import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import Login from './pages/Login';
 import Overview from './pages/Overview/Overview';
 import ActiveRooms from './pages/ActiveRooms/ActiveRooms';
