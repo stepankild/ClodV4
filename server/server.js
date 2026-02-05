@@ -1,3 +1,9 @@
+console.log('=== SERVER STARTING ===');
+console.log('Node version:', process.version);
+console.log('CWD:', process.cwd());
+console.log('ENV PORT:', process.env.PORT);
+console.log('ENV MONGODB_URI:', process.env.MONGODB_URI ? 'SET' : 'NOT SET');
+
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -14,6 +20,8 @@ import harvestRoutes from './routes/harvest.js';
 import cloneCutRoutes from './routes/cloneCuts.js';
 import vegBatchRoutes from './routes/vegBatches.js';
 import auditLogRoutes from './routes/auditLogs.js';
+
+console.log('=== IMPORTS DONE ===');
 
 // Import all models to register schemas
 import './models/AuditLog.js';
