@@ -1,0 +1,33 @@
+import api from './api';
+
+export const archiveService = {
+  async getArchives(params = {}) {
+    const response = await api.get('/archive', { params });
+    return response.data;
+  },
+
+  async getArchive(id) {
+    const response = await api.get(`/archive/${id}`);
+    return response.data;
+  },
+
+  async harvestAndArchive(roomId, data) {
+    const response = await api.post(`/archive/harvest/${roomId}`, data);
+    return response.data;
+  },
+
+  async updateArchive(id, data) {
+    const response = await api.put(`/archive/${id}`, data);
+    return response.data;
+  },
+
+  async deleteArchive(id) {
+    await api.delete(`/archive/${id}`);
+  },
+
+  /** period: 'all' | 'year' | '6months' | '3months' */
+  async getStats(period = 'all') {
+    const response = await api.get('/archive/stats', { params: { period } });
+    return response.data;
+  }
+};

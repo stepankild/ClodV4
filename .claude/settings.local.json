@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(docker-compose up:*)",
+      "Bash(docker compose:*)",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\Stepa\\\\Desktop\\\\Harvest scale\\\\ClodV4 && docker compose up -d\")",
+      "Bash(cmd.exe /c \"docker compose -f \"\"C:\\\\Users\\\\Stepa\\\\Desktop\\\\Harvest scale\\\\ClodV4\\\\docker-compose.yml\"\" up -d\")",
+      "Bash(cmd.exe /c \"docker ps\")",
+      "Bash(npm install)",
+      "Bash(cmd.exe /c \"cd /d \"\"C:\\\\Users\\\\Stepa\\\\Desktop\\\\Harvest scale\\\\ClodV4\\\\server\"\" && npm install\")",
+      "Bash(cmd.exe /c \"cd /d \"\"C:\\\\Users\\\\Stepa\\\\Desktop\\\\Harvest scale\\\\ClodV4\\\\server\"\" && npm install 2>&1\")",
+      "Bash(powershell.exe -Command \"cd ''C:\\\\Users\\\\Stepa\\\\Desktop\\\\Harvest scale\\\\ClodV4\\\\server''; npm install\")",
+      "Bash(powershell.exe:*)",
+      "Bash(cmd.exe /c \"set PATH=C:\\\\Program Files\\\\nodejs;%PATH% && cd /d \"\"C:\\\\Users\\\\Stepa\\\\Desktop\\\\Harvest scale\\\\ClodV4\\\\client\"\" && rd /s /q node_modules 2>nul & npm install 2>&1\")",
+      "Bash(\"C:/Program Files/nodejs/npm.cmd\" install --prefix \"C:/Users/Stepa/Desktop/Harvest scale/ClodV4/client\")",
+      "Bash('/c/Program Files/nodejs/npm' install --prefix '/c/Users/Stepa/Desktop/Harvest scale/ClodV4/client')",
+      "Bash(export PATH=\"/c/Program Files/Docker/Docker/resources/bin:$PATH\":*)",
+      "Bash(export PATH=\"/c/Program Files/MongoDB/Server/8.2/bin:$PATH\":*)",
+      "Bash(mongosh:*)",
+      "Bash(\"/c/Program Files/MongoDB/Server/8.2/bin/mongosh\" --eval \"db.version\\(\\)\")",
+      "Bash(export PATH=\"/c/Program Files/nodejs:$PATH\")",
+      "Bash(npm run seed:*)",
+      "Bash(curl:*)",
+      "Bash(tasklist:*)",
+      "Bash(kill:*)",
+      "Bash(pkill:*)"
+    ]
+  }
+}

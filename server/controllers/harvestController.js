@@ -1,0 +1,302 @@
+import mongoose from 'mongoose';
+import HarvestSession from '../models/HarvestSession.js';
+import FlowerRoom from '../models/FlowerRoom.js';
+import CycleArchive from '../models/CycleArchive.js';
+import RoomTask from '../models/RoomTask.js';
+import RoomLog from '../models/RoomLog.js';
+import { createAuditLog } from '../utils/auditLog.js';
+
+// Симуляция весов: случайный вес в граммах (50–500 г)
+const SIMULATED_WEIGHT_MIN = 50;
+const SIMULATED_WEIGHT_MAX = 500;
+
+// @desc    Получить текущее показание весов (симуляция)
+// @route   GET /api/harvest/scale
+export const getScaleReading = async (req, res) => {
+  try {
+    const weight = Math.round(
+      SIMULATED_WEIGHT_MIN + Math.random() * (SIMULATED_WEIGHT_MAX - SIMULATED_WEIGHT_MIN)
+    );
+    res.json({ weight, unit: 'g' });
+  } catch (error) {
+    console.error('Scale reading error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Получить активную сессию сбора по комнате
+// @route   GET /api/harvest/session?roomId=xxx
+export const getSessionByRoom = async (req, res) => {
+  try {
+    const { roomId } = req.query;
+    if (!roomId) {
+      return res.status(400).json({ message: 'Укажите roomId' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({ message: 'Некорректный ID комнаты' });
+    }
+    const session = await HarvestSession.findOne({
+      room: roomId,
+      status: 'in_progress'
+    }).sort({ startedAt: -1 });
+
+    // Нет активной сессии — возвращаем null (фронт создаст новую)
+    if (!session) {
+      return res.status(200).json(null);
+    }
+    await session.populate('plants.recordedBy', 'name email');
+    res.json(session);
+  } catch (error) {
+    console.error('Get harvest session error:', error);
+    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+  }
+};
+
+// @desc    Создать сессию сбора для комнаты
+// @route   POST /api/harvest/session
+export const createSession = async (req, res) => {
+  try {
+    const { roomId } = req.body;
+    if (!roomId) {
+      return res.status(400).json({ message: 'Укажите roomId' });
+    }
+    if (!mongoose.Types.ObjectId.isValid(roomId)) {
+      return res.status(400).json({ message: 'Некорректный ID комнаты' });
+    }
+
+    const room = await FlowerRoom.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: 'Комната не найдена' });
+    }
+    if (!room.isActive) {
+      return res.status(400).json({ message: 'Комната не активна. Запустите цикл или выберите другую комнату.' });
+    }
+
+    const existing = await HarvestSession.findOne({
+      room: roomId,
+      status: 'in_progress'
+    });
+    if (existing) {
+      await existing.populate('plants.recordedBy', 'name email');
+      return res.json(existing);
+    }
+
+    const session = await HarvestSession.create({
+      room: room._id,
+      roomNumber: room.roomNumber,
+      roomName: room.name,
+      cycleName: room.cycleName || '',
+      strain: room.strain || '',
+      plantsCount: room.plantsCount || 0,
+      status: 'in_progress',
+      plants: []
+    });
+    res.status(201).json(session);
+  } catch (error) {
+    console.error('Create harvest session error:', error);
+    res.status(500).json({
+      message: error.message || 'Ошибка сервера',
+      ...(error.name === 'ValidationError' && { details: error.errors })
+    });
+  }
+};
+
+// @desc    Добавить куст в сессию (номер + мокрый вес)
+// @route   POST /api/harvest/session/:sessionId/plant
+export const addPlant = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { plantNumber, wetWeight } = req.body;
+
+    if (plantNumber == null || wetWeight == null) {
+      return res.status(400).json({ message: 'Укажите номер куста и вес (plantNumber, wetWeight)' });
+    }
+
+    const session = await HarvestSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+    }
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ message: 'Сессия уже завершена' });
+    }
+
+    const num = Number(plantNumber);
+    const weight = Number(wetWeight);
+    if (isNaN(num) || num < 1) {
+      return res.status(400).json({ message: 'Номер куста должен быть числом от 1' });
+    }
+    if (isNaN(weight) || weight < 0) {
+      return res.status(400).json({ message: 'Вес должен быть неотрицательным числом' });
+    }
+
+    const duplicate = session.plants.some(p => p.plantNumber === num);
+    if (duplicate) {
+      return res.status(400).json({ message: `Куст №${num} уже записан` });
+    }
+
+    session.plants.push({
+      plantNumber: num,
+      wetWeight: weight,
+      recordedAt: new Date(),
+      recordedBy: req.user._id
+    });
+    await session.save();
+    await session.populate('plants.recordedBy', 'name email');
+
+    await createAuditLog(req, { action: 'harvest.plant_add', entityType: 'HarvestSession', entityId: session._id, details: { roomId: session.room?.toString(), plantNumber: num, wetWeight: weight } });
+    const added = session.plants[session.plants.length - 1];
+    res.status(201).json({ session, added });
+  } catch (error) {
+    console.error('Add plant error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Добавить пометку об ошибке к записи куста (удалять данные нельзя)
+// @route   PATCH /api/harvest/session/:sessionId/plant/:plantNumber
+export const setPlantErrorNote = async (req, res) => {
+  try {
+    const { sessionId, plantNumber } = req.params;
+    const { errorNote } = req.body;
+
+    const session = await HarvestSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+    }
+    const num = Number(plantNumber);
+    const plant = session.plants.find(p => p.plantNumber === num);
+    if (!plant) {
+      return res.status(404).json({ message: 'Запись куста не найдена' });
+    }
+    plant.errorNote = typeof errorNote === 'string' ? errorNote.trim() : '';
+    await session.save();
+    await session.populate('plants.recordedBy', 'name email');
+    res.json(session);
+  } catch (error) {
+    console.error('Set plant error note:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Завершить сессию сбора и автоматически архивировать цикл (комната освобождается)
+// @route   POST /api/harvest/session/:sessionId/complete
+export const completeSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const session = await HarvestSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+    }
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ message: 'Сессия уже завершена' });
+    }
+
+    session.status = 'completed';
+    session.completedAt = new Date();
+    await session.save();
+
+    const room = await FlowerRoom.findById(session.room);
+    if (room && room.isActive) {
+      const totalWet = (session.plants || []).reduce((sum, p) => sum + (p.wetWeight || 0), 0);
+      const completedTasks = await RoomTask.find({
+        room: room._id,
+        completed: true
+      }).populate('completedBy', 'name');
+
+      const harvestDate = new Date();
+      const actualDays = room.currentDay || 0;
+
+      const archive = await CycleArchive.create({
+        room: room._id,
+        roomNumber: room.roomNumber,
+        roomName: room.name,
+        cycleName: session.cycleName || room.cycleName || '',
+        strain: room.strain || '—',
+        plantsCount: room.plantsCount || session.plantsCount || 0,
+        startDate: room.startDate,
+        harvestDate,
+        floweringDays: room.floweringDays || 56,
+        actualDays,
+        harvestData: {
+          wetWeight: totalWet,
+          dryWeight: 0,
+          trimWeight: 0,
+          quality: 'medium',
+          notes: `Автоархив после сбора. Записей кустов: ${(session.plants || []).length}. Сухой вес можно добавить в архиве.`
+        },
+        metrics: {
+          gramsPerPlant: 0,
+          gramsPerDay: 0
+        },
+        environment: room.environment,
+        notes: room.notes,
+        completedTasks: completedTasks.map(t => ({
+          type: t.type,
+          title: t.title,
+          description: t.description,
+          completedAt: t.completedAt,
+          completedBy: t.completedBy?._id,
+          dayOfCycle: t.dayOfCycle,
+          sprayProduct: t.sprayProduct,
+          feedProduct: t.feedProduct,
+          feedDosage: t.feedDosage
+        }))
+      });
+
+      await RoomLog.create({
+        room: room._id,
+        cycleId: archive._id,
+        type: 'cycle_end',
+        title: `Урожай собран: ${room.strain}`,
+        description: `Сырой вес (сбор): ${totalWet}г. Архив создан автоматически.`,
+        data: { archiveId: archive._id, wetWeight: totalWet, actualDays },
+        user: req.user._id,
+        dayOfCycle: actualDays
+      });
+
+      await RoomTask.deleteMany({ room: room._id });
+
+      room.cycleName = '';
+      room.strain = '';
+      room.plantsCount = 0;
+      room.startDate = null;
+      room.expectedHarvestDate = null;
+      room.notes = '';
+      room.isActive = false;
+      room.currentCycleId = null;
+      room.totalCycles = (room.totalCycles || 0) + 1;
+      await room.save();
+
+      await createAuditLog(req, {
+        action: 'harvest.complete',
+        entityType: 'CycleArchive',
+        entityId: archive._id,
+        details: { roomId: room._id.toString(), roomName: room.name, plantsRecorded: (session.plants || []).length }
+      });
+    }
+
+    res.json(session);
+  } catch (error) {
+    console.error('Complete session error:', error);
+    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+  }
+};
+
+// @desc    Список сессий сбора (для инфографики/истории)
+// @route   GET /api/harvest/sessions
+export const getSessions = async (req, res) => {
+  try {
+    const { roomId, status, limit = 20 } = req.query;
+    const query = {};
+    if (roomId) query.room = roomId;
+    if (status) query.status = status;
+
+    const sessions = await HarvestSession.find(query)
+      .sort({ startedAt: -1 })
+      .limit(parseInt(limit));
+    res.json(sessions);
+  } catch (error) {
+    console.error('Get sessions error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};

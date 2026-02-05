@@ -1,0 +1,14 @@
+{
+  "name": "farm-portal",
+  "private": true,
+  "scripts": {
+    "build": "cd client && npm ci && npm run build",
+    "start": "cd server && node server.js",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev",
+    "seed": "cd server && node seeds/initial.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

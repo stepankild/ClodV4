@@ -1,0 +1,80 @@
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { useAuth } from './context/AuthContext';
+import MainLayout from './components/Layout/MainLayout';
+import ProtectedRoute from './components/Auth/ProtectedRoute';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import Login from './pages/Login';
+import Overview from './pages/Overview/Overview';
+import ActiveRooms from './pages/ActiveRooms/ActiveRooms';
+import Archives from './pages/Archive/Archives';
+import ArchiveDetail from './pages/Archive/ArchiveDetail';
+import Harvest from './pages/Harvest/Harvest';
+import Clones from './pages/Clones/Clones';
+import Vegetation from './pages/Vegetation/Vegetation';
+import Workers from './pages/Workers/Workers';
+import Statistics from './pages/Statistics/Statistics';
+import AuditLog from './pages/AuditLog/AuditLog';
+
+function App() {
+  const { isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#0f0f0f]">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+      </div>
+    );
+  }
+
+  return (
+    <ErrorBoundary>
+    <Routes>
+      {/* Public routes */}
+      <Route
+        path="/login"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
+      />
+
+      {/* Protected routes */}
+      <Route
+        element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="/" element={<Overview />} />
+        <Route path="/active" element={<ActiveRooms />} />
+        <Route path="/harvest" element={<Harvest />} />
+        <Route path="/clones" element={<Clones />} />
+        <Route path="/vegetation" element={<Vegetation />} />
+        <Route path="/archive" element={<ProtectedRoute permission="archive:view"><Archives /></ProtectedRoute>} />
+        <Route path="/archive/:id" element={<ProtectedRoute permission="archive:view"><ArchiveDetail /></ProtectedRoute>} />
+        <Route path="/stats" element={<ProtectedRoute permission="stats:view"><Statistics /></ProtectedRoute>} />
+        <Route
+          path="/workers"
+          element={
+            <ProtectedRoute permission="users:read">
+              <Workers />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/audit"
+          element={
+            <ProtectedRoute permission="audit:read">
+              <AuditLog />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/admin/users" element={<Navigate to="/workers" replace />} />
+      </Route>
+
+      {/* Catch all */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+    </ErrorBoundary>
+  );
+}
+
+export default App;
