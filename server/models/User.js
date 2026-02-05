@@ -27,6 +27,10 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+  isApproved: {
+    type: Boolean,
+    default: false  // Новые пользователи требуют одобрения админа
+  },
   lastLogin: {
     type: Date
   },

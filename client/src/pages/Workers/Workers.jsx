@@ -100,6 +100,19 @@ const Workers = () => {
     }
   };
 
+  const handleApprove = async (userId) => {
+    try {
+      const updated = await userService.approveUser(userId);
+      setUsers(users.map(u => u._id === updated._id ? updated : u));
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка одобрения');
+    }
+  };
+
+  // Разделяем пользователей на ожидающих одобрения и одобренных
+  const pendingUsers = users.filter(u => !u.isApproved);
+  const approvedUsers = users.filter(u => u.isApproved);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -204,6 +217,57 @@ const Workers = () => {
         </div>
       )}
 
+      {/* Ожидающие одобрения */}
+      {pendingUsers.length > 0 && (
+        <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-xl mb-6 overflow-hidden">
+          <div className="px-4 py-3 border-b border-yellow-700/50 flex items-center gap-2">
+            <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <h2 className="text-lg font-semibold text-yellow-400">Ожидают одобрения ({pendingUsers.length})</h2>
+          </div>
+          <div className="divide-y divide-yellow-700/30">
+            {pendingUsers.map(user => (
+              <div key={user._id} className="px-4 py-3 flex items-center justify-between gap-4 flex-wrap">
+                <div>
+                  <div className="font-medium text-white">{user.name}</div>
+                  <div className="text-sm text-dark-400">{user.email}</div>
+                  <div className="text-xs text-dark-500 mt-1">
+                    Зарегистрирован: {new Date(user.createdAt).toLocaleDateString('ru-RU')}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {canEditUsers && (
+                    <>
+                      <button
+                        onClick={() => handleApprove(user._id)}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 transition font-medium"
+                      >
+                        Одобрить
+                      </button>
+                      <button
+                        onClick={() => handleEdit(user)}
+                        className="px-3 py-2 text-primary-400 hover:bg-primary-900/30 rounded-lg transition"
+                        title="Редактировать и назначить роль"
+                      >
+                        Настроить
+                      </button>
+                    </>
+                  )}
+                  <button
+                    onClick={() => setDeleteConfirm(user)}
+                    className="px-3 py-2 text-red-400 hover:bg-red-900/30 rounded-lg transition"
+                    title="Отклонить заявку"
+                  >
+                    Отклонить
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -217,7 +281,7 @@ const Workers = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-dark-700">
-              {users.map((user) => (
+              {approvedUsers.map((user) => (
                 <tr key={user._id} className="hover:bg-dark-700/50">
                   <td className="px-6 py-4">
                     <div className="font-medium text-white">{user.name}</div>
@@ -233,6 +297,9 @@ const Workers = () => {
                           {role.name}
                         </span>
                       ))}
+                      {(!user.roles || user.roles.length === 0) && (
+                        <span className="text-xs text-dark-500">Нет ролей</span>
+                      )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -270,8 +337,8 @@ const Workers = () => {
             </tbody>
           </table>
         </div>
-        {users.length === 0 && (
-          <div className="text-center py-12 text-dark-400">Нет работников</div>
+        {approvedUsers.length === 0 && (
+          <div className="text-center py-12 text-dark-400">Нет одобренных работников</div>
         )}
       </div>
 

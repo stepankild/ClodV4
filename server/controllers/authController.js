@@ -1,5 +1,45 @@
 import User from '../models/User.js';
+import Role from '../models/Role.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
+
+// @desc    Register new user (requires admin approval)
+// @route   POST /api/auth/register
+export const register = async (req, res) => {
+  try {
+    const { email, password, name } = req.body;
+
+    // Проверка существующего пользователя
+    const existingUser = await User.findOne({ email });
+    if (existingUser) {
+      return res.status(400).json({ message: 'Пользователь с таким email уже существует' });
+    }
+
+    // Создаём пользователя без ролей, ждёт одобрения
+    const user = new User({
+      email,
+      password,
+      name,
+      roles: [],
+      isActive: true,
+      isApproved: false  // Требует одобрения админа
+    });
+
+    await user.save();
+
+    res.status(201).json({
+      message: 'Регистрация успешна! Ожидайте одобрения администратора.',
+      user: {
+        id: user._id,
+        email: user.email,
+        name: user.name,
+        isApproved: user.isApproved
+      }
+    });
+  } catch (error) {
+    console.error('Register error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
 
 // @desc    Login user
 // @route   POST /api/auth/login
@@ -18,6 +58,11 @@ export const login = async (req, res) => {
 
     if (!user.isActive) {
       return res.status(401).json({ message: 'Аккаунт деактивирован' });
+    }
+
+    // Проверка одобрения
+    if (!user.isApproved) {
+      return res.status(403).json({ message: 'Ваш аккаунт ожидает одобрения администратором' });
     }
 
     const isMatch = await user.comparePassword(password);

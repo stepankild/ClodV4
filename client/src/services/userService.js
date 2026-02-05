@@ -49,5 +49,10 @@ export const userService = {
   async deleteRole(id) {
     const response = await api.delete(`/users/roles/${id}`);
     return response.data;
+  },
+
+  async approveUser(id) {
+    const response = await api.post(`/users/${id}/approve`);
+    return response.data;
   }
 };

@@ -81,7 +81,7 @@ export const createUser = async (req, res) => {
 // @route   PUT /api/users/:id
 export const updateUser = async (req, res) => {
   try {
-    const { email, password, name, roles, isActive } = req.body;
+    const { email, password, name, roles, isActive, isApproved } = req.body;
 
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -109,6 +109,7 @@ export const updateUser = async (req, res) => {
     if (password) user.password = password;
     if (roles !== undefined) user.roles = roles;
     if (isActive !== undefined) user.isActive = isActive;
+    if (isApproved !== undefined) user.isApproved = isApproved;
 
     await user.save();
 
@@ -116,10 +117,34 @@ export const updateUser = async (req, res) => {
       .select('-password -refreshToken')
       .populate('roles', 'name description');
 
-    await createAuditLog(req, { action: 'user.update', entityType: 'User', entityId: user._id, details: { email: user.email, name: user.name } });
+    await createAuditLog(req, { action: 'user.update', entityType: 'User', entityId: user._id, details: { email: user.email, name: user.name, isApproved: user.isApproved } });
     res.json(updatedUser);
   } catch (error) {
     console.error('Update user error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Approve user (shortcut for setting isApproved=true)
+// @route   POST /api/users/:id/approve
+export const approveUser = async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    user.isApproved = true;
+    await user.save();
+
+    const updatedUser = await User.findById(user._id)
+      .select('-password -refreshToken')
+      .populate('roles', 'name description');
+
+    await createAuditLog(req, { action: 'user.approve', entityType: 'User', entityId: user._id, details: { email: user.email, name: user.name } });
+    res.json(updatedUser);
+  } catch (error) {
+    console.error('Approve user error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

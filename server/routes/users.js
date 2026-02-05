@@ -10,7 +10,8 @@ import {
   getPermissions,
   updateRole,
   createRole,
-  deleteRole
+  deleteRole,
+  approveUser
 } from '../controllers/userController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -50,5 +51,8 @@ router.put('/:id', [
 ], updateUser);
 
 router.delete('/:id', checkPermission('users:delete'), deleteUser);
+
+// Approve user registration
+router.post('/:id/approve', checkPermission('users:update'), approveUser);
 
 export default router;

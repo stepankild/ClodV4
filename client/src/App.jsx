@@ -4,6 +4,7 @@ import MainLayout from './components/Layout/MainLayout';
 import ProtectedRoute from './components/Auth/ProtectedRoute';
 import { ErrorBoundary } from './components/ErrorBoundary.jsx';
 import Login from './pages/Login';
+import Register from './pages/Register';
 import Overview from './pages/Overview/Overview';
 import ActiveRooms from './pages/ActiveRooms/ActiveRooms';
 import Archives from './pages/Archive/Archives';
@@ -33,6 +34,10 @@ function App() {
       <Route
         path="/login"
         element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
+      />
+      <Route
+        path="/register"
+        element={isAuthenticated ? <Navigate to="/" replace /> : <Register />}
       />
 
       {/* Protected routes */}
