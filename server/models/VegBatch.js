@@ -23,6 +23,11 @@ const vegBatchSchema = new mongoose.Schema({
   },
   transplantedToFlowerAt: { type: Date, default: null },
   notes: { type: String, default: '' },
+  diedCount: { type: Number, default: 0 },
+  notGrownCount: { type: Number, default: 0 },
+  lightChangeDate: { type: Date, default: null },
+  lightPowerPercent: { type: Number, default: null },
+  sentToFlowerCount: { type: Number, default: 0 },
   deletedAt: { type: Date, default: null }
 }, {
   timestamps: true

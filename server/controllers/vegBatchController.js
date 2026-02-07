@@ -47,6 +47,7 @@ export const createVegBatch = async (req, res) => {
       return res.status(400).json({ message: 'Укажите дату нарезки и дату пересадки в вегетацию' });
     }
     const { strains: normalizedStrains, strain: derivedStrain, quantity: derivedQuantity } = normalizeStrains(strains, strain, quantity);
+    const { diedCount, notGrownCount, lightChangeDate, lightPowerPercent, sentToFlowerCount } = req.body;
     const doc = new VegBatch({
       name: name != null ? String(name).trim() : '',
       sourceCloneCut: sourceCloneCut || null,
@@ -56,7 +57,12 @@ export const createVegBatch = async (req, res) => {
       cutDate: new Date(cutDate),
       transplantedToVegAt: new Date(transplantedToVegAt),
       vegDaysTarget: parseInt(vegDaysTarget, 10) || 21,
-      notes: notes != null ? String(notes).trim() : ''
+      notes: notes != null ? String(notes).trim() : '',
+      diedCount: parseInt(diedCount, 10) >= 0 ? parseInt(diedCount, 10) : 0,
+      notGrownCount: parseInt(notGrownCount, 10) >= 0 ? parseInt(notGrownCount, 10) : 0,
+      lightChangeDate: lightChangeDate ? new Date(lightChangeDate) : null,
+      lightPowerPercent: lightPowerPercent != null && lightPowerPercent !== '' ? Math.min(100, Math.max(0, parseInt(lightPowerPercent, 10))) : null,
+      sentToFlowerCount: parseInt(sentToFlowerCount, 10) >= 0 ? parseInt(sentToFlowerCount, 10) : 0
     });
     await doc.save();
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
@@ -74,7 +80,7 @@ export const updateVegBatch = async (req, res) => {
   try {
     const doc = await VegBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч не найден' });
-    const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes } = req.body;
+    const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes, diedCount, notGrownCount, lightChangeDate, lightPowerPercent, sentToFlowerCount } = req.body;
     if (name !== undefined) doc.name = String(name).trim();
     if (strains !== undefined) {
       const norm = normalizeStrains(strains, doc.strain, doc.quantity);
@@ -102,6 +108,11 @@ export const updateVegBatch = async (req, res) => {
     }
     if (transplantedToFlowerAt !== undefined) doc.transplantedToFlowerAt = transplantedToFlowerAt ? new Date(transplantedToFlowerAt) : null;
     if (notes !== undefined) doc.notes = String(notes).trim();
+    if (diedCount !== undefined) doc.diedCount = parseInt(diedCount, 10) >= 0 ? parseInt(diedCount, 10) : 0;
+    if (notGrownCount !== undefined) doc.notGrownCount = parseInt(notGrownCount, 10) >= 0 ? parseInt(notGrownCount, 10) : 0;
+    if (lightChangeDate !== undefined) doc.lightChangeDate = lightChangeDate ? new Date(lightChangeDate) : null;
+    if (lightPowerPercent !== undefined) doc.lightPowerPercent = lightPowerPercent != null && lightPowerPercent !== '' ? Math.min(100, Math.max(0, parseInt(lightPowerPercent, 10))) : null;
+    if (sentToFlowerCount !== undefined) doc.sentToFlowerCount = parseInt(sentToFlowerCount, 10) >= 0 ? parseInt(sentToFlowerCount, 10) : 0;
     await doc.save();
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
     await doc.populate('flowerRoom', 'name roomNumber');

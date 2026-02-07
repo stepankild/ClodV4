@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { vegBatchService } from '../../services/vegBatchService';
 import { roomService } from '../../services/roomService';
@@ -30,6 +30,26 @@ const formatStrainsShort = (strains) => {
   return strains.map((s) => (s.strain ? `${s.strain} (${s.quantity})` : s.quantity)).filter(Boolean).join(', ') || '—';
 };
 
+const getBatchTotal = (b) => {
+  const fromStrains = getStrainsFromBatch(b).reduce((s, x) => s + x.quantity, 0);
+  return fromStrains || Number(b.quantity) || 0;
+};
+
+const getBatchGoodCount = (b) => {
+  const total = getBatchTotal(b);
+  const died = Number(b.diedCount) || 0;
+  const notGrown = Number(b.notGrownCount) || 0;
+  return Math.max(0, total - died - notGrown);
+};
+
+const getBatchGoodPercent = (b) => {
+  const total = getBatchTotal(b);
+  if (total <= 0) return 0;
+  return Math.round((getBatchGoodCount(b) / total) * 100);
+};
+
+const getBatchRemainder = (b) => Math.max(0, getBatchGoodCount(b) - (Number(b.sentToFlowerCount) || 0));
+
 const Vegetation = () => {
   const { hasPermission } = useAuth();
   const canCreateVeg = hasPermission && hasPermission('vegetation:create');
@@ -43,6 +63,7 @@ const Vegetation = () => {
   const [sendToFlowerModal, setSendToFlowerModal] = useState(null);
   const [sendRoomId, setSendRoomId] = useState('');
   const [sendDate, setSendDate] = useState(new Date().toISOString().slice(0, 10));
+  const [sendCount, setSendCount] = useState('');
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -55,6 +76,22 @@ const Vegetation = () => {
   });
   const [editingNameId, setEditingNameId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const [editBatch, setEditBatch] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    strains: [{ strain: '', quantity: '' }],
+    cutDate: '',
+    transplantedToVegAt: '',
+    vegDaysTarget: '21',
+    sourceCloneCut: '',
+    notes: '',
+    diedCount: '',
+    notGrownCount: '',
+    lightChangeDate: '',
+    lightPowerPercent: '',
+    sentToFlowerCount: ''
+  });
+  const editFormStrainKey = useRef(0);
 
   useEffect(() => {
     load();
@@ -143,6 +180,7 @@ const Vegetation = () => {
     setSendToFlowerModal(batch);
     setSendRoomId('');
     setSendDate(new Date().toISOString().slice(0, 10));
+    setSendCount(String(getBatchGoodCount(batch)));
   };
 
   const handleSendToFlower = async (e) => {
@@ -155,18 +193,20 @@ const Vegetation = () => {
     }
     setSaving(true);
     try {
+      const count = Math.max(0, parseInt(sendCount, 10) || 0);
       if (room && !room.isActive) {
         await roomService.startCycle(sendRoomId, {
-          cycleName: sendToFlowerModal.strain || '',
+          cycleName: sendToFlowerModal.name || sendToFlowerModal.strain || '',
           strain: sendToFlowerModal.strain || '',
-          plantsCount: sendToFlowerModal.quantity || 0,
+          plantsCount: count,
           floweringDays: 56,
           startDate: sendDate
         });
       }
       await vegBatchService.update(sendToFlowerModal._id, {
         flowerRoom: sendRoomId,
-        transplantedToFlowerAt: sendDate
+        transplantedToFlowerAt: sendDate,
+        sentToFlowerCount: count
       });
       setSendToFlowerModal(null);
       setError('');
@@ -182,9 +222,79 @@ const Vegetation = () => {
     if (!confirm('Удалить бэтч из вегетации?')) return;
     try {
       await vegBatchService.delete(id);
+      setEditBatch(null);
       await load();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка удаления');
+    }
+  };
+
+  const openEditBatch = (batch) => {
+    const strains = getStrainsFromBatch(batch);
+    const list = strains.length ? strains.map((s) => ({ strain: String(s.strain ?? ''), quantity: String(s.quantity ?? ''), _key: editFormStrainKey.current++ })) : [{ strain: '', quantity: '', _key: editFormStrainKey.current++ }];
+    setEditBatch(batch);
+    setEditForm({
+      name: batch.name || '',
+      strains: list,
+      cutDate: batch.cutDate ? new Date(batch.cutDate).toISOString().slice(0, 10) : '',
+      transplantedToVegAt: batch.transplantedToVegAt ? new Date(batch.transplantedToVegAt).toISOString().slice(0, 10) : '',
+      vegDaysTarget: String(batch.vegDaysTarget ?? 21),
+      sourceCloneCut: batch.sourceCloneCut?._id || batch.sourceCloneCut || '',
+      notes: batch.notes || '',
+      diedCount: batch.diedCount != null ? String(batch.diedCount) : '0',
+      notGrownCount: batch.notGrownCount != null ? String(batch.notGrownCount) : '0',
+      lightChangeDate: batch.lightChangeDate ? new Date(batch.lightChangeDate).toISOString().slice(0, 10) : '',
+      lightPowerPercent: batch.lightPowerPercent != null && batch.lightPowerPercent !== '' ? String(batch.lightPowerPercent) : '',
+      sentToFlowerCount: batch.sentToFlowerCount != null ? String(batch.sentToFlowerCount) : '0'
+    });
+  };
+
+  const closeEditBatch = () => setEditBatch(null);
+
+  const addEditStrainRow = () => {
+    setEditForm((f) => ({ ...f, strains: [...(f.strains || []), { strain: '', quantity: '', _key: editFormStrainKey.current++ }] }));
+  };
+
+  const removeEditStrainRow = (idx) => {
+    setEditForm((f) => ({ ...f, strains: (f.strains || []).filter((_, i) => i !== idx) }));
+  };
+
+  const updateEditStrainRow = (idx, field, value) => {
+    setEditForm((f) => ({ ...f, strains: (f.strains || []).map((s, i) => (i === idx ? { ...s, [field]: value } : s)) }));
+  };
+
+  const handleEditSave = async (e) => {
+    e.preventDefault();
+    if (!editBatch) return;
+    const strains = (editForm.strains || [])
+      .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
+      .filter((s) => s.strain !== '' || s.quantity > 0);
+    if (strains.length === 0) {
+      setError('Укажите хотя бы один сорт и количество');
+      return;
+    }
+    setSaving(true);
+    try {
+      await vegBatchService.update(editBatch._id, {
+        name: editForm.name.trim(),
+        strains,
+        cutDate: editForm.cutDate || undefined,
+        transplantedToVegAt: editForm.transplantedToVegAt || undefined,
+        vegDaysTarget: Number(editForm.vegDaysTarget) || 21,
+        sourceCloneCut: editForm.sourceCloneCut || undefined,
+        notes: editForm.notes.trim(),
+        diedCount: Number(editForm.diedCount) || 0,
+        notGrownCount: Number(editForm.notGrownCount) || 0,
+        lightChangeDate: editForm.lightChangeDate || null,
+        lightPowerPercent: editForm.lightPowerPercent !== '' ? Number(editForm.lightPowerPercent) : null,
+        sentToFlowerCount: Number(editForm.sentToFlowerCount) || 0
+      });
+      closeEditBatch();
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка сохранения');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -237,15 +347,20 @@ const Vegetation = () => {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Сорт / нарезка</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Кол-во</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Погибло</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Не выросло</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">% хороших</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Свет</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Остаток</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">В вегу</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Прогресс вегетации</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Прогресс</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">Действия</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dark-700">
               {batches.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-dark-500">
+                  <td colSpan={10} className="px-4 py-8 text-center text-dark-500">
                     Нет бэтчей на вегетации. Добавьте бэтч из нарезанных клонов.
                   </td>
                 </tr>
@@ -284,9 +399,23 @@ const Vegetation = () => {
                         <div className="font-medium text-white">{formatStrainsShort(getStrainsFromBatch(b))}</div>
                         <div className="text-xs text-dark-500">Нарезка: {formatDate(b.cutDate)}</div>
                       </td>
-                      <td className="px-4 py-3 text-dark-300">
-                        {(getStrainsFromBatch(b).reduce((sum, s) => sum + s.quantity, 0)) || b.quantity || '—'}
+                      <td className="px-4 py-3 text-dark-300">{getBatchTotal(b)}</td>
+                      <td className="px-4 py-3 text-dark-300">{b.diedCount || 0}</td>
+                      <td className="px-4 py-3 text-dark-300">{b.notGrownCount || 0}</td>
+                      <td className="px-4 py-3">
+                        <span className={getBatchGoodPercent(b) >= 80 ? 'text-green-400' : getBatchGoodPercent(b) >= 50 ? 'text-amber-400' : 'text-red-400'}>
+                          {getBatchGoodPercent(b)}%
+                        </span>
                       </td>
+                      <td className="px-4 py-3 text-dark-300 text-xs">
+                        {b.lightChangeDate ? (
+                          <>
+                            {formatDate(b.lightChangeDate)}
+                            {b.lightPowerPercent != null && ` · ${b.lightPowerPercent}%`}
+                          </>
+                        ) : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-dark-300">{getBatchRemainder(b)}</td>
                       <td className="px-4 py-3 text-dark-300">{formatDate(b.transplantedToVegAt)}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
@@ -304,6 +433,13 @@ const Vegetation = () => {
                       <td className="px-4 py-3 text-right">
                         {canCreateVeg ? (
                           <>
+                            <button
+                              type="button"
+                              onClick={() => openEditBatch(b)}
+                              className="px-2 py-1 text-primary-400 hover:bg-dark-700 rounded text-xs mr-2"
+                            >
+                              Редактировать
+                            </button>
                             <button
                               type="button"
                               onClick={() => openSendToFlower(b)}
@@ -449,6 +585,98 @@ const Vegetation = () => {
         </div>
       )}
 
+      {/* Модалка: редактировать бэтч */}
+      {editBatch && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={closeEditBatch}>
+          <div
+            className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-white mb-4">Редактировать бэтч</h3>
+            <form onSubmit={handleEditSave} className="space-y-4">
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Название</label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm((f) => ({ ...f, name: e.target.value }))}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <div className="space-y-2">
+                  {(editForm.strains || []).map((s, idx) => (
+                    <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
+                      <input type="text" value={s.strain} onChange={(e) => updateEditStrainRow(idx, 'strain', e.target.value)} placeholder="Сорт" className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateEditStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      {(editForm.strains || []).length > 1 && <button type="button" onClick={() => removeEditStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>}
+                    </div>
+                  ))}
+                  <button type="button" onClick={addEditStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                  <input type="date" value={editForm.cutDate} onChange={(e) => setEditForm((f) => ({ ...f, cutDate: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">В вегу с</label>
+                  <input type="date" value={editForm.transplantedToVegAt} onChange={(e) => setEditForm((f) => ({ ...f, transplantedToVegAt: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Цель вегетации (дней)</label>
+                <input type="number" min="1" value={editForm.vegDaysTarget} onChange={(e) => setEditForm((f) => ({ ...f, vegDaysTarget: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">Погибло</label>
+                  <input type="number" min="0" value={editForm.diedCount} onChange={(e) => setEditForm((f) => ({ ...f, diedCount: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">Не выросло</label>
+                  <input type="number" min="0" value={editForm.notGrownCount} onChange={(e) => setEditForm((f) => ({ ...f, notGrownCount: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">Свет: дата смены</label>
+                  <input type="date" value={editForm.lightChangeDate} onChange={(e) => setEditForm((f) => ({ ...f, lightChangeDate: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">Свет: % мощности</label>
+                  <input type="number" min="0" max="100" value={editForm.lightPowerPercent} onChange={(e) => setEditForm((f) => ({ ...f, lightPowerPercent: e.target.value }))} placeholder="0–100" className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Уже отправлено в цвет (шт.)</label>
+                <input type="number" min="0" value={editForm.sentToFlowerCount} onChange={(e) => setEditForm((f) => ({ ...f, sentToFlowerCount: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                <p className="text-xs text-dark-500 mt-1">Остаток = хорошие − отправлено</p>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Из нарезки</label>
+                <select value={editForm.sourceCloneCut} onChange={(e) => setEditForm((f) => ({ ...f, sourceCloneCut: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm">
+                  <option value="">— Не привязано</option>
+                  {cloneCuts.filter((c) => c.isDone).map((c) => (
+                    <option key={c._id} value={c._id}>{c.room?.name || 'Комната'} · {formatDate(c.cutDate)}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <textarea value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none" />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={closeEditBatch} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
+                <button type="submit" disabled={saving} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">{saving ? 'Сохранение...' : 'Сохранить'}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Модалка: отправить в цветение */}
       {sendToFlowerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setSendToFlowerModal(null)}>
@@ -458,9 +686,21 @@ const Vegetation = () => {
           >
             <h3 className="text-lg font-semibold text-white mb-1">Отправить в цветение</h3>
             <p className="text-dark-400 text-sm mb-4">
-              {formatStrainsShort(getStrainsFromBatch(sendToFlowerModal))} · всего {sendToFlowerModal.quantity || getStrainsFromBatch(sendToFlowerModal).reduce((s, x) => s + x.quantity, 0)} шт. Привязка к комнате цветения.
+              {formatStrainsShort(getStrainsFromBatch(sendToFlowerModal))} · хороших: {getBatchGoodCount(sendToFlowerModal)} шт. Остаток после заезда: {getBatchRemainder(sendToFlowerModal)}.
             </p>
             <form onSubmit={handleSendToFlower} className="space-y-4">
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Сколько отправляете в цвет</label>
+                <input
+                  type="number"
+                  min="0"
+                  max={getBatchGoodCount(sendToFlowerModal)}
+                  value={sendCount}
+                  onChange={(e) => setSendCount(e.target.value)}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                />
+                <p className="text-xs text-dark-500 mt-1">Макс. хороших: {getBatchGoodCount(sendToFlowerModal)}</p>
+              </div>
               <div>
                 <label className="block text-xs text-dark-400 mb-1">Комната цветения</label>
                 <select
