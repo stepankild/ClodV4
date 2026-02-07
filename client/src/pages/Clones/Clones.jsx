@@ -154,9 +154,9 @@ const Clones = () => {
   const rows = (Array.isArray(rooms) ? rooms : [])
     .filter((r) => r != null)
     .map((room) => {
-      const cutDate = getCutDateForRoom(room);
-      if (!cutDate) return null;
       const cut = cloneCuts.find((c) => c.room?._id === room._id || c.room === room._id);
+      const cutDate = getCutDateForRoom(room) || (cut?.cutDate ? new Date(cut.cutDate) : null);
+      if (!cutDate && !cut) return null;
       const cutId = cut?._id;
       const strains = getStrainsFromCut(cut);
       const quantity = strains.reduce((sum, s) => sum + s.quantity, 0);
@@ -166,7 +166,7 @@ const Clones = () => {
       );
       return {
         room,
-        cutDate,
+        cutDate: cutDate || (cut?.cutDate ? new Date(cut.cutDate) : new Date()),
         strain,
         quantity,
         strains,
