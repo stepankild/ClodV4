@@ -77,6 +77,15 @@ const Clones = () => {
   const [orderModalStrains, setOrderModalStrains] = useState([]);
   const orderModalStrainKey = useRef(0);
   const [savingOrderId, setSavingOrderId] = useState(null);
+  const [createBatchModalOpen, setCreateBatchModalOpen] = useState(false);
+  const [createBatchForm, setCreateBatchForm] = useState({
+    roomId: '',
+    cutDate: new Date().toISOString().slice(0, 10),
+    strains: [{ strain: '', quantity: '' }],
+    notes: '',
+    isDone: false
+  });
+  const [savingCreateBatch, setSavingCreateBatch] = useState(false);
 
   useEffect(() => {
     load();
@@ -248,6 +257,18 @@ const Clones = () => {
     });
   };
 
+  const openSendToVegFromOrder = (cut) => {
+    const strains = getStrainsFromCut(cut);
+    const row = {
+      room: { name: 'Бэтч на заказ', _id: null },
+      cutDate: cut.cutDate,
+      cutId: cut._id,
+      strain: strains.map((s) => s.strain).filter(Boolean).join(', ') || 'клоны',
+      strains
+    };
+    openSendToVeg(row);
+  };
+
   const updateVegFormStrain = (index, field, value) => {
     setVegForm((f) => ({
       ...f,
@@ -279,7 +300,7 @@ const Clones = () => {
       return;
     }
     try {
-      setSavingId(sendToVegModal.room._id);
+      setSavingId(sendToVegModal.cutId || sendToVegModal.room?._id);
       await vegBatchService.create({
         name: (vegForm.name || '').trim(),
         sourceCloneCut: sendToVegModal.cutId || undefined,
@@ -302,6 +323,70 @@ const Clones = () => {
   const openAddOrderModal = () => {
     setOrderForm({ cutDate: new Date().toISOString().slice(0, 10), strains: [{ strain: '', quantity: '' }], notes: '' });
     setAddOrderModal(true);
+  };
+
+  const openCreateBatchModal = () => {
+    const roomsWithCut = (rooms || []).filter((r) => getCutDateForRoom(r));
+    const firstRoomId = roomsWithCut.length ? roomsWithCut[0]._id : '';
+    const firstCutDate = firstRoomId && roomsWithCut[0] ? getCutDateForRoom(roomsWithCut[0])?.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    setCreateBatchForm({
+      roomId: firstRoomId,
+      cutDate: firstCutDate,
+      strains: [{ strain: '', quantity: '' }],
+      notes: '',
+      isDone: false
+    });
+    setCreateBatchModalOpen(true);
+  };
+
+  const addCreateBatchStrainRow = () => {
+    setCreateBatchForm((f) => ({ ...f, strains: [...(f.strains || []), { strain: '', quantity: '' }] }));
+  };
+  const removeCreateBatchStrainRow = (idx) => {
+    setCreateBatchForm((f) => ({ ...f, strains: (f.strains || []).filter((_, i) => i !== idx) }));
+  };
+  const updateCreateBatchStrainRow = (idx, field, value) => {
+    setCreateBatchForm((f) => ({
+      ...f,
+      strains: (f.strains || []).map((s, i) => (i === idx ? { ...s, [field]: value } : s))
+    }));
+  };
+
+  const handleCreateBatchSubmit = async (e) => {
+    e.preventDefault();
+    const strains = (createBatchForm.strains || [])
+      .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
+      .filter((s) => s.strain !== '' || s.quantity > 0);
+    if (strains.length === 0) {
+      setError('Укажите хотя бы один сорт и количество');
+      return;
+    }
+    setSavingCreateBatch(true);
+    setError('');
+    try {
+      if (createBatchForm.roomId) {
+        await cloneCutService.upsert({
+          roomId: createBatchForm.roomId,
+          cutDate: createBatchForm.cutDate,
+          strains,
+          notes: (createBatchForm.notes || '').trim(),
+          isDone: Boolean(createBatchForm.isDone)
+        });
+      } else {
+        await cloneCutService.createOrder({
+          cutDate: createBatchForm.cutDate,
+          strains,
+          notes: (createBatchForm.notes || '').trim(),
+          isDone: Boolean(createBatchForm.isDone)
+        });
+      }
+      setCreateBatchModalOpen(false);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка создания бэтча');
+    } finally {
+      setSavingCreateBatch(false);
+    }
   };
 
   const addOrderFormStrainRow = () => {
@@ -478,11 +563,22 @@ const Clones = () => {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">План нарезки клонов</h1>
-        <p className="text-dark-400 mt-1">
-          Клоны режутся за {WEEKS_BEFORE} недели до даты цветения. Укажите сорт и количество, отметьте, если уже нарезаны.
-        </p>
+      <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-white">План нарезки клонов</h1>
+          <p className="text-dark-400 mt-1">
+            Клоны режутся за {WEEKS_BEFORE} недели до даты цветения. Укажите сорт и количество, отметьте, если уже нарезаны.
+          </p>
+        </div>
+        {canCreateClones && (
+          <button
+            type="button"
+            onClick={openCreateBatchModal}
+            className="px-5 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 font-medium shadow-lg"
+          >
+            Создать бэтч
+          </button>
+        )}
       </div>
 
       {error && (
@@ -640,6 +736,16 @@ const Clones = () => {
                       {canCreateClones && (
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end gap-2 flex-wrap">
+                            {canCreateVeg && (
+                              <button
+                                type="button"
+                                onClick={() => openSendToVegFromOrder(cut)}
+                                disabled={savingId === cut._id}
+                                className="px-2 py-1 bg-green-700/50 text-green-400 hover:bg-green-700/70 rounded text-xs font-medium"
+                              >
+                                В вегетацию
+                              </button>
+                            )}
                             <button type="button" onClick={() => openEditOrder(cut)} className="px-2 py-1 text-primary-400 hover:bg-dark-700 rounded text-xs">Изменить</button>
                             <button type="button" onClick={() => toggleOrderDone(cut)} disabled={savingOrderId === cut._id} className={`px-2 py-1 rounded text-xs ${cut.isDone ? 'bg-red-900/30 text-red-400' : 'bg-green-900/30 text-green-400'}`}>
                               {cut.isDone ? 'Снять отметку' : 'Отметить нарезано'}
@@ -808,8 +914,102 @@ const Clones = () => {
                 <button type="button" onClick={() => setSendToVegModal(null)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">
                   Отмена
                 </button>
-                <button type="submit" disabled={savingId === sendToVegModal.room._id} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 font-medium">
-                  {savingId === sendToVegModal.room._id ? 'Сохранение...' : 'Создать бэтч в вегетации'}
+                <button type="submit" disabled={savingId === (sendToVegModal.cutId || sendToVegModal.room?._id)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 font-medium">
+                  {savingId === (sendToVegModal.cutId || sendToVegModal.room?._id) ? 'Сохранение...' : 'Создать бэтч в вегетации'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Модалка: создать бэтч (с комнатой или без) */}
+      {createBatchModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setCreateBatchModalOpen(false)}>
+          <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <h3 className="text-lg font-semibold text-white mb-2">Создать бэтч клонов</h3>
+            <p className="text-dark-400 text-sm mb-4">Укажите комнату (или «Без комнаты» для бэтча на заказ), дату нарезки, сорта и количество.</p>
+            <form onSubmit={handleCreateBatchSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Комната</label>
+                <select
+                  value={createBatchForm.roomId}
+                  onChange={(e) => {
+                    const roomId = e.target.value;
+                    const room = (rooms || []).find((r) => r._id === roomId);
+                    const cutDate = room ? (getCutDateForRoom(room)?.toISOString().slice(0, 10) || createBatchForm.cutDate) : new Date().toISOString().slice(0, 10);
+                    setCreateBatchForm((f) => ({ ...f, roomId, cutDate }));
+                  }}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                >
+                  <option value="">— Без комнаты (на заказ) —</option>
+                  {(rooms || []).filter((r) => getCutDateForRoom(r)).map((room) => (
+                    <option key={room._id} value={room._id}>
+                      {room.name} · нарезка {formatDate(getCutDateForRoom(room))}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                <input
+                  type="date"
+                  value={createBatchForm.cutDate}
+                  onChange={(e) => setCreateBatchForm((f) => ({ ...f, cutDate: e.target.value }))}
+                  required
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <div className="space-y-2">
+                  {(createBatchForm.strains || []).map((s, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={s.strain}
+                        onChange={(e) => updateCreateBatchStrainRow(idx, 'strain', e.target.value)}
+                        placeholder="Сорт"
+                        className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                      />
+                      <input
+                        type="number"
+                        min="0"
+                        value={s.quantity}
+                        onChange={(e) => updateCreateBatchStrainRow(idx, 'quantity', e.target.value)}
+                        placeholder="Кол-во"
+                        className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                      />
+                      {(createBatchForm.strains || []).length > 1 && (
+                        <button type="button" onClick={() => removeCreateBatchStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300 rounded">×</button>
+                      )}
+                    </div>
+                  ))}
+                  <button type="button" onClick={addCreateBatchStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <textarea
+                  value={createBatchForm.notes}
+                  onChange={(e) => setCreateBatchForm((f) => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none"
+                />
+              </div>
+              <label className="flex items-center gap-2 text-dark-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={createBatchForm.isDone}
+                  onChange={(e) => setCreateBatchForm((f) => ({ ...f, isDone: e.target.checked }))}
+                  className="rounded"
+                />
+                <span>Уже нарезано</span>
+              </label>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setCreateBatchModalOpen(false)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
+                <button type="submit" disabled={savingCreateBatch} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 font-medium">
+                  {savingCreateBatch ? 'Создание...' : 'Создать бэтч'}
                 </button>
               </div>
             </form>
