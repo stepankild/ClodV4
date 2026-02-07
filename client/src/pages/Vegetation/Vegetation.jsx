@@ -80,6 +80,7 @@ const Vegetation = () => {
   const [sendRoomId, setSendRoomId] = useState('');
   const [sendDate, setSendDate] = useState(new Date().toISOString().slice(0, 10));
   const [sendCount, setSendCount] = useState('');
+  const [sendStrains, setSendStrains] = useState([]);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -196,36 +197,69 @@ const Vegetation = () => {
     setSendToFlowerModal(batch);
     setSendRoomId('');
     setSendDate(new Date().toISOString().slice(0, 10));
-    setSendCount(String(getBatchGoodCount(batch)));
+    const strains = getStrainsFromBatch(batch);
+    const goodTotal = getBatchGoodCount(batch);
+    if (strains.length > 0) {
+      setSendStrains(strains.map((s) => ({ strain: s.strain, total: s.quantity, sendQty: String(s.quantity) })));
+      const sum = strains.reduce((a, s) => a + s.quantity, 0);
+      setSendCount(sum <= goodTotal ? String(sum) : String(goodTotal));
+    } else {
+      setSendStrains([]);
+      setSendCount(String(goodTotal));
+    }
   };
 
   const handleSendToFlower = async (e) => {
     e.preventDefault();
     if (!sendToFlowerModal || !sendRoomId) return;
     const room = rooms.find((r) => r._id === sendRoomId);
-    if (room?.isActive) {
+    if (room && room.isActive) {
       setError('В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.');
       return;
     }
     setSaving(true);
+    setError('');
     try {
-      const count = Math.max(0, parseInt(sendCount, 10) || 0);
+      let count;
+      let flowerStrainsPayload = [];
+      if (sendStrains.length > 0) {
+        flowerStrainsPayload = sendStrains
+          .map((s) => ({ strain: s.strain || '', quantity: Math.max(0, parseInt(s.sendQty, 10) || 0) }))
+          .filter((s) => s.quantity > 0);
+        count = flowerStrainsPayload.reduce((sum, s) => sum + s.quantity, 0);
+      } else {
+        count = Math.max(0, parseInt(sendCount, 10) || 0);
+        const strainStr = sendToFlowerModal.strain || (getStrainsFromBatch(sendToFlowerModal).map((s) => s.strain).filter(Boolean).join(', ')) || '';
+        if (count > 0 && strainStr) flowerStrainsPayload = [{ strain: strainStr, quantity: count }];
+      }
+      if (count <= 0) {
+        setError('Укажите количество отправляемых в цвет.');
+        setSaving(false);
+        return;
+      }
+      const goodMax = getBatchGoodCount(sendToFlowerModal);
+      if (count > goodMax) {
+        setError(`Максимум хороших: ${goodMax}. Уменьшите количество.`);
+        setSaving(false);
+        return;
+      }
       if (room && !room.isActive) {
         await roomService.startCycle(sendRoomId, {
           cycleName: sendToFlowerModal.name || sendToFlowerModal.strain || '',
-          strain: sendToFlowerModal.strain || '',
+          strain: sendToFlowerModal.strain || (flowerStrainsPayload.map((s) => s.strain).filter(Boolean).join(', ')) || '',
           plantsCount: count,
           floweringDays: 56,
-          startDate: sendDate
+          startDate: sendDate,
+          flowerStrains: flowerStrainsPayload.length ? flowerStrainsPayload : undefined
         });
       }
       await vegBatchService.update(sendToFlowerModal._id, {
         flowerRoom: sendRoomId,
         transplantedToFlowerAt: sendDate,
-        sentToFlowerCount: count
+        sentToFlowerCount: count,
+        sentToFlowerStrains: flowerStrainsPayload.length ? flowerStrainsPayload : undefined
       });
       setSendToFlowerModal(null);
-      setError('');
       await load();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка');
@@ -889,26 +923,50 @@ const Vegetation = () => {
       {sendToFlowerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setSendToFlowerModal(null)}>
           <div
-            className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-md p-6"
+            className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-white mb-1">Отправить в цветение</h3>
             <p className="text-dark-400 text-sm mb-4">
-              {formatStrainsShort(getStrainsFromBatch(sendToFlowerModal))} · хороших: {getBatchGoodCount(sendToFlowerModal)} шт. Остаток после заезда: {getBatchRemainder(sendToFlowerModal)}.
+              Хороших в бэтче: {getBatchGoodCount(sendToFlowerModal)} шт. Остаток после заезда: {getBatchRemainder(sendToFlowerModal)}.
             </p>
             <form onSubmit={handleSendToFlower} className="space-y-4">
-              <div>
-                <label className="block text-xs text-dark-400 mb-1">Сколько отправляете в цвет</label>
-                <input
-                  type="number"
-                  min="0"
-                  max={getBatchGoodCount(sendToFlowerModal)}
-                  value={sendCount}
-                  onChange={(e) => setSendCount(e.target.value)}
-                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                />
-                <p className="text-xs text-dark-500 mt-1">Макс. хороших: {getBatchGoodCount(sendToFlowerModal)}</p>
-              </div>
+              {sendStrains.length > 0 ? (
+                <div>
+                  <label className="block text-xs text-dark-400 mb-2">Сколько какого сорта отправляете в цвет (в комнату будет видно сорт и кол-во)</label>
+                  <div className="space-y-2">
+                    {sendStrains.map((s, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <span className="text-white text-sm w-32 truncate" title={s.strain}>{s.strain || '—'}</span>
+                        <span className="text-dark-500 text-xs">в бэтче: {s.total}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          max={s.total}
+                          value={s.sendQty}
+                          onChange={(e) => setSendStrains((prev) => prev.map((x, i) => i === idx ? { ...x, sendQty: e.target.value } : x))}
+                          placeholder="в цвет"
+                          className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-dark-500 mt-1">Сумма не больше {getBatchGoodCount(sendToFlowerModal)}</p>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">Сколько отправляете в цвет</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={getBatchGoodCount(sendToFlowerModal)}
+                    value={sendCount}
+                    onChange={(e) => setSendCount(e.target.value)}
+                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                  />
+                  <p className="text-xs text-dark-500 mt-1">Макс. хороших: {getBatchGoodCount(sendToFlowerModal)}</p>
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-dark-400 mb-1">Комната цветения</label>
                 <select
@@ -926,7 +984,7 @@ const Vegetation = () => {
                 </select>
                 {sendRoomId && rooms.find((r) => r._id === sendRoomId)?.isActive && (
                   <p className="mt-2 text-amber-400 text-sm">
-                    В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.
+                    В эту комнату нельзя добавить: в ней уже идёт цикл. Завершите цикл (соберите урожай), затем можно добавить новые клоны.
                   </p>
                 )}
               </div>
@@ -943,7 +1001,11 @@ const Vegetation = () => {
                 <button type="button" onClick={() => setSendToFlowerModal(null)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">
                   Отмена
                 </button>
-                <button type="submit" disabled={saving || !sendRoomId} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">
+                <button
+                  type="submit"
+                  disabled={saving || !sendRoomId || (!!sendRoomId && !!rooms.find((r) => r._id === sendRoomId)?.isActive)}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50"
+                >
                   {saving ? 'Сохранение...' : 'Привязать'}
                 </button>
               </div>

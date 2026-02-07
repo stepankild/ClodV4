@@ -432,6 +432,11 @@ export default function ActiveRooms() {
                     <span>Кустов:</span>
                     <span className="text-dark-300">{room.plantsCount || 0}</span>
                   </div>
+                  {room.flowerStrains && room.flowerStrains.length > 0 && (
+                    <div className="text-dark-400">
+                      {room.flowerStrains.map((s, i) => (s.strain || s.quantity) && `${s.strain || '—'}: ${s.quantity}`).filter(Boolean).join(', ')}
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span>Урожай:</span>
                     <span className="text-dark-300">{formatDate(room.expectedHarvestDate)}</span>
@@ -683,6 +688,12 @@ export default function ActiveRooms() {
                           <span className="text-dark-400">Кустов:</span>
                           <span className="text-white">{selectedRoom.plantsCount || 0}</span>
                         </div>
+                        {selectedRoom.flowerStrains && selectedRoom.flowerStrains.length > 0 && (
+                          <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                            <span className="text-dark-400">По сортам:</span>
+                            <span className="text-white">{selectedRoom.flowerStrains.map((s) => `${s.strain || '—'}: ${s.quantity}`).join(', ')}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between">
                           <span className="text-dark-400">День цветения:</span>
                           <span className="text-white">{selectedRoom.currentDay || 1} из {selectedRoom.floweringDays || 56}</span>

@@ -24,6 +24,10 @@ const flowerRoomSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  flowerStrains: [{
+    strain: { type: String, default: '' },
+    quantity: { type: Number, default: 0 }
+  }],
   startDate: {
     type: Date,
     default: null

@@ -204,12 +204,16 @@ export const updateRoom = async (req, res) => {
 // @route   POST /api/rooms/:id/start
 export const startCycle = async (req, res) => {
   try {
-    const { cycleName, strain, plantsCount, floweringDays, notes, environment, startDate } = req.body;
+    const { cycleName, strain, plantsCount, floweringDays, notes, environment, startDate, flowerStrains } = req.body;
 
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
       return res.status(404).json({ message: 'Комната не найдена' });
+    }
+
+    if (room.isActive) {
+      return res.status(400).json({ message: 'В этой комнате уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай).' });
     }
 
     // Генерируем ID для нового цикла
@@ -218,6 +222,13 @@ export const startCycle = async (req, res) => {
     room.cycleName = (cycleName && String(cycleName).trim()) || '';
     room.strain = strain || '';
     room.plantsCount = plantsCount || 0;
+    if (flowerStrains !== undefined && Array.isArray(flowerStrains) && flowerStrains.length > 0) {
+      room.flowerStrains = flowerStrains
+        .filter((s) => s && (s.strain !== undefined || s.quantity > 0))
+        .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Math.max(0, parseInt(s.quantity, 10) || 0) }));
+    } else {
+      room.flowerStrains = [];
+    }
     room.startDate = startDate ? new Date(startDate) : new Date();
     room.floweringDays = floweringDays || 56;
     room.notes = notes || '';

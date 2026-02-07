@@ -98,7 +98,7 @@ export const updateVegBatch = async (req, res) => {
   try {
     const doc = await VegBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч не найден' });
-    const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes, diedCount, notGrownCount, lightChanges, sentToFlowerCount } = req.body;
+    const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes, diedCount, notGrownCount, lightChanges, sentToFlowerCount, sentToFlowerStrains } = req.body;
     if (name !== undefined) doc.name = String(name).trim();
     if (strains !== undefined) {
       const norm = normalizeStrains(strains, doc.strain, doc.quantity);
@@ -118,7 +118,7 @@ export const updateVegBatch = async (req, res) => {
       const roomId = flowerRoom || null;
       if (roomId && mongoose.Types.ObjectId.isValid(roomId)) {
         const room = await FlowerRoom.findById(roomId).select('isActive').lean();
-        if (room?.isActive) {
+        if (room && room.isActive === true) {
           return res.status(400).json({ message: ACTIVE_ROOM_MESSAGE });
         }
       }
@@ -137,6 +137,11 @@ export const updateVegBatch = async (req, res) => {
         }));
     }
     if (sentToFlowerCount !== undefined) doc.sentToFlowerCount = parseInt(sentToFlowerCount, 10) >= 0 ? parseInt(sentToFlowerCount, 10) : 0;
+    if (sentToFlowerStrains !== undefined && Array.isArray(sentToFlowerStrains)) {
+      doc.sentToFlowerStrains = sentToFlowerStrains
+        .filter((s) => s && (s.strain !== undefined || s.quantity > 0))
+        .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Math.max(0, parseInt(s.quantity, 10) || 0) }));
+    }
     await doc.save();
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
     await doc.populate('flowerRoom', 'name roomNumber');

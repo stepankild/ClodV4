@@ -32,6 +32,10 @@ const vegBatchSchema = new mongoose.Schema({
     powerPercent: { type: Number, default: null }
   }],
   sentToFlowerCount: { type: Number, default: 0 },
+  sentToFlowerStrains: [{
+    strain: { type: String, default: '' },
+    quantity: { type: Number, default: 0 }
+  }],
   deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
