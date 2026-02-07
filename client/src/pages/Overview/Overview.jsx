@@ -126,7 +126,7 @@ const Overview = () => {
 
             {/* Карточка комнаты */}
             <div
-              className="bg-dark-800 rounded-xl border border-dark-700 p-5 hover:border-dark-600 transition flex-1"
+              className="bg-dark-800 rounded-xl border border-dark-700 p-5 hover:border-dark-600 transition flex-1 min-w-0 overflow-hidden"
             >
             <div className="flex items-start justify-between mb-1">
               <Link to="/active" className="text-lg font-semibold text-white hover:text-primary-400 transition">
@@ -309,10 +309,10 @@ const Overview = () => {
 
             {/* Последняя обработка */}
             {(room.lastTreatmentAt != null && room.lastTreatmentAt !== '') && (
-              <div className="space-y-2 text-sm border-t border-dark-700 pt-3 mt-3">
-                <div className="flex justify-between gap-2">
-                  <span className="text-dark-500 shrink-0">Последняя обработка</span>
-                  <span className="text-dark-300 text-right">
+              <div className="border-t border-dark-700 pt-3 mt-3">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-dark-500 text-xs shrink-0">Последняя обработка</span>
+                  <span className="text-dark-300 text-xs min-w-0 truncate text-right" title={[room.lastTreatmentTitle, formatDate(room.lastTreatmentAt)].filter(Boolean).join(' · ')}>
                     {room.lastTreatmentTitle} {formatDate(room.lastTreatmentAt)}
                   </span>
                 </div>
