@@ -5,6 +5,7 @@ import CycleArchive from '../models/CycleArchive.js';
 import PlannedCycle from '../models/PlannedCycle.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
+import { notDeleted } from '../utils/softDelete.js';
 
 // @desc    Get all flower rooms
 // @route   GET /api/rooms
@@ -58,20 +59,38 @@ export const getRoomsSummary = async (req, res) => {
     }
     const summary = await Promise.all(rooms.map(async (room) => {
       const roomId = room._id;
-      const [tasks, lastArchive, plannedCycle] = await Promise.all([
-        RoomTask.find({ room: roomId, completed: true }).lean(),
+      const [completedTasksRaw, pendingTasksRaw, lastArchive, plannedCycle] = await Promise.all([
+        RoomTask.find({ room: roomId, completed: true, ...notDeleted }).lean(),
+        RoomTask.find({ room: roomId, completed: false, ...notDeleted }).lean(),
         CycleArchive.findOne({ room: roomId }).sort({ harvestDate: -1 }).lean(),
         PlannedCycle.findOne({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
       ]);
-      const trimWeek2 = tasks.find(t => t.type === 'trim');
-      const defoliationWeek4 = tasks.find(t => t.type === 'defoliation');
-      const lastTreatment = tasks.length
-        ? tasks.reduce((a, t) => {
+      // Backward-compat fields
+      const trimWeek2 = completedTasksRaw.find(t => t.type === 'trim');
+      const defoliationWeek4 = completedTasksRaw.find(t => t.type === 'defoliation');
+      const lastTreatment = completedTasksRaw.length
+        ? completedTasksRaw.reduce((a, t) => {
             const tDate = t.completedAt ? new Date(t.completedAt).getTime() : 0;
             const aDate = a && a.completedAt ? new Date(a.completedAt).getTime() : 0;
             return tDate > aDate ? t : a;
           }, null)
         : null;
+      // Group completed tasks by type
+      const completedTasks = {};
+      for (const task of completedTasksRaw) {
+        if (!completedTasks[task.type]) completedTasks[task.type] = [];
+        completedTasks[task.type].push({
+          _id: task._id,
+          title: task.title,
+          completedAt: task.completedAt,
+          sprayProduct: task.sprayProduct || null,
+          feedProduct: task.feedProduct || null,
+          dayOfCycle: task.dayOfCycle
+        });
+      }
+      for (const type of Object.keys(completedTasks)) {
+        completedTasks[type].sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+      }
       const roomObj = room.toObject ? room.toObject() : { ...room };
       return {
         ...roomObj,
@@ -79,6 +98,11 @@ export const getRoomsSummary = async (req, res) => {
         defoliationWeek4Done: defoliationWeek4?.completedAt ?? null,
         lastTreatmentAt: lastTreatment?.completedAt ?? null,
         lastTreatmentTitle: lastTreatment?.title ?? null,
+        completedTasks,
+        pendingTasks: pendingTasksRaw.map(t => ({
+          _id: t._id, type: t.type, title: t.title,
+          scheduledDate: t.scheduledDate, priority: t.priority
+        })),
         lastArchive: lastArchive ? {
           _id: lastArchive._id,
           cycleName: lastArchive.cycleName,

@@ -54,6 +54,14 @@ export default function ActiveRooms() {
   });
   const [planSaving, setPlanSaving] = useState(false);
 
+  // Quick tasks state
+  const [roomTasks, setRoomTasks] = useState([]);
+  const [tasksLoading, setTasksLoading] = useState(false);
+  const [sprayFormOpen, setSprayFormOpen] = useState(false);
+  const [sprayProduct, setSprayProduct] = useState('');
+  const [noteInput, setNoteInput] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+
   useEffect(() => {
     loadRooms();
   }, []);
@@ -71,16 +79,47 @@ export default function ActiveRooms() {
     }
   };
 
+  const refreshSelectedRoom = async () => {
+    await loadRooms();
+    const list = await roomService.getRoomsSummary();
+    if (selectedRoom) {
+      const updated = list.find(r => r._id === selectedRoom._id);
+      if (updated) setSelectedRoom(updated);
+    }
+  };
+
+  const loadRoomTasks = async (roomId) => {
+    setTasksLoading(true);
+    try {
+      const tasks = await roomService.getRoomTasks(roomId);
+      setRoomTasks(Array.isArray(tasks) ? tasks : []);
+    } catch (err) {
+      console.error('Failed to load tasks:', err);
+      setRoomTasks([]);
+    } finally {
+      setTasksLoading(false);
+    }
+  };
+
   const openRoom = (room) => {
     setSelectedRoom(room);
     setEditMode(false);
     setStartMode(false);
+    setSprayFormOpen(false);
+    setSprayProduct('');
+    setNoteInput('');
+    if (room.isActive) {
+      loadRoomTasks(room._id);
+    } else {
+      setRoomTasks([]);
+    }
   };
 
   const closeRoom = () => {
     setSelectedRoom(null);
     setEditMode(false);
     setStartMode(false);
+    setRoomTasks([]);
   };
 
   const startEditMode = () => {
@@ -122,10 +161,7 @@ export default function ActiveRooms() {
         startDate: editForm.startDate || null
       });
       setEditMode(false);
-      await loadRooms();
-      const list = await roomService.getRoomsSummary();
-      const updated = list.find(r => r._id === selectedRoom._id);
-      if (updated) setSelectedRoom(updated);
+      await refreshSelectedRoom();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка сохранения');
     } finally {
@@ -146,10 +182,7 @@ export default function ActiveRooms() {
         startDate: startForm.startDate || new Date().toISOString()
       });
       setStartMode(false);
-      await loadRooms();
-      const list = await roomService.getRoomsSummary();
-      const updated = list.find(r => r._id === selectedRoom._id);
-      if (updated) setSelectedRoom(updated);
+      await refreshSelectedRoom();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка запуска цикла');
     } finally {
@@ -163,10 +196,7 @@ export default function ActiveRooms() {
     setSaving(true);
     try {
       await roomService.harvestRoom(selectedRoom._id);
-      await loadRooms();
-      const list = await roomService.getRoomsSummary();
-      const updated = list.find(r => r._id === selectedRoom._id);
-      if (updated) setSelectedRoom(updated);
+      await refreshSelectedRoom();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка завершения цикла');
     } finally {
@@ -218,10 +248,7 @@ export default function ActiveRooms() {
         await roomService.createPlan(payload);
       }
       closePlanMode();
-      await loadRooms();
-      const list = await roomService.getRoomsSummary();
-      const updated = list.find(r => r._id === planMode._id);
-      if (updated) setSelectedRoom(updated);
+      await refreshSelectedRoom();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка сохранения плана');
     } finally {
@@ -236,14 +263,91 @@ export default function ActiveRooms() {
     try {
       await roomService.deletePlan(planMode.plannedCycle._id);
       closePlanMode();
-      await loadRooms();
-      const list = await roomService.getRoomsSummary();
-      const updated = list.find(r => r._id === planMode._id);
-      if (updated) setSelectedRoom(updated);
+      await refreshSelectedRoom();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка удаления плана');
     } finally {
       setPlanSaving(false);
+    }
+  };
+
+  // --- Quick task handlers ---
+
+  const handleNetToggle = async () => {
+    if (!selectedRoom) return;
+    const existingNet = roomTasks.find(t => t.type === 'net' && t.completed);
+    try {
+      if (existingNet) {
+        await roomService.deleteTask(existingNet._id);
+      } else {
+        await roomService.quickTask(selectedRoom._id, { type: 'net' });
+      }
+      await loadRoomTasks(selectedRoom._id);
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка');
+    }
+  };
+
+  const handleSprayAdd = async () => {
+    if (!selectedRoom || !sprayProduct.trim()) return;
+    try {
+      await roomService.quickTask(selectedRoom._id, {
+        type: 'spray',
+        product: sprayProduct.trim()
+      });
+      setSprayProduct('');
+      setSprayFormOpen(false);
+      await loadRoomTasks(selectedRoom._id);
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка');
+    }
+  };
+
+  const handleTrimAdd = async () => {
+    if (!selectedRoom) return;
+    try {
+      await roomService.quickTask(selectedRoom._id, { type: 'trim' });
+      await loadRoomTasks(selectedRoom._id);
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка');
+    }
+  };
+
+  const handleDefoliationAdd = async () => {
+    if (!selectedRoom) return;
+    try {
+      await roomService.quickTask(selectedRoom._id, { type: 'defoliation' });
+      await loadRoomTasks(selectedRoom._id);
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка');
+    }
+  };
+
+  const handleAddNote = async () => {
+    if (!selectedRoom || !noteInput.trim()) return;
+    setNoteSaving(true);
+    try {
+      await roomService.addNote(selectedRoom._id, noteInput.trim());
+      setNoteInput('');
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка добавления заметки');
+    } finally {
+      setNoteSaving(false);
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    try {
+      await roomService.deleteTask(taskId);
+      await loadRoomTasks(selectedRoom._id);
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка');
     }
   };
 
@@ -263,6 +367,10 @@ export default function ActiveRooms() {
 
   const activeRooms = rooms.filter(r => r.isActive);
   const inactiveRooms = rooms.filter(r => !r.isActive);
+
+  const completedTasks = roomTasks.filter(t => t.completed).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
+  const hasNet = roomTasks.some(t => t.type === 'net' && t.completed);
+  const netTask = roomTasks.find(t => t.type === 'net' && t.completed);
 
   return (
     <div className="p-6">
@@ -608,13 +716,124 @@ export default function ActiveRooms() {
                         )}
                       </div>
 
-                      {/* Заметки */}
-                      {selectedRoom.notes && (
+                      {/* Быстрые действия */}
+                      <div className="space-y-3 border-t border-dark-700 pt-4">
+                        <h4 className="text-sm font-medium text-dark-300">Быстрые действия</h4>
+
+                        {/* Сетки */}
+                        <label className="flex items-center gap-3 cursor-pointer group">
+                          <input
+                            type="checkbox"
+                            checked={hasNet}
+                            onChange={handleNetToggle}
+                            className="w-4 h-4 rounded border-dark-500 bg-dark-700 text-primary-600 focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-dark-300 group-hover:text-white">Сетки натянуты</span>
+                          {netTask && (
+                            <span className="text-xs text-dark-500 ml-auto">{formatDate(netTask.completedAt)}</span>
+                          )}
+                        </label>
+
+                        {/* Обработка */}
                         <div>
-                          <h4 className="text-sm text-dark-400 mb-1">Заметки:</h4>
-                          <p className="text-dark-300 text-sm whitespace-pre-wrap bg-dark-700/30 rounded-lg p-3">
+                          <button
+                            onClick={() => setSprayFormOpen(!sprayFormOpen)}
+                            className="text-sm text-primary-400 hover:text-primary-300"
+                          >
+                            + Добавить обработку
+                          </button>
+                          {sprayFormOpen && (
+                            <div className="flex gap-2 mt-2">
+                              <input
+                                type="text"
+                                value={sprayProduct}
+                                onChange={e => setSprayProduct(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleSprayAdd()}
+                                placeholder="Название препарата"
+                                className="flex-1 px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                autoFocus
+                              />
+                              <button
+                                onClick={handleSprayAdd}
+                                disabled={!sprayProduct.trim()}
+                                className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500 disabled:opacity-50"
+                              >
+                                OK
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Подрезка */}
+                        <button
+                          onClick={handleTrimAdd}
+                          className="text-sm text-primary-400 hover:text-primary-300 block"
+                        >
+                          + Записать подрезку
+                        </button>
+
+                        {/* Дефолиация */}
+                        <button
+                          onClick={handleDefoliationAdd}
+                          className="text-sm text-primary-400 hover:text-primary-300 block"
+                        >
+                          + Записать дефолиацию
+                        </button>
+                      </div>
+
+                      {/* Заметки */}
+                      <div className="space-y-2 border-t border-dark-700 pt-4">
+                        <h4 className="text-sm font-medium text-dark-300">Заметки</h4>
+                        {selectedRoom.notes && (
+                          <p className="text-sm text-dark-300 whitespace-pre-wrap bg-dark-700/30 rounded-lg p-3 max-h-32 overflow-y-auto">
                             {selectedRoom.notes}
                           </p>
+                        )}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={noteInput}
+                            onChange={e => setNoteInput(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleAddNote()}
+                            placeholder="Добавить заметку..."
+                            className="flex-1 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                          />
+                          <button
+                            onClick={handleAddNote}
+                            disabled={noteSaving || !noteInput.trim()}
+                            className="px-3 py-2 bg-dark-700 text-white rounded-lg text-sm hover:bg-dark-600 disabled:opacity-50"
+                          >
+                            {noteSaving ? '...' : '+'}
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* История работ */}
+                      {tasksLoading ? (
+                        <div className="text-dark-500 text-sm border-t border-dark-700 pt-4">Загрузка задач...</div>
+                      ) : completedTasks.length > 0 && (
+                        <div className="space-y-2 border-t border-dark-700 pt-4">
+                          <h4 className="text-sm font-medium text-dark-300">История работ</h4>
+                          <div className="space-y-1 max-h-40 overflow-y-auto">
+                            {completedTasks.map(task => (
+                              <div key={task._id} className="flex items-center justify-between text-xs py-1 group">
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="text-green-400 shrink-0">&#10003;</span>
+                                  <span className="text-dark-300 truncate">{task.title}</span>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 ml-2">
+                                  <span className="text-dark-500">{formatDate(task.completedAt)}</span>
+                                  <button
+                                    onClick={() => handleDeleteTask(task._id)}
+                                    className="text-dark-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+                                    title="Отменить"
+                                  >
+                                    &#10005;
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       )}
 

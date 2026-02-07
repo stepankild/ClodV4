@@ -5,7 +5,8 @@ import {
   getRoom,
   updateRoom,
   startCycle,
-  harvestRoom
+  harvestRoom,
+  addNote
 } from '../controllers/flowerRoomController.js';
 import { getPlans, createPlan, updatePlan, deletePlan } from '../controllers/plannedController.js';
 import { protect } from '../middleware/auth.js';
@@ -24,6 +25,7 @@ router.delete('/plans/:id', deletePlan);
 router.get('/:id', getRoom);
 router.put('/:id', updateRoom);
 router.post('/:id/start', startCycle);
+router.post('/:id/note', addNote);
 router.post('/:id/harvest', harvestRoom);
 
 export default router;

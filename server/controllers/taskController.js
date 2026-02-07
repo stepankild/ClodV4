@@ -225,6 +225,8 @@ export const quickAddTask = async (req, res) => {
       taskData.feedProduct = product || '';
       taskData.feedDosage = dosage || '';
       taskData.title = product ? `Подкормка: ${product}` : 'Подкормка';
+    } else if (type === 'defoliation') {
+      taskData.title = 'Дефолиация';
     }
 
     const task = await RoomTask.create(taskData);

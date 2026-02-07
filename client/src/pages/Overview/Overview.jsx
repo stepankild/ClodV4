@@ -41,6 +41,11 @@ const Overview = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cloneCuts, setCloneCuts] = useState([]);
+  const [expandedNotes, setExpandedNotes] = useState({});
+
+  const toggleNotes = (roomId) => {
+    setExpandedNotes(prev => ({ ...prev, [roomId]: !prev[roomId] }));
+  };
 
   useEffect(() => {
     loadSummary();
@@ -123,7 +128,7 @@ const Overview = () => {
             <div
               className="bg-dark-800 rounded-xl border border-dark-700 p-5 hover:border-dark-600 transition flex-1"
             >
-            <div className="flex items-start justify-between mb-3">
+            <div className="flex items-start justify-between mb-1">
               <Link to="/active" className="text-lg font-semibold text-white hover:text-primary-400 transition">
                 {room.name}
               </Link>
@@ -137,19 +142,25 @@ const Overview = () => {
               )}
             </div>
 
-            {/* Название цикла — только просмотр */}
-            <div className="mb-3 rounded-lg px-2.5 py-2 bg-dark-700/40 border border-dark-600">
-              <label className="block text-xs text-dark-400 mb-1">Название цикла</label>
-              <div className="text-white text-sm py-1">
-                {room.isActive ? (room.cycleName || '—') : '— Задаётся при старте цикла'}
+            {/* Название цикла — крупно под номером комнаты */}
+            {room.isActive ? (
+              <div className="mb-3">
+                <div className="text-primary-400 font-medium text-sm">
+                  {room.cycleName || '—'}
+                </div>
+                {room.strain && (
+                  <div className="text-dark-300 text-sm">{room.strain}</div>
+                )}
+                {room.plantsCount > 0 && (
+                  <div className="text-dark-500 text-xs mt-0.5">{room.plantsCount} кустов</div>
+                )}
               </div>
-            </div>
+            ) : (
+              <div className="text-dark-500 text-xs mb-3">Нет активного цикла</div>
+            )}
 
             {room.isActive && (
               <>
-                <div className="text-dark-300 text-sm mb-3">
-                  {room.strain ? <span>{room.strain}</span> : '—'}
-                </div>
                 <div className="mb-3">
                   <div className="flex justify-between text-xs text-dark-400 mb-1">
                     <span>Прогресс</span>
@@ -221,8 +232,72 @@ const Overview = () => {
                     </div>
                   );
                 })()}
+
+                {/* Выполненные работы */}
+                {room.completedTasks && Object.keys(room.completedTasks).length > 0 && (
+                  <div className="space-y-1.5 border-t border-dark-700 pt-3 mt-3">
+                    <div className="text-xs text-dark-400 font-medium mb-1">Выполнено</div>
+                    {room.completedTasks.net?.length > 0 && (
+                      <div className="flex items-center gap-2 text-xs">
+                        <span className="text-green-400">&#10003;</span>
+                        <span className="text-dark-300">Сетки натянуты</span>
+                        <span className="text-dark-500 ml-auto">{formatDate(room.completedTasks.net[0].completedAt)}</span>
+                      </div>
+                    )}
+                    {room.completedTasks.spray?.map((task) => (
+                      <div key={task._id} className="flex items-center gap-2 text-xs">
+                        <span className="text-green-400">&#10003;</span>
+                        <span className="text-dark-300 truncate">
+                          {task.sprayProduct ? `Обработка: ${task.sprayProduct}` : 'Обработка'}
+                        </span>
+                        <span className="text-dark-500 ml-auto shrink-0">{formatDate(task.completedAt)}</span>
+                      </div>
+                    ))}
+                    {room.completedTasks.trim?.map((task) => (
+                      <div key={task._id} className="flex items-center gap-2 text-xs">
+                        <span className="text-green-400">&#10003;</span>
+                        <span className="text-dark-300">Подрезка{task.dayOfCycle ? ` (день ${task.dayOfCycle})` : ''}</span>
+                        <span className="text-dark-500 ml-auto">{formatDate(task.completedAt)}</span>
+                      </div>
+                    ))}
+                    {room.completedTasks.defoliation?.map((task) => (
+                      <div key={task._id} className="flex items-center gap-2 text-xs">
+                        <span className="text-green-400">&#10003;</span>
+                        <span className="text-dark-300">Дефолиация{task.dayOfCycle ? ` (день ${task.dayOfCycle})` : ''}</span>
+                        <span className="text-dark-500 ml-auto">{formatDate(task.completedAt)}</span>
+                      </div>
+                    ))}
+                    {room.completedTasks.feed?.map((task) => (
+                      <div key={task._id} className="flex items-center gap-2 text-xs">
+                        <span className="text-green-400">&#10003;</span>
+                        <span className="text-dark-300 truncate">
+                          {task.feedProduct ? `Подкормка: ${task.feedProduct}` : 'Подкормка'}
+                        </span>
+                        <span className="text-dark-500 ml-auto shrink-0">{formatDate(task.completedAt)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Запланированные задачи */}
+                {room.pendingTasks?.length > 0 && (
+                  <div className="space-y-1 border-t border-dark-700 pt-3 mt-3">
+                    <div className="text-xs text-dark-400 font-medium mb-1">Запланировано</div>
+                    {room.pendingTasks.map(task => (
+                      <div key={task._id} className="flex items-center gap-2 text-xs">
+                        <span className="text-dark-500">&#9675;</span>
+                        <span className="text-dark-400 truncate">{task.title}</span>
+                        {task.scheduledDate && (
+                          <span className="text-dark-500 ml-auto shrink-0">{formatDate(task.scheduledDate)}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </>
             )}
+
+            {/* Последняя обработка */}
             {(room.lastTreatmentAt != null && room.lastTreatmentAt !== '') && (
               <div className="space-y-2 text-sm border-t border-dark-700 pt-3 mt-3">
                 <div className="flex justify-between gap-2">
@@ -231,6 +306,24 @@ const Overview = () => {
                     {room.lastTreatmentTitle} {formatDate(room.lastTreatmentAt)}
                   </span>
                 </div>
+              </div>
+            )}
+
+            {/* Раскрываемые заметки */}
+            {room.notes && (
+              <div className="border-t border-dark-700 pt-3 mt-3">
+                <button
+                  onClick={(e) => { e.preventDefault(); toggleNotes(room._id); }}
+                  className="flex items-center gap-1.5 text-xs text-dark-400 hover:text-dark-300 w-full text-left"
+                >
+                  <span className={`transition-transform inline-block ${expandedNotes[room._id] ? 'rotate-90' : ''}`} style={{ fontSize: '8px' }}>&#9654;</span>
+                  Заметки
+                </button>
+                {expandedNotes[room._id] && (
+                  <p className="text-xs text-dark-300 mt-2 whitespace-pre-wrap bg-dark-700/30 rounded-lg p-2.5 max-h-32 overflow-y-auto">
+                    {room.notes}
+                  </p>
+                )}
               </div>
             )}
             </div>

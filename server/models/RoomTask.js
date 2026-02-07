@@ -4,7 +4,8 @@ import mongoose from 'mongoose';
 export const TASK_TYPES = {
   SPRAY: 'spray',           // Опрыскивание
   NET: 'net',               // Натяжка сетки
-  TRIM: 'trim',             // Подрезка/дефолиация
+  TRIM: 'trim',             // Подрезка
+  DEFOLIATION: 'defoliation', // Дефолиация (листики)
   FEED: 'feed',             // Подкормка
   WATER: 'water',           // Полив
   FLUSH: 'flush',           // Промывка
@@ -18,7 +19,8 @@ export const TASK_TYPES = {
 export const TASK_LABELS = {
   spray: 'Опрыскивание',
   net: 'Натяжка сетки',
-  trim: 'Подрезка/Дефолиация',
+  trim: 'Подрезка',
+  defoliation: 'Дефолиация',
   feed: 'Подкормка',
   water: 'Полив',
   flush: 'Промывка',

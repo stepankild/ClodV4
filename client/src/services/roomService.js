@@ -49,5 +49,25 @@ export const roomService = {
   async deletePlan(id) {
     const response = await api.delete(`/rooms/plans/${id}`);
     return response.data;
+  },
+
+  async addNote(roomId, note) {
+    const response = await api.post(`/rooms/${roomId}/note`, { note });
+    return response.data;
+  },
+
+  async quickTask(roomId, { type, product, dosage }) {
+    const response = await api.post('/tasks/quick', { roomId, type, product, dosage });
+    return response.data;
+  },
+
+  async deleteTask(taskId) {
+    const response = await api.delete(`/tasks/${taskId}`);
+    return response.data;
+  },
+
+  async getRoomTasks(roomId) {
+    const response = await api.get(`/tasks/room/${roomId}`);
+    return response.data;
   }
 };
