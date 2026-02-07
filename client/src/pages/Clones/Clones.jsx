@@ -326,12 +326,15 @@ const Clones = () => {
   };
 
   const openCreateBatchModal = () => {
-    const roomsWithCut = (rooms || []).filter((r) => getCutDateForRoom(r));
-    const firstRoomId = roomsWithCut.length ? roomsWithCut[0]._id : '';
-    const firstCutDate = firstRoomId && roomsWithCut[0] ? getCutDateForRoom(roomsWithCut[0])?.toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const allRooms = rooms || [];
+    const firstRoomId = allRooms.length ? allRooms[0]._id : '';
+    const firstRoom = firstRoomId ? allRooms.find((r) => r._id === firstRoomId) : null;
+    const suggestedDate = firstRoom && getCutDateForRoom(firstRoom)
+      ? getCutDateForRoom(firstRoom).toISOString().slice(0, 10)
+      : new Date().toISOString().slice(0, 10);
     setCreateBatchForm({
       roomId: firstRoomId,
-      cutDate: firstCutDate,
+      cutDate: suggestedDate,
       strains: [{ strain: '', quantity: '' }],
       notes: '',
       isDone: false
@@ -937,17 +940,22 @@ const Clones = () => {
                   onChange={(e) => {
                     const roomId = e.target.value;
                     const room = (rooms || []).find((r) => r._id === roomId);
-                    const cutDate = room ? (getCutDateForRoom(room)?.toISOString().slice(0, 10) || createBatchForm.cutDate) : new Date().toISOString().slice(0, 10);
+                    const cutDate = room && getCutDateForRoom(room)
+                      ? getCutDateForRoom(room).toISOString().slice(0, 10)
+                      : (roomId ? createBatchForm.cutDate : new Date().toISOString().slice(0, 10));
                     setCreateBatchForm((f) => ({ ...f, roomId, cutDate }));
                   }}
                   className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                 >
                   <option value="">— Без комнаты (на заказ) —</option>
-                  {(rooms || []).filter((r) => getCutDateForRoom(r)).map((room) => (
-                    <option key={room._id} value={room._id}>
-                      {room.name} · нарезка {formatDate(getCutDateForRoom(room))}
-                    </option>
-                  ))}
+                  {(rooms || []).map((room) => {
+                    const suggestedDate = getCutDateForRoom(room);
+                    return (
+                      <option key={room._id} value={room._id}>
+                        {room.name}{suggestedDate ? ` · нарезка ${formatDate(suggestedDate)}` : ''}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
               <div>
