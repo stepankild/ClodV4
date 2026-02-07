@@ -12,11 +12,11 @@ import ArchiveDetail from './pages/Archive/ArchiveDetail';
 import Harvest from './pages/Harvest/Harvest';
 import Clones from './pages/Clones/Clones';
 import Vegetation from './pages/Vegetation/Vegetation';
-import Selection from './pages/Selection/Selection';
 import Workers from './pages/Workers/Workers';
 import Statistics from './pages/Statistics/Statistics';
 import AuditLog from './pages/AuditLog/AuditLog';
 import Trash from './pages/Trash/Trash';
+import Trim from './pages/Trim/Trim';
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -53,9 +53,9 @@ function App() {
         <Route path="/" element={<Overview />} />
         <Route path="/active" element={<ActiveRooms />} />
         <Route path="/harvest" element={<Harvest />} />
+        <Route path="/trim" element={<ProtectedRoute permission="trim:view"><Trim /></ProtectedRoute>} />
         <Route path="/clones" element={<Clones />} />
         <Route path="/vegetation" element={<Vegetation />} />
-        <Route path="/selection" element={<ProtectedRoute permission="selection:view"><Selection /></ProtectedRoute>} />
         <Route path="/archive" element={<ProtectedRoute permission="archive:view"><Archives /></ProtectedRoute>} />
         <Route path="/archive/:id" element={<ProtectedRoute permission="archive:view"><ArchiveDetail /></ProtectedRoute>} />
         <Route path="/stats" element={<ProtectedRoute permission="stats:view"><Statistics /></ProtectedRoute>} />

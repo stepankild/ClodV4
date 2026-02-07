@@ -210,6 +210,7 @@ export const completeSession = async (req, res) => {
         room: room._id,
         roomNumber: room.roomNumber,
         roomName: room.name,
+        squareMeters: room.squareMeters || null,
         cycleName: session.cycleName || room.cycleName || '',
         strain: room.strain || '—',
         plantsCount: room.plantsCount || session.plantsCount || 0,

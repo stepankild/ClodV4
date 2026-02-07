@@ -70,6 +70,12 @@ const flowerRoomSchema = new mongoose.Schema({
   totalCycles: {
     type: Number,
     default: 0
+  },
+  // Площадь комнаты (постоянная характеристика)
+  squareMeters: {
+    type: Number,
+    default: null,
+    min: 0
   }
 }, {
   timestamps: true

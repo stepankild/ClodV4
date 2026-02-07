@@ -22,7 +22,6 @@ const permissions = [
   { name: 'vegetation:view', description: 'Видеть раздел «Вегетация»', module: 'view' },
   { name: 'archive:view', description: 'Видеть раздел «Архив циклов»', module: 'view' },
   { name: 'stats:view', description: 'Видеть раздел «Статистика»', module: 'view' },
-  { name: 'selection:view', description: 'Видеть раздел «Селекция»', module: 'view' },
 
   // Dashboard module (legacy)
   { name: 'dashboard:view', description: 'Просмотр дашборда', module: 'dashboard' },
@@ -40,8 +39,10 @@ const permissions = [
   // Vegetation (просмотр = vegetation:view, создание = vegetation:create)
   { name: 'vegetation:create', description: 'Создавать бэтчи вегетации и отправлять в цветение', module: 'vegetation' },
 
-  // Selection
-  { name: 'selection:create', description: 'Создавать и редактировать бэтчи селекции', module: 'selection' },
+  // Trim
+  { name: 'trim:view', description: 'Видеть раздел «Трим»', module: 'view' },
+  { name: 'trim:create', description: 'Добавлять записи трима (вес за день)', module: 'trim' },
+  { name: 'trim:edit', description: 'Редактировать сухой вес, попкорн, завершать трим', module: 'trim' },
 
   // SuperAdmin permission
   { name: '*', description: 'Полный доступ ко всем функциям', module: 'system' }
@@ -76,7 +77,7 @@ const seedDatabase = async () => {
       permissionMap['vegetation:view'],
       permissionMap['archive:view'],
       permissionMap['stats:view'],
-      permissionMap['selection:view']
+      permissionMap['trim:view']
     ];
     const roles = [
       {
@@ -100,7 +101,8 @@ const seedDatabase = async () => {
           permissionMap['cycles:edit_name'],
           permissionMap['clones:create'],
           permissionMap['vegetation:create'],
-          permissionMap['selection:create'],
+          permissionMap['trim:create'],
+          permissionMap['trim:edit'],
           ...viewPerms
         ],
         isSystem: true

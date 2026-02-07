@@ -165,7 +165,7 @@ export const getRoom = async (req, res) => {
 // @route   PUT /api/rooms/:id
 export const updateRoom = async (req, res) => {
   try {
-    const { cycleName, strain, plantsCount, startDate, floweringDays, notes, isActive, name, environment } = req.body;
+    const { cycleName, strain, plantsCount, startDate, floweringDays, notes, isActive, name, environment, squareMeters } = req.body;
 
     const room = await FlowerRoom.findById(req.params.id);
 
@@ -188,6 +188,7 @@ export const updateRoom = async (req, res) => {
     if (notes !== undefined) room.notes = notes;
     if (isActive !== undefined) room.isActive = isActive;
     if (environment !== undefined) room.environment = { ...room.environment, ...environment };
+    if (squareMeters !== undefined) room.squareMeters = squareMeters;
 
     await room.save();
 

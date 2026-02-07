@@ -62,6 +62,10 @@ const cycleArchiveSchema = new mongoose.Schema({
     notes: {
       type: String,
       default: ''
+    },
+    popcornWeight: {
+      type: Number,  // попкорн в граммах
+      default: 0
     }
   },
   // Расчётные показатели
@@ -155,6 +159,20 @@ const cycleArchiveSchema = new mongoose.Schema({
     resolvedAt: Date,
     solution: String
   }],
+  // Трим
+  trimStatus: {
+    type: String,
+    enum: ['pending', 'in_progress', 'completed'],
+    default: 'pending'
+  },
+  trimCompletedAt: {
+    type: Date,
+    default: null
+  },
+  squareMeters: {
+    type: Number,
+    default: null
+  },
   deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
@@ -165,6 +183,7 @@ cycleArchiveSchema.index({ room: 1, createdAt: -1 });
 cycleArchiveSchema.index({ deletedAt: 1 });
 cycleArchiveSchema.index({ strain: 1 });
 cycleArchiveSchema.index({ harvestDate: -1 });
+cycleArchiveSchema.index({ trimStatus: 1, deletedAt: 1 });
 
 // Виртуальные поля
 cycleArchiveSchema.virtual('efficiency').get(function() {

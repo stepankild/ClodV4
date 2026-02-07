@@ -251,6 +251,7 @@ export const harvestAndArchive = async (req, res) => {
       room: roomId,
       roomNumber: room.roomNumber,
       roomName: room.name,
+      squareMeters: room.squareMeters || null,
       cycleName: (cycleName && String(cycleName).trim()) || room.cycleName || '',
       strain: room.strain,
       plantsCount: room.plantsCount,
