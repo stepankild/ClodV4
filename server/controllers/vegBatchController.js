@@ -34,8 +34,12 @@ export const getVegBatches = async (req, res) => {
       .lean();
     const normalized = list.map((doc) => {
       const lightChanges = Array.isArray(doc.lightChanges) && doc.lightChanges.length > 0
-        ? doc.lightChanges.map((c) => ({ date: c.date, powerPercent: c.powerPercent != null ? c.powerPercent : null }))
-        : (doc.lightChangeDate ? [{ date: doc.lightChangeDate, powerPercent: doc.lightPowerPercent != null ? doc.lightPowerPercent : null }] : []);
+        ? doc.lightChanges.map((c) => {
+          const p = c.powerPercent;
+          const powerPercent = p != null && p !== '' ? (typeof p === 'number' ? Math.round(Math.min(100, Math.max(0, p))) : Math.round(Math.min(100, Math.max(0, parseInt(p, 10) || 0)))) : null;
+          return { date: c.date, powerPercent };
+        })
+        : (doc.lightChangeDate ? [{ date: doc.lightChangeDate, powerPercent: doc.lightPowerPercent != null ? Math.round(Math.min(100, Math.max(0, Number(doc.lightPowerPercent)))) : null }] : []);
       return { ...doc, lightChanges };
     });
     res.json(normalized);

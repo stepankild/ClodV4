@@ -51,9 +51,15 @@ const getBatchGoodPercent = (b) => {
 const getBatchRemainder = (b) => Math.max(0, getBatchGoodCount(b) - (Number(b.sentToFlowerCount) || 0));
 
 const getBatchLightChanges = (b) => {
-  if (Array.isArray(b.lightChanges) && b.lightChanges.length > 0) return b.lightChanges;
-  if (b.lightChangeDate) return [{ date: b.lightChangeDate, powerPercent: b.lightPowerPercent != null ? b.lightPowerPercent : null }];
-  return [];
+  let list = [];
+  if (Array.isArray(b.lightChanges) && b.lightChanges.length > 0) list = b.lightChanges;
+  else if (b.lightChangeDate) list = [{ date: b.lightChangeDate, powerPercent: b.lightPowerPercent != null ? b.lightPowerPercent : null }];
+  return list.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
+};
+
+const getLatestLightChange = (b) => {
+  const changes = getBatchLightChanges(b);
+  return changes.length > 0 ? changes[0] : null;
 };
 
 const TABLES_TOTAL = 21;
@@ -371,7 +377,7 @@ const Vegetation = () => {
   }
 
   return (
-    <div>
+    <div className="overflow-x-hidden max-w-full">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">Вегетация</h1>
         <p className="text-dark-400 mt-1">
@@ -440,26 +446,26 @@ const Vegetation = () => {
       </div>
 
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto overflow-y-hidden">
+          <table className="w-full text-xs table-fixed" style={{ minWidth: 0 }}>
             <thead className="bg-dark-900">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Сорт / нарезка</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Кол-во</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Погибло</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Не выросло</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">% хороших</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Свет</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Остаток</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">В вегу</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Прогресс</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">Действия</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-32">Сорт</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-20">Кол-во</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-14">Погибло</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-14">Не выр.</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-14">%</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-24">Свет</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-14">Остаток</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-20">В вегу</th>
+                <th className="px-2 py-2 text-left font-semibold text-dark-400 uppercase w-24">Прогресс</th>
+                <th className="px-2 py-2 text-right font-semibold text-dark-400 uppercase w-28">Действия</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dark-700">
               {batches.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-4 py-8 text-center text-dark-500">
+                  <td colSpan={10} className="px-2 py-6 text-center text-dark-500">
                     Нет бэтчей на вегетации. Добавьте бэтч из нарезанных клонов.
                   </td>
                 </tr>
@@ -471,7 +477,7 @@ const Vegetation = () => {
                   const isEditingName = editingNameId === b._id;
                   return (
                     <tr key={b._id} className="hover:bg-dark-700/50">
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         {canCreateVeg && isEditingName ? (
                           <input
                             type="text"
@@ -480,29 +486,25 @@ const Vegetation = () => {
                             onBlur={() => saveBatchName(b._id)}
                             onKeyDown={(e) => { if (e.key === 'Enter') saveBatchName(b._id); }}
                             autoFocus
-                            className="w-full max-w-[160px] px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
+                            className="w-full min-w-0 px-1.5 py-1 bg-dark-700 border border-dark-600 rounded text-white text-xs"
                           />
                         ) : canCreateVeg ? (
                           <button
                             type="button"
                             onClick={() => { setEditingNameId(b._id); setEditingName(b.name || ''); }}
-                            className="text-left text-white hover:bg-dark-700 rounded px-1 py-0.5 -mx-1 text-sm"
+                            className="text-left text-white hover:bg-dark-700 rounded px-0.5 py-0.5 -mx-0.5 text-xs truncate block w-full"
                           >
-                            {b.name || '— Название'}
+                            {b.name || '—'}
                           </button>
                         ) : (
-                          <span className="text-white text-sm">{b.name || '— Название'}</span>
+                          <span className="text-white text-xs truncate block">{b.name || '—'}</span>
                         )}
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-white">{formatStrainsShort(getStrainsFromBatch(b))}</div>
-                        <div className="text-xs text-dark-500">Нарезка: {formatDate(b.cutDate)}</div>
+                      <td className="px-2 py-2">
+                        <div className="text-dark-300 truncate" title={formatStrainsShort(getStrainsFromBatch(b))}>{formatStrainsShort(getStrainsFromBatch(b))}</div>
+                        <div className="text-dark-500">всего {getBatchTotal(b)} · ок {getBatchGoodCount(b)}</div>
                       </td>
-                      <td className="px-4 py-3">
-                        <div className="text-dark-300">всего {getBatchTotal(b)}</div>
-                        <div className="text-xs text-primary-400">хороших {getBatchGoodCount(b)}</div>
-                      </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'died' ? (
                           <input
                             type="number"
@@ -525,7 +527,7 @@ const Vegetation = () => {
                           </button>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'notGrown' ? (
                           <input
                             type="number"
@@ -548,36 +550,34 @@ const Vegetation = () => {
                           </button>
                         )}
                       </td>
-                      <td className="px-4 py-3">
+                      <td className="px-2 py-2">
                         <span className={getBatchGoodPercent(b) >= 80 ? 'text-green-400' : getBatchGoodPercent(b) >= 50 ? 'text-amber-400' : 'text-red-400'}>
                           {getBatchGoodPercent(b)}%
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-dark-300 text-xs">
+                      <td className="px-2 py-2 text-dark-300">
                         {(() => {
+                          const latest = getLatestLightChange(b);
                           const changes = getBatchLightChanges(b);
-                          if (changes.length === 0) return '—';
-                          if (changes.length === 1) return <>{formatDate(changes[0].date)}{changes[0].powerPercent != null && ` · ${changes[0].powerPercent}%`}</>;
-                          const last = changes[changes.length - 1];
-                          return <span title={changes.map((c) => `${formatDate(c.date)} ${c.powerPercent != null ? c.powerPercent + '%' : ''}`).join(', ')}>{changes.length} смен · последняя: {formatDate(last.date)}{last.powerPercent != null && ` ${last.powerPercent}%`}</span>;
+                          if (!latest) return '—';
+                          if (changes.length === 1) return <>{formatDate(latest.date)}{latest.powerPercent != null && ` ${latest.powerPercent}%`}</>;
+                          return <span title={changes.map((c) => `${formatDate(c.date)} ${c.powerPercent != null ? c.powerPercent + '%' : ''}`).join(', ')}>{changes.length} смен · {formatDate(latest.date)} {latest.powerPercent != null && `${latest.powerPercent}%`}</span>;
                         })()}
                       </td>
-                      <td className="px-4 py-3 text-dark-300">{getBatchRemainder(b)}</td>
-                      <td className="px-4 py-3 text-dark-300">{formatDate(b.transplantedToVegAt)}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-dark-700 rounded-full overflow-hidden min-w-[80px]">
+                      <td className="px-2 py-2 text-dark-300">{getBatchRemainder(b)}</td>
+                      <td className="px-2 py-2 text-dark-300">{formatDate(b.transplantedToVegAt)}</td>
+                      <td className="px-2 py-2">
+                        <div className="flex items-center gap-1">
+                          <div className="flex-1 min-w-0 h-1.5 bg-dark-700 rounded-full overflow-hidden">
                             <div
                               className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-green-500' : 'bg-primary-500'}`}
                               style={{ width: `${progress}%` }}
                             />
                           </div>
-                          <span className="text-xs text-dark-400 whitespace-nowrap">
-                            {daysInVeg} дн. / {target} дн.
-                          </span>
+                          <span className="text-dark-400 whitespace-nowrap shrink-0">{daysInVeg}/{target}</span>
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right">
+                      <td className="px-2 py-2 text-right">
                         {canCreateVeg ? (
                           <>
                             <button
