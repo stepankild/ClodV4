@@ -85,7 +85,7 @@ export const getTrimDailyStats = async (req, res) => {
 // @route   POST /api/trim/log
 export const addTrimLog = async (req, res) => {
   try {
-    const { archiveId, weight, date } = req.body;
+    const { archiveId, strain, weight, date } = req.body;
 
     if (!archiveId || !weight || weight <= 0) {
       return res.status(400).json({ message: 'Укажите архив и вес > 0' });
@@ -99,11 +99,17 @@ export const addTrimLog = async (req, res) => {
       return res.status(400).json({ message: 'Трим уже завершён' });
     }
 
+    const strainsList = (archive.strains && archive.strains.length) ? archive.strains : [archive.strain || ''];
+    const strainStr = typeof strain === 'string' ? strain.trim() : String(strain || '').trim();
+    if (!strainsList.some(s => (s || '').trim() === strainStr)) {
+      return res.status(400).json({ message: 'Выберите сорт из списка сортов этой комнаты' });
+    }
+
     const log = await TrimLog.create({
       archive: archive._id,
       room: archive.room,
       roomName: archive.roomName,
-      strain: archive.strain,
+      strain: strainStr || archive.strain,
       weight,
       date: date || new Date(),
       createdBy: req.user._id
@@ -186,7 +192,7 @@ export const deleteTrimLog = async (req, res) => {
   }
 };
 
-// @desc    Обновить поля трима в архиве (dryWeight, popcornWeight)
+// @desc    Обновить поля трима в архиве (dryWeight, popcornWeight, strainData, trimProgressPercent)
 // @route   PUT /api/trim/archive/:archiveId
 export const updateTrimArchive = async (req, res) => {
   try {
@@ -195,16 +201,31 @@ export const updateTrimArchive = async (req, res) => {
       return res.status(404).json({ message: 'Архив не найден' });
     }
 
-    const { dryWeight, popcornWeight } = req.body;
+    const { dryWeight, popcornWeight, trimProgressPercent, strainData, strains } = req.body;
     if (dryWeight !== undefined) archive.harvestData.dryWeight = Number(dryWeight) || 0;
     if (popcornWeight !== undefined) archive.harvestData.popcornWeight = Number(popcornWeight) || 0;
+    if (trimProgressPercent !== undefined) {
+      const p = Math.min(100, Math.max(0, Number(trimProgressPercent) || 0));
+      archive.harvestData.trimProgressPercent = p;
+    }
+    if (Array.isArray(strains) && strains.length > 0) {
+      archive.strains = strains.map(s => String(s || '').trim()).filter(Boolean);
+    }
+    if (Array.isArray(strainData) && strainData.length > 0) {
+      archive.strainData = strainData.map(row => ({
+        strain: String(row.strain || '').trim(),
+        wetWeight: Number(row.wetWeight) || 0,
+        dryWeight: Number(row.dryWeight) || 0,
+        popcornWeight: Number(row.popcornWeight) || 0
+      }));
+    }
     await archive.save();
 
     await createAuditLog(req, {
       action: 'trim.archive_update',
       entityType: 'CycleArchive',
       entityId: archive._id,
-      details: { dryWeight, popcornWeight, roomName: archive.roomName }
+      details: { dryWeight, popcornWeight, trimProgressPercent: archive.harvestData.trimProgressPercent, roomName: archive.roomName }
     });
 
     res.json(archive);

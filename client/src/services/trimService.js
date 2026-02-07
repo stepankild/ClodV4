@@ -11,8 +11,8 @@ export const trimService = {
     return response.data;
   },
 
-  async addLog(archiveId, weight, date) {
-    const response = await api.post('/trim/log', { archiveId, weight, date });
+  async addLog(archiveId, strain, weight, date) {
+    const response = await api.post('/trim/log', { archiveId, strain, weight, date });
     return response.data;
   },
 

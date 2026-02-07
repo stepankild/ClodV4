@@ -259,6 +259,13 @@ export const harvestAndArchive = async (req, res) => {
       harvestDate,
       floweringDays: room.floweringDays,
       actualDays,
+      strains: [room.strain || ''],
+      strainData: [{
+        strain: room.strain || '',
+        wetWeight: wetWeight || 0,
+        dryWeight: dryWeight || 0,
+        popcornWeight: 0
+      }],
       harvestData: {
         wetWeight: wetWeight || 0,
         dryWeight: dryWeight || 0,

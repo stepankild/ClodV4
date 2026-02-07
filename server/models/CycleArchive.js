@@ -20,6 +20,17 @@ const cycleArchiveSchema = new mongoose.Schema({
     type: String,
     required: true
   },
+  // Сорта в комнате (для выбора при записи трима); если пусто — используем [strain]
+  strains: [{
+    type: String
+  }],
+  // По каждому сорту: мокрый/сухой/попкорн (трим по сорту считаем из TrimLog)
+  strainData: [{
+    strain: { type: String, required: true },
+    wetWeight: { type: Number, default: 0 },
+    dryWeight: { type: Number, default: 0 },
+    popcornWeight: { type: Number, default: 0 }
+  }],
   plantsCount: {
     type: Number,
     required: true
@@ -65,6 +76,10 @@ const cycleArchiveSchema = new mongoose.Schema({
     },
     popcornWeight: {
       type: Number,  // попкорн в граммах
+      default: 0
+    },
+    trimProgressPercent: {
+      type: Number,  // сколько % комнаты потримлено (вводит работник), 0–100
       default: 0
     }
   },

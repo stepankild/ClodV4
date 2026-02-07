@@ -33,7 +33,7 @@ const Trim = () => {
   const [error, setError] = useState('');
 
   // Daily log form
-  const [logForm, setLogForm] = useState({ archiveId: '', weight: '', date: new Date().toISOString().slice(0, 10) });
+  const [logForm, setLogForm] = useState({ archiveId: '', strain: '', weight: '', date: new Date().toISOString().slice(0, 10) });
   const [logSaving, setLogSaving] = useState(false);
 
   // Detail modal
@@ -44,6 +44,8 @@ const Trim = () => {
   // Edit fields inside detail modal
   const [editDry, setEditDry] = useState('');
   const [editPopcorn, setEditPopcorn] = useState('');
+  const [editProgressPercent, setEditProgressPercent] = useState('');
+  const [editStrainData, setEditStrainData] = useState([]);
   const [editSaving, setEditSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
@@ -52,8 +54,12 @@ const Trim = () => {
     try {
       setLoading(true);
       setError('');
-      const data = await trimService.getActiveArchives();
-      setArchives(Array.isArray(data) ? data : []);
+      const [archivesData, statsData] = await Promise.all([
+        trimService.getActiveArchives(),
+        trimService.getDailyStats(statsDays)
+      ]);
+      setArchives(Array.isArray(archivesData) ? archivesData : []);
+      setDailyStats(Array.isArray(statsData) ? statsData : []);
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка загрузки');
     } finally {
@@ -64,10 +70,10 @@ const Trim = () => {
   // ─── Daily log ───
   const handleLogSubmit = async (e) => {
     e.preventDefault();
-    if (!logForm.archiveId || !logForm.weight) return;
+    if (!logForm.archiveId || !logForm.strain || !logForm.weight) return;
     setLogSaving(true);
     try {
-      await trimService.addLog(logForm.archiveId, Number(logForm.weight), logForm.date);
+      await trimService.addLog(logForm.archiveId, logForm.strain, Number(logForm.weight), logForm.date);
       setLogForm(f => ({ ...f, weight: '' }));
       await load();
       // refresh detail modal if open
@@ -88,6 +94,10 @@ const Trim = () => {
     setSelectedArchive(arch);
     setEditDry(String(arch.harvestData?.dryWeight || 0));
     setEditPopcorn(String(arch.harvestData?.popcornWeight || 0));
+    setEditProgressPercent(String(arch.harvestData?.trimProgressPercent ?? 0));
+    setEditStrainData(Array.isArray(arch.strainData) && arch.strainData.length
+      ? arch.strainData.map(s => ({ strain: s.strain || '', wetWeight: s.wetWeight ?? 0, dryWeight: s.dryWeight ?? 0, popcornWeight: s.popcornWeight ?? 0 }))
+      : [{ strain: arch.strain || '', wetWeight: arch.harvestData?.wetWeight ?? 0, dryWeight: arch.harvestData?.dryWeight ?? 0, popcornWeight: arch.harvestData?.popcornWeight ?? 0 }]);
     setLogsLoading(true);
     try {
       const data = await trimService.getLogs(archiveId);
@@ -113,17 +123,31 @@ const Trim = () => {
     if (!selectedArchive) return;
     setEditSaving(true);
     try {
+      const strainData = editStrainData.map(s => ({
+        strain: String(s.strain || '').trim(),
+        wetWeight: Number(s.wetWeight) || 0,
+        dryWeight: Number(s.dryWeight) || 0,
+        popcornWeight: Number(s.popcornWeight) || 0
+      })).filter(s => s.strain !== '');
+      const dryTotal = strainData.reduce((sum, s) => sum + (s.dryWeight || 0), 0);
+      const popcornTotal = strainData.reduce((sum, s) => sum + (s.popcornWeight || 0), 0);
       await trimService.updateArchive(selectedArchive._id, {
-        dryWeight: Number(editDry) || 0,
-        popcornWeight: Number(editPopcorn) || 0
+        dryWeight: dryTotal,
+        popcornWeight: popcornTotal,
+        trimProgressPercent: Math.min(100, Math.max(0, Number(editProgressPercent) || 0)),
+        strainData: strainData.length ? strainData : undefined,
+        strains: strainData.length ? strainData.map(s => s.strain) : undefined
       });
       await load();
-      // Refresh selected archive data
       const updated = (await trimService.getActiveArchives()).find(a => a._id === selectedArchive._id);
       if (updated) {
         setSelectedArchive(updated);
         setEditDry(String(updated.harvestData?.dryWeight || 0));
         setEditPopcorn(String(updated.harvestData?.popcornWeight || 0));
+        setEditProgressPercent(String(updated.harvestData?.trimProgressPercent ?? 0));
+        setEditStrainData(Array.isArray(updated.strainData) && updated.strainData.length
+          ? updated.strainData.map(s => ({ strain: s.strain || '', wetWeight: s.wetWeight ?? 0, dryWeight: s.dryWeight ?? 0, popcornWeight: s.popcornWeight ?? 0 }))
+          : [{ strain: updated.strain || '', wetWeight: updated.harvestData?.wetWeight ?? 0, dryWeight: updated.harvestData?.dryWeight ?? 0, popcornWeight: updated.harvestData?.popcornWeight ?? 0 }]);
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка сохранения');
@@ -149,11 +173,13 @@ const Trim = () => {
     const trim = a.harvestData?.trimWeight || 0;
     const popcorn = a.harvestData?.popcornWeight || 0;
     const sqm = a.squareMeters || 0;
+    const progressPercent = Math.min(100, Math.max(0, Number(a.harvestData?.trimProgressPercent) || 0));
     return {
       dry,
       trim,
       popcorn,
       sqm,
+      progressPercent,
       dryPerSqm: sqm > 0 ? dry / sqm : null,
       trimPerSqm: sqm > 0 ? trim / sqm : null,
       trimPercent: dry > 0 ? (trim / dry) * 100 : 0,
@@ -232,14 +258,32 @@ const Trim = () => {
               <label className="block text-xs text-dark-400 mb-1">Комната</label>
               <select
                 value={logForm.archiveId}
-                onChange={(e) => setLogForm(f => ({ ...f, archiveId: e.target.value }))}
+                onChange={(e) => setLogForm(f => ({ ...f, archiveId: e.target.value, strain: '' }))}
                 required
                 className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
               >
                 <option value="">— Выберите —</option>
                 {archives.filter((a) => a.trimStatus !== 'completed').map(a => (
-                  <option key={a._id} value={a._id}>{a.roomName} · {a.strain}</option>
+                  <option key={a._id} value={a._id}>{a.roomName} · {(a.strains && a.strains.length) ? a.strains.join(', ') : a.strain}</option>
                 ))}
+              </select>
+            </div>
+            <div className="flex-1 min-w-[140px]">
+              <label className="block text-xs text-dark-400 mb-1">Сорт</label>
+              <select
+                value={logForm.strain}
+                onChange={(e) => setLogForm(f => ({ ...f, strain: e.target.value }))}
+                required
+                className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+              >
+                <option value="">— Выберите —</option>
+                {(() => {
+                  const arch = archives.find(a => a._id === logForm.archiveId);
+                  const list = (arch?.strains && arch.strains.length) ? arch.strains : (arch ? [arch.strain] : []);
+                  return list.map(s => (
+                    <option key={s} value={s}>{s || '—'}</option>
+                  ));
+                })()}
               </select>
             </div>
             <div className="w-28">
@@ -316,38 +360,65 @@ const Trim = () => {
                   </div>
                 )}
 
-                {/* Trim progress bar */}
-                {m.dry > 0 && (
-                  <div>
-                    <div className="flex justify-between text-xs text-dark-400 mb-1">
-                      <span>Потримлено</span>
-                      <span>{fmt(m.trimPercent, 0)}%</span>
-                    </div>
-                    <div className="h-2.5 bg-dark-700 rounded-full overflow-hidden">
-                      <div className="h-full flex">
-                        <div className="bg-green-500 rounded-l-full transition-all" style={{ width: `${Math.min(100, m.trimPercent)}%` }} />
-                        {m.popcorn > 0 && (
-                          <div className="bg-amber-500 transition-all" style={{ width: `${Math.min(100 - m.trimPercent, (m.popcorn / m.dry) * 100)}%` }} />
-                        )}
-                      </div>
-                    </div>
+                {/* Progress bar: готовность комнаты (%) */}
+                <div>
+                  <div className="flex justify-between text-xs text-dark-400 mb-1">
+                    <span>Готовность комнаты</span>
+                    <span>{fmt(m.progressPercent, 0)}%</span>
                   </div>
-                )}
+                  <div className="h-2.5 bg-dark-700 rounded-full overflow-hidden">
+                    <div className="h-full bg-green-500 rounded-l-full transition-all" style={{ width: `${Math.min(100, m.progressPercent)}%` }} />
+                  </div>
+                </div>
 
-                <div className="flex justify-between">
-                  <span className="text-dark-400">Готовый вес</span>
-                  <span className="text-green-400 font-medium">{m.trim > 0 ? `${fmt(m.trim, 0)} г` : '—'}</span>
-                </div>
-                {m.trimPerSqm != null && m.trim > 0 && (
-                  <div className="flex justify-between">
-                    <span className="text-dark-400">Готовый на м²</span>
-                    <span className="text-green-400/70">{fmt(m.trimPerSqm)} г/м²</span>
+                {/* По сортам + Итого */}
+                {(a.strainData && a.strainData.length) ? (
+                  <div className="overflow-x-auto -mx-1">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="text-dark-500">
+                          <th className="text-left py-1 pr-2 font-medium">Сорт</th>
+                          <th className="text-right py-1 px-1">Мокрый</th>
+                          <th className="text-right py-1 px-1">Сухой</th>
+                          {m.sqm > 0 && <th className="text-right py-1 px-1">г/м²</th>}
+                          <th className="text-right py-1 px-1">Попкорн</th>
+                          <th className="text-right py-1 pl-1">Трим</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-dark-300">
+                        {a.strainData.map((s, i) => (
+                          <tr key={i}>
+                            <td className="py-0.5 pr-2">{s.strain || '—'}</td>
+                            <td className="text-right px-1">{s.wetWeight > 0 ? `${fmt(s.wetWeight, 0)}` : '—'}</td>
+                            <td className="text-right px-1 text-blue-400">{s.dryWeight > 0 ? `${fmt(s.dryWeight, 0)}` : '—'}</td>
+                            {m.sqm > 0 && <td className="text-right px-1 text-blue-400/80">{s.dryWeight > 0 ? fmt(s.dryWeight / m.sqm) : '—'}</td>}
+                            <td className="text-right px-1 text-amber-400">{s.popcornWeight > 0 ? `${fmt(s.popcornWeight, 0)}` : '—'}</td>
+                            <td className="text-right pl-1 text-green-400">{(a.trimByStrain && a.trimByStrain[s.strain]) ? fmt(a.trimByStrain[s.strain], 0) : '—'}</td>
+                          </tr>
+                        ))}
+                        <tr className="border-t border-dark-600 text-white font-medium">
+                          <td className="py-1 pr-2">Итого</td>
+                          <td className="text-right px-1">{fmt(a.strainData.reduce((sum, s) => sum + (s.wetWeight || 0), 0), 0)}</td>
+                          <td className="text-right px-1">{fmt(m.dry, 0)}</td>
+                          {m.sqm > 0 && <td className="text-right px-1">{fmt(m.dryPerSqm)}</td>}
+                          <td className="text-right px-1">{fmt(m.popcorn, 0)}</td>
+                          <td className="text-right pl-1 text-green-400">{fmt(m.trim, 0)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </div>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span className="text-dark-400">Готовый вес</span>
+                      <span className="text-green-400 font-medium">{m.trim > 0 ? `${fmt(m.trim, 0)} г` : '—'}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-dark-400">Попкорн</span>
+                      <span className="text-amber-400">{m.popcorn > 0 ? `${fmt(m.popcorn, 0)} г` : '—'}</span>
+                    </div>
+                  </>
                 )}
-                <div className="flex justify-between">
-                  <span className="text-dark-400">Попкорн</span>
-                  <span className="text-amber-400">{m.popcorn > 0 ? `${fmt(m.popcorn, 0)} г` : '—'}</span>
-                </div>
                 {m.lossPercent != null && m.dry > 0 && (
                   <div className="flex justify-between">
                     <span className="text-dark-400">Потеря после трима</span>
@@ -395,30 +466,93 @@ const Trim = () => {
               <button type="button" onClick={closeDetail} className="text-dark-400 hover:text-white text-xl">&times;</button>
             </div>
 
-            {/* Editable fields */}
+            {/* Editable fields: по сортам + готовность комнаты */}
             {canEdit && (
               <div className="mb-4 p-3 bg-dark-700/50 rounded-lg space-y-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-dark-400 mb-1">Сухой вес (г)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={editDry}
-                      onChange={e => setEditDry(e.target.value)}
-                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-dark-400 mb-1">Попкорн (г)</label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={editPopcorn}
-                      onChange={e => setEditPopcorn(e.target.value)}
-                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                    />
-                  </div>
+                <h4 className="text-xs font-medium text-dark-400 uppercase">Данные по сортам</h4>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-dark-500 text-xs">
+                        <th className="text-left py-1 pr-2">Сорт</th>
+                        <th className="text-right py-1 px-1 w-20">Мокрый (г)</th>
+                        <th className="text-right py-1 px-1 w-20">Сухой (г)</th>
+                        <th className="text-right py-1 pl-1 w-20">Попкорн (г)</th>
+                        <th className="w-8" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {editStrainData.map((s, i) => (
+                        <tr key={i}>
+                          <td className="py-1 pr-2">
+                            <input
+                              type="text"
+                              value={s.strain}
+                              onChange={e => setEditStrainData(prev => prev.map((r, j) => j === i ? { ...r, strain: e.target.value } : r))}
+                              placeholder="Название сорта"
+                              className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm"
+                            />
+                          </td>
+                          <td className="py-1 px-1">
+                            <input
+                              type="number"
+                              min="0"
+                              value={s.wetWeight}
+                              onChange={e => setEditStrainData(prev => prev.map((r, j) => j === i ? { ...r, wetWeight: e.target.value } : r))}
+                              className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm text-right"
+                            />
+                          </td>
+                          <td className="py-1 px-1">
+                            <input
+                              type="number"
+                              min="0"
+                              value={s.dryWeight}
+                              onChange={e => setEditStrainData(prev => prev.map((r, j) => j === i ? { ...r, dryWeight: e.target.value } : r))}
+                              className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm text-right"
+                            />
+                          </td>
+                          <td className="py-1 pl-1">
+                            <input
+                              type="number"
+                              min="0"
+                              value={s.popcornWeight}
+                              onChange={e => setEditStrainData(prev => prev.map((r, j) => j === i ? { ...r, popcornWeight: e.target.value } : r))}
+                              className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm text-right"
+                            />
+                          </td>
+                          <td className="py-1 pl-1">
+                            <button
+                              type="button"
+                              onClick={() => setEditStrainData(prev => prev.filter((_, j) => j !== i))}
+                              className="text-red-400 hover:text-red-300 text-lg leading-none"
+                              title="Удалить сорт"
+                            >
+                              ×
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditStrainData(prev => [...prev, { strain: '', wetWeight: 0, dryWeight: 0, popcornWeight: 0 }])}
+                  className="text-xs text-primary-400 hover:text-primary-300"
+                >
+                  + Добавить сорт
+                </button>
+                <div className="pt-2">
+                  <label className="block text-xs text-dark-400 mb-1">Готовность комнаты (%)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={editProgressPercent}
+                    onChange={e => setEditProgressPercent(e.target.value)}
+                    placeholder="0–100"
+                    className="w-full max-w-[120px] px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                  />
                 </div>
                 <button
                   type="button"
@@ -431,31 +565,79 @@ const Trim = () => {
               </div>
             )}
 
-            {/* Metrics summary */}
+            {/* Metrics summary: по сортам + итого */}
             {(() => {
               const m = calcMetrics(selectedArchive);
+              const sd = selectedArchive.strainData && selectedArchive.strainData.length ? selectedArchive.strainData : [];
               return (
-                <div className="grid grid-cols-2 gap-3 mb-4 text-sm">
-                  <div className="bg-dark-700/30 rounded-lg p-3">
-                    <div className="text-dark-500 text-xs uppercase mb-1">Готовый вес</div>
-                    <div className="text-green-400 text-lg font-semibold">{m.trim > 0 ? `${fmt(m.trim, 0)} г` : '—'}</div>
+                <div className="mb-4 text-sm">
+                  <div className="mb-3">
+                    <div className="flex justify-between text-dark-400 text-xs mb-1">
+                      <span>Готовность комнаты</span>
+                      <span>{fmt(m.progressPercent, 0)}%</span>
+                    </div>
+                    <div className="h-2.5 bg-dark-700 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 rounded-l-full transition-all" style={{ width: `${Math.min(100, m.progressPercent)}%` }} />
+                    </div>
                   </div>
-                  <div className="bg-dark-700/30 rounded-lg p-3">
-                    <div className="text-dark-500 text-xs uppercase mb-1">Потеря</div>
-                    <div className="text-red-400 text-lg font-semibold">{m.lossPercent != null && m.dry > 0 ? `${fmt(m.lossPercent)}%` : '—'}</div>
-                  </div>
-                  {m.sqm > 0 && (
-                    <>
-                      <div className="bg-dark-700/30 rounded-lg p-3">
-                        <div className="text-dark-500 text-xs uppercase mb-1">Сухой на м²</div>
-                        <div className="text-blue-400 font-semibold">{fmt(m.dryPerSqm)} г/м²</div>
-                      </div>
-                      <div className="bg-dark-700/30 rounded-lg p-3">
-                        <div className="text-dark-500 text-xs uppercase mb-1">Готовый на м²</div>
-                        <div className="text-green-400 font-semibold">{m.trim > 0 ? `${fmt(m.trimPerSqm)} г/м²` : '—'}</div>
-                      </div>
-                    </>
+                  {sd.length > 0 && (
+                    <div className="overflow-x-auto mb-3">
+                      <table className="w-full text-xs border-collapse">
+                        <thead>
+                          <tr className="text-dark-500">
+                            <th className="text-left py-1 pr-2 font-medium">Сорт</th>
+                            <th className="text-right py-1 px-1">Мокрый</th>
+                            <th className="text-right py-1 px-1">Сухой</th>
+                            {m.sqm > 0 && <th className="text-right py-1 px-1">г/м²</th>}
+                            <th className="text-right py-1 px-1">Попкорн</th>
+                            <th className="text-right py-1 pl-1">Трим</th>
+                          </tr>
+                        </thead>
+                        <tbody className="text-dark-300">
+                          {sd.map((s, i) => (
+                            <tr key={i}>
+                              <td className="py-0.5 pr-2">{s.strain || '—'}</td>
+                              <td className="text-right px-1">{s.wetWeight > 0 ? fmt(s.wetWeight, 0) : '—'}</td>
+                              <td className="text-right px-1 text-blue-400">{s.dryWeight > 0 ? fmt(s.dryWeight, 0) : '—'}</td>
+                              {m.sqm > 0 && <td className="text-right px-1">{s.dryWeight > 0 ? fmt(s.dryWeight / m.sqm) : '—'}</td>}
+                              <td className="text-right px-1 text-amber-400">{s.popcornWeight > 0 ? fmt(s.popcornWeight, 0) : '—'}</td>
+                              <td className="text-right pl-1 text-green-400">{(selectedArchive.trimByStrain && selectedArchive.trimByStrain[s.strain]) ? fmt(selectedArchive.trimByStrain[s.strain], 0) : '—'}</td>
+                            </tr>
+                          ))}
+                          <tr className="border-t border-dark-600 text-white font-medium">
+                            <td className="py-1 pr-2">Итого</td>
+                            <td className="text-right px-1">{fmt(sd.reduce((sum, s) => sum + (s.wetWeight || 0), 0), 0)}</td>
+                            <td className="text-right px-1">{fmt(m.dry, 0)}</td>
+                            {m.sqm > 0 && <td className="text-right px-1">{fmt(m.dryPerSqm)}</td>}
+                            <td className="text-right px-1">{fmt(m.popcorn, 0)}</td>
+                            <td className="text-right pl-1 text-green-400">{fmt(m.trim, 0)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
                   )}
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="bg-dark-700/30 rounded-lg p-3">
+                      <div className="text-dark-500 text-xs uppercase mb-1">Готовый вес (комната)</div>
+                      <div className="text-green-400 text-lg font-semibold">{m.trim > 0 ? `${fmt(m.trim, 0)} г` : '—'}</div>
+                    </div>
+                    <div className="bg-dark-700/30 rounded-lg p-3">
+                      <div className="text-dark-500 text-xs uppercase mb-1">Потеря</div>
+                      <div className="text-red-400 text-lg font-semibold">{m.lossPercent != null && m.dry > 0 ? `${fmt(m.lossPercent)}%` : '—'}</div>
+                    </div>
+                    {m.sqm > 0 && (
+                      <>
+                        <div className="bg-dark-700/30 rounded-lg p-3">
+                          <div className="text-dark-500 text-xs uppercase mb-1">Сухой на м²</div>
+                          <div className="text-blue-400 font-semibold">{fmt(m.dryPerSqm)} г/м²</div>
+                        </div>
+                        <div className="bg-dark-700/30 rounded-lg p-3">
+                          <div className="text-dark-500 text-xs uppercase mb-1">Готовый на м²</div>
+                          <div className="text-green-400 font-semibold">{m.trim > 0 ? `${fmt(m.trimPerSqm)} г/м²` : '—'}</div>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 </div>
               );
             })()}
@@ -473,6 +655,7 @@ const Trim = () => {
                     <thead>
                       <tr className="text-dark-400 text-xs uppercase">
                         <th className="px-3 py-2 text-left">Дата</th>
+                        <th className="px-3 py-2 text-left">Сорт</th>
                         <th className="px-3 py-2 text-right">Вес (г)</th>
                         <th className="px-3 py-2 text-left">Кто</th>
                         {canEdit && <th className="px-3 py-2 w-10" />}
@@ -482,6 +665,7 @@ const Trim = () => {
                       {logs.map(log => (
                         <tr key={log._id} className="hover:bg-dark-800/50">
                           <td className="px-3 py-2 text-dark-300">{formatDate(log.date)}</td>
+                          <td className="px-3 py-2 text-dark-300">{log.strain || '—'}</td>
                           <td className="px-3 py-2 text-right text-white font-medium">{log.weight}</td>
                           <td className="px-3 py-2 text-dark-400">{log.createdBy?.name || '—'}</td>
                           {canEdit && (

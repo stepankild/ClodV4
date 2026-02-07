@@ -218,6 +218,13 @@ export const completeSession = async (req, res) => {
         harvestDate,
         floweringDays: room.floweringDays || 56,
         actualDays,
+        strains: [room.strain || '—'],
+        strainData: [{
+          strain: room.strain || '—',
+          wetWeight: totalWet,
+          dryWeight: 0,
+          popcornWeight: 0
+        }],
         harvestData: {
           wetWeight: totalWet,
           dryWeight: 0,
