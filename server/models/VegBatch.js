@@ -27,6 +27,10 @@ const vegBatchSchema = new mongoose.Schema({
   notGrownCount: { type: Number, default: 0 },
   lightChangeDate: { type: Date, default: null },
   lightPowerPercent: { type: Number, default: null },
+  lightChanges: [{
+    date: { type: Date, required: true },
+    powerPercent: { type: Number, default: null }
+  }],
   sentToFlowerCount: { type: Number, default: 0 },
   deletedAt: { type: Date, default: null }
 }, {

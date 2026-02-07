@@ -30,8 +30,15 @@ export const getVegBatches = async (req, res) => {
     const list = await VegBatch.find(filter)
       .populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } })
       .populate('flowerRoom', 'name roomNumber')
-      .sort({ transplantedToVegAt: -1 });
-    res.json(list);
+      .sort({ transplantedToVegAt: -1 })
+      .lean();
+    const normalized = list.map((doc) => {
+      const lightChanges = Array.isArray(doc.lightChanges) && doc.lightChanges.length > 0
+        ? doc.lightChanges.map((c) => ({ date: c.date, powerPercent: c.powerPercent != null ? c.powerPercent : null }))
+        : (doc.lightChangeDate ? [{ date: doc.lightChangeDate, powerPercent: doc.lightPowerPercent != null ? doc.lightPowerPercent : null }] : []);
+      return { ...doc, lightChanges };
+    });
+    res.json(normalized);
   } catch (error) {
     console.error('Get veg batches error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
@@ -47,7 +54,15 @@ export const createVegBatch = async (req, res) => {
       return res.status(400).json({ message: 'Укажите дату нарезки и дату пересадки в вегетацию' });
     }
     const { strains: normalizedStrains, strain: derivedStrain, quantity: derivedQuantity } = normalizeStrains(strains, strain, quantity);
-    const { diedCount, notGrownCount, lightChangeDate, lightPowerPercent, sentToFlowerCount } = req.body;
+    const { diedCount, notGrownCount, lightChanges, sentToFlowerCount } = req.body;
+    const normalizedLight = Array.isArray(lightChanges) && lightChanges.length > 0
+      ? lightChanges
+        .filter((c) => c && c.date)
+        .map((c) => ({
+          date: new Date(c.date),
+          powerPercent: c.powerPercent != null && c.powerPercent !== '' ? Math.min(100, Math.max(0, parseInt(c.powerPercent, 10))) : null
+        }))
+      : [];
     const doc = new VegBatch({
       name: name != null ? String(name).trim() : '',
       sourceCloneCut: sourceCloneCut || null,
@@ -60,8 +75,7 @@ export const createVegBatch = async (req, res) => {
       notes: notes != null ? String(notes).trim() : '',
       diedCount: parseInt(diedCount, 10) >= 0 ? parseInt(diedCount, 10) : 0,
       notGrownCount: parseInt(notGrownCount, 10) >= 0 ? parseInt(notGrownCount, 10) : 0,
-      lightChangeDate: lightChangeDate ? new Date(lightChangeDate) : null,
-      lightPowerPercent: lightPowerPercent != null && lightPowerPercent !== '' ? Math.min(100, Math.max(0, parseInt(lightPowerPercent, 10))) : null,
+      lightChanges: normalizedLight,
       sentToFlowerCount: parseInt(sentToFlowerCount, 10) >= 0 ? parseInt(sentToFlowerCount, 10) : 0
     });
     await doc.save();
@@ -80,7 +94,7 @@ export const updateVegBatch = async (req, res) => {
   try {
     const doc = await VegBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч не найден' });
-    const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes, diedCount, notGrownCount, lightChangeDate, lightPowerPercent, sentToFlowerCount } = req.body;
+    const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes, diedCount, notGrownCount, lightChanges, sentToFlowerCount } = req.body;
     if (name !== undefined) doc.name = String(name).trim();
     if (strains !== undefined) {
       const norm = normalizeStrains(strains, doc.strain, doc.quantity);
@@ -110,8 +124,14 @@ export const updateVegBatch = async (req, res) => {
     if (notes !== undefined) doc.notes = String(notes).trim();
     if (diedCount !== undefined) doc.diedCount = parseInt(diedCount, 10) >= 0 ? parseInt(diedCount, 10) : 0;
     if (notGrownCount !== undefined) doc.notGrownCount = parseInt(notGrownCount, 10) >= 0 ? parseInt(notGrownCount, 10) : 0;
-    if (lightChangeDate !== undefined) doc.lightChangeDate = lightChangeDate ? new Date(lightChangeDate) : null;
-    if (lightPowerPercent !== undefined) doc.lightPowerPercent = lightPowerPercent != null && lightPowerPercent !== '' ? Math.min(100, Math.max(0, parseInt(lightPowerPercent, 10))) : null;
+    if (lightChanges !== undefined && Array.isArray(lightChanges)) {
+      doc.lightChanges = lightChanges
+        .filter((c) => c && c.date)
+        .map((c) => ({
+          date: new Date(c.date),
+          powerPercent: c.powerPercent != null && c.powerPercent !== '' ? Math.min(100, Math.max(0, parseInt(c.powerPercent, 10))) : null
+        }));
+    }
     if (sentToFlowerCount !== undefined) doc.sentToFlowerCount = parseInt(sentToFlowerCount, 10) >= 0 ? parseInt(sentToFlowerCount, 10) : 0;
     await doc.save();
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });

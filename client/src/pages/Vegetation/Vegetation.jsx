@@ -50,6 +50,16 @@ const getBatchGoodPercent = (b) => {
 
 const getBatchRemainder = (b) => Math.max(0, getBatchGoodCount(b) - (Number(b.sentToFlowerCount) || 0));
 
+const getBatchLightChanges = (b) => {
+  if (Array.isArray(b.lightChanges) && b.lightChanges.length > 0) return b.lightChanges;
+  if (b.lightChangeDate) return [{ date: b.lightChangeDate, powerPercent: b.lightPowerPercent != null ? b.lightPowerPercent : null }];
+  return [];
+};
+
+const TABLES_TOTAL = 21;
+const PLANTS_PER_TABLE = 54;
+const VEG_CAPACITY = TABLES_TOTAL * PLANTS_PER_TABLE;
+
 const Vegetation = () => {
   const { hasPermission } = useAuth();
   const canCreateVeg = hasPermission && hasPermission('vegetation:create');
@@ -87,11 +97,11 @@ const Vegetation = () => {
     notes: '',
     diedCount: '',
     notGrownCount: '',
-    lightChangeDate: '',
-    lightPowerPercent: '',
+    lightChanges: [],
     sentToFlowerCount: ''
   });
   const editFormStrainKey = useRef(0);
+  const editFormLightKey = useRef(0);
 
   useEffect(() => {
     load();
@@ -243,8 +253,14 @@ const Vegetation = () => {
       notes: batch.notes || '',
       diedCount: batch.diedCount != null ? String(batch.diedCount) : '0',
       notGrownCount: batch.notGrownCount != null ? String(batch.notGrownCount) : '0',
-      lightChangeDate: batch.lightChangeDate ? new Date(batch.lightChangeDate).toISOString().slice(0, 10) : '',
-      lightPowerPercent: batch.lightPowerPercent != null && batch.lightPowerPercent !== '' ? String(batch.lightPowerPercent) : '',
+      lightChanges: (() => {
+        const list = (getBatchLightChanges(batch)).map((c) => ({
+          date: c.date ? new Date(c.date).toISOString().slice(0, 10) : '',
+          powerPercent: c.powerPercent != null && c.powerPercent !== '' ? String(c.powerPercent) : '',
+          _key: editFormLightKey.current++
+        }));
+        return list.length ? list : [{ date: '', powerPercent: '', _key: editFormLightKey.current++ }];
+      })(),
       sentToFlowerCount: batch.sentToFlowerCount != null ? String(batch.sentToFlowerCount) : '0'
     });
   };
@@ -261,6 +277,18 @@ const Vegetation = () => {
 
   const updateEditStrainRow = (idx, field, value) => {
     setEditForm((f) => ({ ...f, strains: (f.strains || []).map((s, i) => (i === idx ? { ...s, [field]: value } : s)) }));
+  };
+
+  const addEditLightRow = () => {
+    setEditForm((f) => ({ ...f, lightChanges: [...(f.lightChanges || []), { date: '', powerPercent: '', _key: editFormLightKey.current++ }] }));
+  };
+
+  const removeEditLightRow = (idx) => {
+    setEditForm((f) => ({ ...f, lightChanges: (f.lightChanges || []).filter((_, i) => i !== idx) }));
+  };
+
+  const updateEditLightRow = (idx, field, value) => {
+    setEditForm((f) => ({ ...f, lightChanges: (f.lightChanges || []).map((c, i) => (i === idx ? { ...c, [field]: value } : c)) }));
   };
 
   const handleEditSave = async (e) => {
@@ -285,8 +313,9 @@ const Vegetation = () => {
         notes: editForm.notes.trim(),
         diedCount: Number(editForm.diedCount) || 0,
         notGrownCount: Number(editForm.notGrownCount) || 0,
-        lightChangeDate: editForm.lightChangeDate || null,
-        lightPowerPercent: editForm.lightPowerPercent !== '' ? Number(editForm.lightPowerPercent) : null,
+        lightChanges: (editForm.lightChanges || [])
+          .filter((c) => c && c.date)
+          .map((c) => ({ date: c.date, powerPercent: c.powerPercent !== '' ? Number(c.powerPercent) : null })),
         sentToFlowerCount: Number(editForm.sentToFlowerCount) || 0
       });
       closeEditBatch();
@@ -339,6 +368,41 @@ const Vegetation = () => {
           </button>
         </div>
       )}
+
+      {/* Занятость столов и инфо по бэтчам */}
+      <div className="mb-6 bg-dark-800 rounded-xl border border-dark-700 p-5">
+        <h2 className="text-lg font-semibold text-white mb-3">Занятость вегетации</h2>
+        <p className="text-dark-400 text-sm mb-2">
+          Всего столов: {TABLES_TOTAL}, на каждом до {PLANTS_PER_TABLE} кустов (вместимость {VEG_CAPACITY} кустов).
+        </p>
+        {(() => {
+          const totalPlants = batches.reduce((s, b) => s + getBatchGoodCount(b), 0);
+          const tablesUsed = Math.ceil(totalPlants / PLANTS_PER_TABLE);
+          const occupancyPercent = Math.min(100, Math.round((totalPlants / VEG_CAPACITY) * 100));
+          const tablesPercent = Math.min(100, Math.round((tablesUsed / TABLES_TOTAL) * 100));
+          return (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-4 text-sm">
+                <span className="text-dark-300">Бэтчей в вегетации: <strong className="text-white">{batches.length}</strong></span>
+                <span className="text-dark-300">Кустов (хороших): <strong className="text-white">{totalPlants}</strong></span>
+                <span className="text-dark-300">Столов занято: <strong className="text-primary-400">{tablesUsed}</strong> из {TABLES_TOTAL}</span>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs text-dark-400 mb-1">
+                  <span>Столы</span>
+                  <span>{tablesUsed} / {TABLES_TOTAL} · {totalPlants} кустов</span>
+                </div>
+                <div className="h-3 bg-dark-700 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-primary-500 rounded-full transition-all"
+                    style={{ width: `${tablesPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+      </div>
 
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
         <div className="overflow-x-auto">
@@ -408,12 +472,13 @@ const Vegetation = () => {
                         </span>
                       </td>
                       <td className="px-4 py-3 text-dark-300 text-xs">
-                        {b.lightChangeDate ? (
-                          <>
-                            {formatDate(b.lightChangeDate)}
-                            {b.lightPowerPercent != null && ` · ${b.lightPowerPercent}%`}
-                          </>
-                        ) : '—'}
+                        {(() => {
+                          const changes = getBatchLightChanges(b);
+                          if (changes.length === 0) return '—';
+                          if (changes.length === 1) return <>{formatDate(changes[0].date)}{changes[0].powerPercent != null && ` · ${changes[0].powerPercent}%`}</>;
+                          const last = changes[changes.length - 1];
+                          return <span title={changes.map((c) => `${formatDate(c.date)} ${c.powerPercent != null ? c.powerPercent + '%' : ''}`).join(', ')}>{changes.length} смен · последняя: {formatDate(last.date)}{last.powerPercent != null && ` ${last.powerPercent}%`}</span>;
+                        })()}
                       </td>
                       <td className="px-4 py-3 text-dark-300">{getBatchRemainder(b)}</td>
                       <td className="px-4 py-3 text-dark-300">{formatDate(b.transplantedToVegAt)}</td>
@@ -640,14 +705,17 @@ const Vegetation = () => {
                   <input type="number" min="0" value={editForm.notGrownCount} onChange={(e) => setEditForm((f) => ({ ...f, notGrownCount: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-dark-400 mb-1">Свет: дата смены</label>
-                  <input type="date" value={editForm.lightChangeDate} onChange={(e) => setEditForm((f) => ({ ...f, lightChangeDate: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-                </div>
-                <div>
-                  <label className="block text-xs text-dark-400 mb-1">Свет: % мощности</label>
-                  <input type="number" min="0" max="100" value={editForm.lightPowerPercent} onChange={(e) => setEditForm((f) => ({ ...f, lightPowerPercent: e.target.value }))} placeholder="0–100" className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">Смены света (дата и % мощности)</label>
+                <div className="space-y-2">
+                  {(editForm.lightChanges || []).map((c, idx) => (
+                    <div key={c._key != null ? c._key : idx} className="flex items-center gap-2">
+                      <input type="date" value={c.date} onChange={(e) => updateEditLightRow(idx, 'date', e.target.value)} className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" max="100" value={c.powerPercent} onChange={(e) => updateEditLightRow(idx, 'powerPercent', e.target.value)} placeholder="%" className="w-16 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      {(editForm.lightChanges || []).length > 1 && <button type="button" onClick={() => removeEditLightRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>}
+                    </div>
+                  ))}
+                  <button type="button" onClick={addEditLightRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить смену света</button>
                 </div>
               </div>
               <div>
