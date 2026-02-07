@@ -1,5 +1,5 @@
 /**
- * Очистка всех пользовательских данных: архивы, трим, клоны, вега, комнаты (сброс),
+ * Очистка всех пользовательских данных: архивы, трим, клоны, вега, комнаты (удаление),
  * задачи, логи, планы, аудит. Пользователи и роли не трогаем — вход в систему остаётся.
  *
  * Запуск из корня проекта:
@@ -38,7 +38,7 @@ async function clearUserData() {
   console.log('Подключение к MongoDB...');
   await connectDB();
 
-  const results = { deleted: {}, updated: 0 };
+  const results = { deleted: {} };
 
   try {
     console.log('Удаление записей трима...');
@@ -68,28 +68,11 @@ async function clearUserData() {
     console.log('Удаление записей аудит-лога...');
     results.deleted.auditLogs = (await AuditLog.deleteMany({})).deletedCount;
 
-    console.log('Сброс состояния комнат (без удаления самих комнат)...');
-    const roomResult = await FlowerRoom.updateMany(
-      {},
-      {
-        $set: {
-          cycleName: '',
-          strain: '',
-          plantsCount: 0,
-          startDate: null,
-          expectedHarvestDate: null,
-          notes: '',
-          isActive: false,
-          currentCycleId: null,
-          totalCycles: 0
-        }
-      }
-    );
-    results.updated = roomResult.modifiedCount;
+    console.log('Удаление комнат...');
+    results.deleted.flowerRooms = (await FlowerRoom.deleteMany({})).deletedCount;
 
     console.log('\n--- Итог ---');
     console.log('Удалено:', results.deleted);
-    console.log('Комнат сброшено:', results.updated);
     console.log('\nПользователи и роли не изменялись. Сайт как новый без записей.');
   } catch (err) {
     console.error('Ошибка:', err);
