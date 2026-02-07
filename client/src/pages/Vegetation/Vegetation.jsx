@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { vegBatchService } from '../../services/vegBatchService';
 import { roomService } from '../../services/roomService';
@@ -90,8 +90,7 @@ const Vegetation = () => {
     sourceCloneCut: '',
     notes: ''
   });
-  const [editingNameId, setEditingNameId] = useState(null);
-  const [editingName, setEditingName] = useState('');
+  const [expandedRows, setExpandedRows] = useState({});
   const [editingLoss, setEditingLoss] = useState(null);
   const [editBatch, setEditBatch] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -246,17 +245,8 @@ const Vegetation = () => {
     }
   };
 
-  const saveBatchName = async (batchId) => {
-    if (editingNameId !== batchId) return;
-    const value = (editingName || '').trim();
-    try {
-      await vegBatchService.update(batchId, { name: value });
-      setEditingNameId(null);
-      setEditingName('');
-      await load();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения названия');
-    }
+  const toggleRow = (id) => {
+    setExpandedRows((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const startEditLoss = (batch, field) => {
@@ -449,35 +439,29 @@ const Vegetation = () => {
         <div className="overflow-x-auto min-w-0">
           <table className="w-full text-sm" style={{ tableLayout: 'fixed', minWidth: 680 }}>
             <colgroup>
-              <col style={{ width: '17%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '6%' }} />
+              <col style={{ width: '3%' }} />
+              <col style={{ width: '22%' }} />
+              <col style={{ width: '13%' }} />
               <col style={{ width: '8%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '11%' }} />
-              <col style={{ width: '6%' }} />
-              <col style={{ width: '9%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '13%' }} />
+              <col style={{ width: '14%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '28%' }} />
             </colgroup>
             <thead className="bg-dark-900">
               <tr>
+                <th className="px-1 py-2.5" />
                 <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Название</th>
                 <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Кол-во</th>
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Погибло</th>
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Не выросло</th>
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">% хороших</th>
+                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">%</th>
                 <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Свет</th>
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Остаток</th>
                 <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">В вегу с</th>
                 <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Прогресс</th>
-                <th className="px-3 py-2.5 text-right font-medium text-dark-400 text-xs uppercase tracking-wide">Действия</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dark-700">
               {batches.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="px-3 py-8 text-center text-dark-500 text-sm">
+                  <td colSpan={7} className="px-3 py-8 text-center text-dark-500 text-sm">
                     Нет бэтчей на вегетации. Добавьте бэтч из нарезанных клонов.
                   </td>
                 </tr>
@@ -486,124 +470,201 @@ const Vegetation = () => {
                   const daysInVeg = getDaysInVeg(b.transplantedToVegAt);
                   const target = b.vegDaysTarget || 21;
                   const progress = Math.min(100, Math.round((daysInVeg / target) * 100));
-                  const isEditingName = editingNameId === b._id;
+                  const isExpanded = expandedRows[b._id];
                   return (
-                    <tr key={b._id} className="hover:bg-dark-700/40">
-                      <td className="px-3 py-2 align-top min-w-0">
-                        {canCreateVeg && isEditingName ? (
-                          <input
-                            type="text"
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            onBlur={() => saveBatchName(b._id)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') saveBatchName(b._id); }}
-                            autoFocus
-                            className="w-full min-w-0 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm"
-                          />
-                        ) : canCreateVeg ? (
-                          <button
-                            type="button"
-                            onClick={() => { setEditingNameId(b._id); setEditingName(b.name || ''); }}
-                            className="text-left text-white hover:bg-dark-700 rounded px-1 -mx-1 py-0.5 block w-full truncate text-sm"
-                          >
-                            {b.name || '—'}
-                          </button>
-                        ) : (
+                    <React.Fragment key={b._id}>
+                      <tr
+                        className={`hover:bg-dark-700/40 cursor-pointer ${isExpanded ? 'bg-dark-700/20' : ''}`}
+                        onClick={() => toggleRow(b._id)}
+                      >
+                        <td className="px-1 py-2 align-top text-center">
+                          <span
+                            className={`inline-block text-dark-500 transition-transform duration-150 ${isExpanded ? 'rotate-90' : ''}`}
+                            style={{ fontSize: '10px' }}
+                          >&#9654;</span>
+                        </td>
+                        <td className="px-3 py-2 align-top min-w-0">
                           <span className="text-white text-sm truncate block">{b.name || '—'}</span>
-                        )}
-                        <div className="text-dark-500 text-xs mt-0.5 truncate" title={formatStrainsShort(getStrainsFromBatch(b))}>
-                          {formatStrainsShort(getStrainsFromBatch(b))}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <div className="text-dark-300">всего {getBatchTotal(b)}</div>
-                        <div className="text-primary-400/90 text-xs">хороших {getBatchGoodCount(b)}</div>
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'died' ? (
-                          <input
-                            type="number"
-                            min="0"
-                            value={editingLoss.value}
-                            onChange={(e) => setEditingLoss((prev) => prev ? { ...prev, value: e.target.value } : null)}
-                            onBlur={saveLoss}
-                            onKeyDown={(e) => { if (e.key === 'Enter') saveLoss(); }}
-                            autoFocus
-                            className="w-full max-w-[3rem] px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => startEditLoss(b, 'died')}
-                            className="text-dark-300 hover:text-white hover:bg-dark-700 rounded px-1 py-0.5 -mx-1 text-sm"
-                            title="Нажмите, чтобы изменить"
-                          >
-                            {b.diedCount || 0}
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'notGrown' ? (
-                          <input
-                            type="number"
-                            min="0"
-                            value={editingLoss.value}
-                            onChange={(e) => setEditingLoss((prev) => prev ? { ...prev, value: e.target.value } : null)}
-                            onBlur={saveLoss}
-                            onKeyDown={(e) => { if (e.key === 'Enter') saveLoss(); }}
-                            autoFocus
-                            className="w-full max-w-[3rem] px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
-                          />
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => startEditLoss(b, 'notGrown')}
-                            className="text-dark-300 hover:text-white hover:bg-dark-700 rounded px-1 py-0.5 -mx-1 text-sm"
-                            title="Нажмите, чтобы изменить"
-                          >
-                            {b.notGrownCount || 0}
-                          </button>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 align-top">
-                        <span className={getBatchGoodPercent(b) >= 80 ? 'text-green-400' : getBatchGoodPercent(b) >= 50 ? 'text-amber-400' : 'text-red-400'}>
-                          {getBatchGoodPercent(b)}%
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 align-top text-dark-300 text-xs">
-                        {(() => {
-                          const latest = getLatestLightChange(b);
-                          const changes = getBatchLightChanges(b);
-                          if (!latest) return '—';
-                          if (changes.length === 1) return <>{formatDate(latest.date)}{latest.powerPercent != null && ` · ${latest.powerPercent}%`}</>;
-                          return <span title={changes.map((c) => `${formatDate(c.date)} ${c.powerPercent != null ? c.powerPercent + '%' : ''}`).join(', ')}>{changes.length} смен · {formatDate(latest.date)}{latest.powerPercent != null && ` ${latest.powerPercent}%`}</span>;
-                        })()}
-                      </td>
-                      <td className="px-3 py-2 align-top text-dark-300">{getBatchRemainder(b)}</td>
-                      <td className="px-3 py-2 align-top text-dark-300 text-xs whitespace-nowrap">{formatDate(b.transplantedToVegAt)}</td>
-                      <td className="px-3 py-2 align-top">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 min-w-0 h-2 bg-dark-700 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-green-500' : 'bg-primary-500'}`}
-                              style={{ width: `${progress}%` }}
-                            />
+                          <div className="text-dark-500 text-xs mt-0.5 truncate" title={formatStrainsShort(getStrainsFromBatch(b))}>
+                            {formatStrainsShort(getStrainsFromBatch(b))}
                           </div>
-                          <span className="text-dark-400 text-xs shrink-0">{daysInVeg}/{target} дн.</span>
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 align-top text-right">
-                        {canCreateVeg ? (
-                          <div className="flex flex-wrap gap-1 justify-end">
-                            <button type="button" onClick={() => openEditBatch(b)} className="px-2 py-1 text-primary-400 hover:bg-dark-700 rounded text-xs">Изменить</button>
-                            <button type="button" onClick={() => openSendToFlower(b)} className="px-2 py-1 bg-primary-600/80 text-white rounded text-xs hover:bg-primary-500">В цвет</button>
-                            <button type="button" onClick={() => handleDelete(b._id)} className="px-2 py-1 text-red-400 hover:bg-red-900/30 rounded text-xs">Удалить</button>
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <span className="text-dark-300">{getBatchTotal(b)}</span>
+                          <span className="text-dark-500 mx-1">/</span>
+                          <span className="text-primary-400/90">{getBatchGoodCount(b)}</span>
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <span className={getBatchGoodPercent(b) >= 80 ? 'text-green-400' : getBatchGoodPercent(b) >= 50 ? 'text-amber-400' : 'text-red-400'}>
+                            {getBatchGoodPercent(b)}%
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 align-top text-dark-300 text-xs">
+                          {(() => {
+                            const latest = getLatestLightChange(b);
+                            const changes = getBatchLightChanges(b);
+                            if (!latest) return '—';
+                            if (changes.length === 1) return <>{formatDate(latest.date)}{latest.powerPercent != null && ` · ${latest.powerPercent}%`}</>;
+                            return <span title={changes.map((c) => `${formatDate(c.date)} ${c.powerPercent != null ? c.powerPercent + '%' : ''}`).join(', ')}>{changes.length} смен · {formatDate(latest.date)}{latest.powerPercent != null && ` ${latest.powerPercent}%`}</span>;
+                          })()}
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <div className="text-dark-300 text-xs whitespace-nowrap">{formatDate(b.transplantedToVegAt)}</div>
+                          <div className="text-dark-500 text-xs mt-0.5">ост. {getBatchRemainder(b)}</div>
+                        </td>
+                        <td className="px-3 py-2 align-top">
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 min-w-0 h-2 bg-dark-700 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all ${progress >= 100 ? 'bg-green-500' : 'bg-primary-500'}`}
+                                style={{ width: `${progress}%` }}
+                              />
+                            </div>
+                            <span className="text-dark-400 text-xs shrink-0">{daysInVeg}/{target}</span>
+                            {canCreateVeg && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); openSendToFlower(b); }}
+                                className="px-2 py-1 bg-primary-600/80 text-white rounded text-xs hover:bg-primary-500 shrink-0"
+                              >
+                                В цвет
+                              </button>
+                            )}
                           </div>
-                        ) : (
-                          <span className="text-dark-500 text-xs">Просмотр</span>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr className="bg-dark-800/60">
+                          <td colSpan={7} className="px-4 py-3 border-b border-dark-600">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-sm">
+                              <div>
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Потери</div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-dark-400 text-xs">Погибло:</span>
+                                  {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'died' ? (
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={editingLoss.value}
+                                      onChange={(e) => setEditingLoss((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                                      onBlur={saveLoss}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') saveLoss(); }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-14 px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
+                                    />
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); startEditLoss(b, 'died'); }}
+                                      className="text-dark-300 hover:text-white hover:bg-dark-700 rounded px-1 py-0.5 text-sm"
+                                      title="Нажмите, чтобы изменить"
+                                    >
+                                      {b.diedCount || 0}
+                                    </button>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-dark-400 text-xs">Не выросло:</span>
+                                  {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'notGrown' ? (
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={editingLoss.value}
+                                      onChange={(e) => setEditingLoss((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                                      onBlur={saveLoss}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') saveLoss(); }}
+                                      autoFocus
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="w-14 px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
+                                    />
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => { e.stopPropagation(); startEditLoss(b, 'notGrown'); }}
+                                      className="text-dark-300 hover:text-white hover:bg-dark-700 rounded px-1 py-0.5 text-sm"
+                                      title="Нажмите, чтобы изменить"
+                                    >
+                                      {b.notGrownCount || 0}
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                              <div>
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Даты</div>
+                                <div className="text-dark-300 text-xs">Нарезка: <span className="text-white">{formatDate(b.cutDate)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">В вегу: <span className="text-white">{formatDate(b.transplantedToVegAt)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">Цель: <span className="text-white">{b.vegDaysTarget || 21} дн.</span></div>
+                              </div>
+                              <div>
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Смены света</div>
+                                {getBatchLightChanges(b).length === 0 ? (
+                                  <span className="text-dark-500 text-xs">—</span>
+                                ) : (
+                                  <div className="space-y-0.5">
+                                    {getBatchLightChanges(b).map((c, i) => (
+                                      <div key={i} className="text-dark-300 text-xs">
+                                        {formatDate(c.date)}{c.powerPercent != null && ` — ${c.powerPercent}%`}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                              <div>
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Количество</div>
+                                <div className="text-dark-300 text-xs">Всего: <span className="text-white">{getBatchTotal(b)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">Хороших: <span className="text-primary-400">{getBatchGoodCount(b)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">В цвет: <span className="text-white">{b.sentToFlowerCount || 0}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">Остаток: <span className="text-white font-medium">{getBatchRemainder(b)}</span></div>
+                              </div>
+                              {b.notes && (
+                                <div className="col-span-2 md:col-span-4">
+                                  <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Заметки</div>
+                                  <p className="text-dark-300 text-xs whitespace-pre-wrap bg-dark-700/30 rounded-lg p-2.5">{b.notes}</p>
+                                </div>
+                              )}
+                              {getStrainsFromBatch(b).length > 1 && (
+                                <div className="col-span-2 md:col-span-4">
+                                  <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Сорта</div>
+                                  <div className="flex flex-wrap gap-2">
+                                    {getStrainsFromBatch(b).map((s, i) => (
+                                      <span key={i} className="px-2 py-1 bg-dark-700 rounded text-dark-300 text-xs">
+                                        {s.strain || '?'} <span className="text-white">{s.quantity}</span>
+                                      </span>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                            {canCreateVeg && (
+                              <div className="flex gap-2 mt-3 pt-3 border-t border-dark-700">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); openEditBatch(b); }}
+                                  className="px-3 py-1.5 text-primary-400 hover:bg-dark-700 rounded text-xs"
+                                >
+                                  Изменить
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); openSendToFlower(b); }}
+                                  className="px-3 py-1.5 bg-primary-600/80 text-white rounded text-xs hover:bg-primary-500"
+                                >
+                                  В цвет
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleDelete(b._id); }}
+                                  className="px-3 py-1.5 text-red-400 hover:bg-red-900/30 rounded text-xs ml-auto"
+                                >
+                                  Удалить
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}
