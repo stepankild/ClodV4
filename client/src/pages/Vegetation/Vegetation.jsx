@@ -86,6 +86,7 @@ const Vegetation = () => {
   });
   const [editingNameId, setEditingNameId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const [editingLoss, setEditingLoss] = useState(null);
   const [editBatch, setEditBatch] = useState(null);
   const [editForm, setEditForm] = useState({
     name: '',
@@ -236,6 +237,40 @@ const Vegetation = () => {
       await load();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка удаления');
+    }
+  };
+
+  const saveBatchName = async (batchId) => {
+    if (editingNameId !== batchId) return;
+    const value = (editingName || '').trim();
+    try {
+      await vegBatchService.update(batchId, { name: value });
+      setEditingNameId(null);
+      setEditingName('');
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка сохранения названия');
+    }
+  };
+
+  const startEditLoss = (batch, field) => {
+    if (!canCreateVeg) return;
+    setEditingLoss({
+      batchId: batch._id,
+      field,
+      value: String(field === 'died' ? (batch.diedCount ?? 0) : (batch.notGrownCount ?? 0))
+    });
+  };
+
+  const saveLoss = async () => {
+    if (!editingLoss) return;
+    const num = Math.max(0, parseInt(editingLoss.value, 10) || 0);
+    try {
+      await vegBatchService.update(editingLoss.batchId, editingLoss.field === 'died' ? { diedCount: num } : { notGrownCount: num });
+      setEditingLoss(null);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка сохранения');
     }
   };
 
@@ -463,9 +498,56 @@ const Vegetation = () => {
                         <div className="font-medium text-white">{formatStrainsShort(getStrainsFromBatch(b))}</div>
                         <div className="text-xs text-dark-500">Нарезка: {formatDate(b.cutDate)}</div>
                       </td>
-                      <td className="px-4 py-3 text-dark-300">{getBatchTotal(b)}</td>
-                      <td className="px-4 py-3 text-dark-300">{b.diedCount || 0}</td>
-                      <td className="px-4 py-3 text-dark-300">{b.notGrownCount || 0}</td>
+                      <td className="px-4 py-3">
+                        <div className="text-dark-300">всего {getBatchTotal(b)}</div>
+                        <div className="text-xs text-primary-400">хороших {getBatchGoodCount(b)}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'died' ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={editingLoss.value}
+                            onChange={(e) => setEditingLoss((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                            onBlur={saveLoss}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveLoss(); }}
+                            autoFocus
+                            className="w-14 px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startEditLoss(b, 'died')}
+                            className="text-dark-300 hover:text-white hover:bg-dark-700 rounded px-1 py-0.5 -mx-1 text-sm"
+                            title="Нажмите, чтобы изменить"
+                          >
+                            {b.diedCount || 0}
+                          </button>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'notGrown' ? (
+                          <input
+                            type="number"
+                            min="0"
+                            value={editingLoss.value}
+                            onChange={(e) => setEditingLoss((prev) => prev ? { ...prev, value: e.target.value } : null)}
+                            onBlur={saveLoss}
+                            onKeyDown={(e) => { if (e.key === 'Enter') saveLoss(); }}
+                            autoFocus
+                            className="w-14 px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
+                          />
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => startEditLoss(b, 'notGrown')}
+                            className="text-dark-300 hover:text-white hover:bg-dark-700 rounded px-1 py-0.5 -mx-1 text-sm"
+                            title="Нажмите, чтобы изменить"
+                          >
+                            {b.notGrownCount || 0}
+                          </button>
+                        )}
+                      </td>
                       <td className="px-4 py-3">
                         <span className={getBatchGoodPercent(b) >= 80 ? 'text-green-400' : getBatchGoodPercent(b) >= 50 ? 'text-amber-400' : 'text-red-400'}>
                           {getBatchGoodPercent(b)}%
