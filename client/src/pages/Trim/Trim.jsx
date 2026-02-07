@@ -1,4 +1,13 @@
 import { useState, useEffect } from 'react';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer
+} from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { trimService } from '../../services/trimService';
 
@@ -18,6 +27,8 @@ const Trim = () => {
   const canEdit = hasPermission && hasPermission('trim:edit');
 
   const [archives, setArchives] = useState([]);
+  const [dailyStats, setDailyStats] = useState([]);
+  const [statsDays, setStatsDays] = useState(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -173,8 +184,47 @@ const Trim = () => {
         </div>
       )}
 
+      {/* ─── График: трим по дням ─── */}
+      <div className="mb-6 bg-dark-800 rounded-xl border border-dark-700 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-sm font-semibold text-white">Трим по дням</h2>
+          <select
+            value={statsDays}
+            onChange={(e) => {
+              const d = Number(e.target.value);
+              setStatsDays(d);
+              trimService.getDailyStats(d).then((data) => setDailyStats(Array.isArray(data) ? data : []));
+            }}
+            className="px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+          >
+            <option value={7}>7 дней</option>
+            <option value={30}>30 дней (месяц)</option>
+            <option value={90}>90 дней</option>
+          </select>
+        </div>
+        <div className="h-64">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart
+              data={dailyStats.map((d) => ({ ...d, day: new Date(d.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) }))}
+              margin={{ top: 8, right: 8, left: 0, bottom: 8 }}
+            >
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis dataKey="day" tick={{ fill: '#9ca3af', fontSize: 11 }} stroke="#6b7280" />
+              <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} stroke="#6b7280" unit=" г" />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563', borderRadius: '8px' }}
+                labelStyle={{ color: '#d1d5db' }}
+                formatter={(value) => [`${Number(value).toFixed(0)} г`, 'Потримлено']}
+                labelFormatter={(_, payload) => payload[0]?.payload?.date ? formatDate(payload[0].payload.date) : ''}
+              />
+              <Bar dataKey="weight" fill="#22c55e" radius={[4, 4, 0, 0]} name="Потримлено" />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
       {/* ─── Форма быстрого ввода ─── */}
-      {canCreate && archives.length > 0 && (
+      {canCreate && archives.filter((a) => a.trimStatus !== 'completed').length > 0 && (
         <div className="mb-6 bg-dark-800 rounded-xl border border-dark-700 p-4">
           <h2 className="text-sm font-semibold text-white mb-3">Записать трим за день</h2>
           <form onSubmit={handleLogSubmit} className="flex flex-wrap items-end gap-3">
@@ -187,7 +237,7 @@ const Trim = () => {
                 className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
               >
                 <option value="">— Выберите —</option>
-                {archives.map(a => (
+                {archives.filter((a) => a.trimStatus !== 'completed').map(a => (
                   <option key={a._id} value={a._id}>{a.roomName} · {a.strain}</option>
                 ))}
               </select>
@@ -243,9 +293,13 @@ const Trim = () => {
                   <p className="text-dark-400 text-xs">{a.strain} · {a.plantsCount} кустов{m.sqm > 0 ? ` · ${m.sqm} м²` : ''}</p>
                 </div>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                  a.trimStatus === 'in_progress' ? 'bg-amber-900/40 text-amber-400' : 'bg-dark-700 text-dark-400'
+                  a.trimStatus === 'completed'
+                    ? 'bg-green-900/40 text-green-400'
+                    : a.trimStatus === 'in_progress'
+                      ? 'bg-amber-900/40 text-amber-400'
+                      : 'bg-dark-700 text-dark-400'
                 }`}>
-                  {a.trimStatus === 'in_progress' ? 'В процессе' : 'Ожидает'}
+                  {a.trimStatus === 'completed' ? 'Завершён' : a.trimStatus === 'in_progress' ? 'В процессе' : 'Ожидает'}
                 </span>
               </div>
 
@@ -311,7 +365,7 @@ const Trim = () => {
                 >
                   Подробнее
                 </button>
-                {canEdit && (
+                {canEdit && a.trimStatus !== 'completed' && (
                   <button
                     type="button"
                     onClick={() => handleCompleteTrim(a._id)}
@@ -453,13 +507,15 @@ const Trim = () => {
             {canEdit && (
               <div className="flex gap-2 pt-3 border-t border-dark-700">
                 <button type="button" onClick={closeDetail} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg text-sm">Закрыть</button>
-                <button
-                  type="button"
-                  onClick={() => handleCompleteTrim(selectedArchive._id)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 text-sm ml-auto"
-                >
-                  Завершить трим
-                </button>
+                {selectedArchive.trimStatus !== 'completed' && (
+                  <button
+                    type="button"
+                    onClick={() => handleCompleteTrim(selectedArchive._id)}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 text-sm ml-auto"
+                  >
+                    Завершить трим
+                  </button>
+                )}
               </div>
             )}
           </div>

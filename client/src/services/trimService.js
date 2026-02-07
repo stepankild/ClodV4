@@ -6,6 +6,11 @@ export const trimService = {
     return response.data;
   },
 
+  async getDailyStats(days = 30) {
+    const response = await api.get('/trim/stats/daily', { params: { days } });
+    return response.data;
+  },
+
   async addLog(archiveId, weight, date) {
     const response = await api.post('/trim/log', { archiveId, weight, date });
     return response.data;

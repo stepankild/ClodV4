@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { cloneCutService } from '../../services/cloneCutService';
 import { vegBatchService } from '../../services/vegBatchService';
-import { selectionService } from '../../services/selectionService';
 import { archiveService } from '../../services/archiveService';
 import api from '../../services/api';
 
@@ -15,7 +14,6 @@ const Trash = () => {
   const { hasPermission } = useAuth();
   const canRestoreClones = hasPermission && hasPermission('clones:create');
   const canRestoreVeg = hasPermission && hasPermission('vegetation:create');
-  const canRestoreSelection = hasPermission && hasPermission('selection:create');
   const canRestoreArchive = hasPermission && (hasPermission('archive:view') || hasPermission('harvest:do'));
 
   const [loading, setLoading] = useState(true);
@@ -23,7 +21,6 @@ const Trash = () => {
   const [deleted, setDeleted] = useState({
     cloneCuts: [],
     vegBatches: [],
-    selection: [],
     archives: [],
     tasks: []
   });
@@ -33,17 +30,15 @@ const Trash = () => {
     setLoading(true);
     setError('');
     try {
-      const [cloneCuts, vegBatches, selection, archives, tasks] = await Promise.all([
+      const [cloneCuts, vegBatches, archives, tasks] = await Promise.all([
         canRestoreClones ? cloneCutService.getDeleted().catch(() => []) : [],
         canRestoreVeg ? vegBatchService.getDeleted().catch(() => []) : [],
-        canRestoreSelection ? selectionService.getDeleted().catch(() => []) : [],
         canRestoreArchive ? archiveService.getDeleted().catch(() => []) : [],
         api.get('/tasks/deleted').then((r) => r.data).catch(() => [])
       ]);
       setDeleted({
         cloneCuts: Array.isArray(cloneCuts) ? cloneCuts : [],
         vegBatches: Array.isArray(vegBatches) ? vegBatches : [],
-        selection: Array.isArray(selection) ? selection : [],
         archives: Array.isArray(archives) ? archives : [],
         tasks: Array.isArray(tasks) ? tasks : []
       });
@@ -63,7 +58,6 @@ const Trash = () => {
     try {
       if (type === 'cloneCuts') await cloneCutService.restore(id);
       else if (type === 'vegBatches') await vegBatchService.restore(id);
-      else if (type === 'selection') await selectionService.restore(id);
       else if (type === 'archives') await archiveService.restore(id);
       else if (type === 'tasks') await api.post(`/tasks/deleted/${id}/restore`);
       await load();
@@ -74,7 +68,7 @@ const Trash = () => {
     }
   };
 
-  const total = deleted.cloneCuts.length + deleted.vegBatches.length + deleted.selection.length + deleted.archives.length + deleted.tasks.length;
+  const total = deleted.cloneCuts.length + deleted.vegBatches.length + deleted.archives.length + deleted.tasks.length;
 
   if (loading) {
     return (
@@ -153,34 +147,6 @@ const Trash = () => {
                     <td className="px-4 py-2 text-dark-300">{b.name || '—'}</td>
                     <td className="px-4 py-2 text-right">
                       <button type="button" onClick={() => restore('vegBatches', b._id)} disabled={!!restoringId} className="px-2 py-1 bg-green-700/50 text-green-400 rounded text-xs hover:bg-green-700/70 disabled:opacity-50">Восстановить</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      {deleted.selection.length > 0 && (
-        <section className="mb-8">
-          <h2 className="text-lg font-semibold text-white mb-3">Бэтчи селекции</h2>
-          <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-dark-900">
-                <tr>
-                  <th className="px-4 py-2 text-left text-xs text-dark-400">Удалено</th>
-                  <th className="px-4 py-2 text-left text-xs text-dark-400">Название</th>
-                  <th className="px-4 py-2 text-right text-xs text-dark-400">Действие</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-dark-700">
-                {deleted.selection.map((s) => (
-                  <tr key={s._id}>
-                    <td className="px-4 py-2 text-dark-400">{formatDate(s.deletedAt)}</td>
-                    <td className="px-4 py-2 text-dark-300">{s.name || '—'}</td>
-                    <td className="px-4 py-2 text-right">
-                      <button type="button" onClick={() => restore('selection', s._id)} disabled={!!restoringId} className="px-2 py-1 bg-green-700/50 text-green-400 rounded text-xs hover:bg-green-700/70 disabled:opacity-50">Восстановить</button>
                     </td>
                   </tr>
                 ))}

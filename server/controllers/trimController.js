@@ -12,16 +12,14 @@ const recalcTrimWeight = async (archiveId) => {
   return result.length > 0 ? result[0].total : 0;
 };
 
-// @desc    Получить архивы, ожидающие трима
+// @desc    Получить архивы трима (все: ожидающие, в процессе, завершённые)
 // @route   GET /api/trim/active
 export const getActiveTrimArchives = async (req, res) => {
   try {
     const archives = await CycleArchive.find({
-      trimStatus: { $ne: 'completed' },
       ...notDeleted
     }).sort({ harvestDate: -1 });
 
-    // Подсчитать суммы трима для каждого архива
     const archiveIds = archives.map(a => a._id);
     const trimSums = await TrimLog.aggregate([
       { $match: { archive: { $in: archiveIds }, ...notDeleted } },
@@ -39,6 +37,46 @@ export const getActiveTrimArchives = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('getActiveTrimArchives error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Статистика трима по дням (за последние N дней)
+// @route   GET /api/trim/stats/daily?days=30
+export const getTrimDailyStats = async (req, res) => {
+  try {
+    const days = Math.min(90, Math.max(7, parseInt(req.query.days, 10) || 30));
+    const end = new Date();
+    end.setHours(23, 59, 59, 999);
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    start.setHours(0, 0, 0, 0);
+
+    const aggregated = await TrimLog.aggregate([
+      { $match: { date: { $gte: start, $lte: end }, ...notDeleted } },
+      {
+        $group: {
+          _id: { $dateToString: { date: '$date', format: '%Y-%m-%d' } },
+          total: { $sum: '$weight' }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    const byDate = {};
+    aggregated.forEach((row) => { byDate[row._id] = row.total; });
+
+    const result = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const key = cursor.toISOString().slice(0, 10);
+      result.push({ date: key, weight: byDate[key] || 0 });
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error('getTrimDailyStats error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
