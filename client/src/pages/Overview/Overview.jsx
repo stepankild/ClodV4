@@ -238,42 +238,52 @@ const Overview = () => {
                   <div className="space-y-1.5 border-t border-dark-700 pt-3 mt-3">
                     <div className="text-xs text-dark-400 font-medium mb-1">Выполнено</div>
                     {room.completedTasks.net?.length > 0 && (
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="text-green-400">&#10003;</span>
-                        <span className="text-dark-300">Сетки натянуты</span>
-                        <span className="text-dark-500 ml-auto">{formatDate(room.completedTasks.net[0].completedAt)}</span>
+                      <div className="flex items-baseline justify-between gap-2 text-xs">
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                          <span className="text-green-400 shrink-0">&#10003;</span>
+                          <span className="text-dark-300">Сетки натянуты</span>
+                        </div>
+                        <span className="text-dark-500 shrink-0">{formatDate(room.completedTasks.net[0].completedAt)}</span>
                       </div>
                     )}
                     {room.completedTasks.spray?.map((task) => (
-                      <div key={task._id} className="flex items-center gap-2 text-xs">
-                        <span className="text-green-400">&#10003;</span>
-                        <span className="text-dark-300 truncate">
-                          {task.sprayProduct ? `Обработка: ${task.sprayProduct}` : 'Обработка'}
-                        </span>
-                        <span className="text-dark-500 ml-auto shrink-0">{formatDate(task.completedAt)}</span>
+                      <div key={task._id} className="flex items-baseline justify-between gap-2 text-xs">
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                          <span className="text-green-400 shrink-0">&#10003;</span>
+                          <span className="text-dark-300 truncate">
+                            {task.sprayProduct ? `Обработка: ${task.sprayProduct}` : 'Обработка'}
+                          </span>
+                        </div>
+                        <span className="text-dark-500 shrink-0">{formatDate(task.completedAt)}</span>
                       </div>
                     ))}
                     {room.completedTasks.trim?.map((task) => (
-                      <div key={task._id} className="flex items-center gap-2 text-xs">
-                        <span className="text-green-400">&#10003;</span>
-                        <span className="text-dark-300">Подрезка{task.dayOfCycle ? ` (день ${task.dayOfCycle})` : ''}</span>
-                        <span className="text-dark-500 ml-auto">{formatDate(task.completedAt)}</span>
+                      <div key={task._id} className="flex items-baseline justify-between gap-2 text-xs">
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                          <span className="text-green-400 shrink-0">&#10003;</span>
+                          <span className="text-dark-300">Подрезка{task.dayOfCycle ? ` (день ${task.dayOfCycle})` : ''}</span>
+                        </div>
+                        <span className="text-dark-500 shrink-0">{formatDate(task.completedAt)}</span>
                       </div>
                     ))}
                     {room.completedTasks.defoliation?.map((task) => (
-                      <div key={task._id} className="flex items-center gap-2 text-xs">
-                        <span className="text-green-400">&#10003;</span>
-                        <span className="text-dark-300">Дефолиация{task.dayOfCycle ? ` (день ${task.dayOfCycle})` : ''}</span>
-                        <span className="text-dark-500 ml-auto">{formatDate(task.completedAt)}</span>
+                      <div key={task._id} className="flex items-baseline justify-between gap-2 text-xs">
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                          <span className="text-green-400 shrink-0">&#10003;</span>
+                          <span className="text-dark-300">Дефолиация{task.dayOfCycle ? ` (день ${task.dayOfCycle})` : ''}</span>
+                        </div>
+                        <span className="text-dark-500 shrink-0">{formatDate(task.completedAt)}</span>
                       </div>
                     ))}
                     {room.completedTasks.feed?.map((task) => (
-                      <div key={task._id} className="flex items-center gap-2 text-xs">
-                        <span className="text-green-400">&#10003;</span>
-                        <span className="text-dark-300 truncate">
-                          {task.feedProduct ? `Подкормка: ${task.feedProduct}` : 'Подкормка'}
-                        </span>
-                        <span className="text-dark-500 ml-auto shrink-0">{formatDate(task.completedAt)}</span>
+                      <div key={task._id} className="flex items-baseline justify-between gap-2 text-xs">
+                        <div className="flex items-baseline gap-1.5 min-w-0">
+                          <span className="text-green-400 shrink-0">&#10003;</span>
+                          <span className="text-dark-300 truncate">
+                            {task.feedProduct ? `Подкормка: ${task.feedProduct}` : 'Подкормка'}
+                          </span>
+                        </div>
+                        <span className="text-dark-500 shrink-0">{formatDate(task.completedAt)}</span>
                       </div>
                     ))}
                   </div>
