@@ -29,5 +29,25 @@ export const roomService = {
   async harvestRoom(id) {
     const response = await api.post(`/rooms/${id}/harvest`);
     return response.data;
+  },
+
+  async getPlans(params = {}) {
+    const response = await api.get('/rooms/plans', { params });
+    return response.data;
+  },
+
+  async createPlan(data) {
+    const response = await api.post('/rooms/plans', data);
+    return response.data;
+  },
+
+  async updatePlan(id, data) {
+    const response = await api.put(`/rooms/plans/${id}`, data);
+    return response.data;
+  },
+
+  async deletePlan(id) {
+    const response = await api.delete(`/rooms/plans/${id}`);
+    return response.data;
   }
 };

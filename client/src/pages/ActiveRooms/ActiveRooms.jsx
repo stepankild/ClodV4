@@ -43,6 +43,17 @@ export default function ActiveRooms() {
     startDate: ''
   });
 
+  const [planMode, setPlanMode] = useState(null);
+  const [planForm, setPlanForm] = useState({
+    cycleName: '',
+    strain: '',
+    plannedStartDate: '',
+    plantsCount: '',
+    floweringDays: '56',
+    notes: ''
+  });
+  const [planSaving, setPlanSaving] = useState(false);
+
   useEffect(() => {
     loadRooms();
   }, []);
@@ -51,7 +62,7 @@ export default function ActiveRooms() {
     try {
       setLoading(true);
       setError('');
-      const data = await roomService.getRooms();
+      const data = await roomService.getRoomsSummary();
       setRooms(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка загрузки комнат');
@@ -112,8 +123,8 @@ export default function ActiveRooms() {
       });
       setEditMode(false);
       await loadRooms();
-      // Обновим selectedRoom
-      const updated = (await roomService.getRooms()).find(r => r._id === selectedRoom._id);
+      const list = await roomService.getRoomsSummary();
+      const updated = list.find(r => r._id === selectedRoom._id);
       if (updated) setSelectedRoom(updated);
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка сохранения');
@@ -136,7 +147,8 @@ export default function ActiveRooms() {
       });
       setStartMode(false);
       await loadRooms();
-      const updated = (await roomService.getRooms()).find(r => r._id === selectedRoom._id);
+      const list = await roomService.getRoomsSummary();
+      const updated = list.find(r => r._id === selectedRoom._id);
       if (updated) setSelectedRoom(updated);
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка запуска цикла');
@@ -152,12 +164,86 @@ export default function ActiveRooms() {
     try {
       await roomService.harvestRoom(selectedRoom._id);
       await loadRooms();
-      const updated = (await roomService.getRooms()).find(r => r._id === selectedRoom._id);
+      const list = await roomService.getRoomsSummary();
+      const updated = list.find(r => r._id === selectedRoom._id);
       if (updated) setSelectedRoom(updated);
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка завершения цикла');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const openPlanMode = (room) => {
+    const plan = room.plannedCycle;
+    setPlanMode(room);
+    setPlanForm({
+      cycleName: plan?.cycleName || '',
+      strain: plan?.strain || '',
+      plannedStartDate: plan?.plannedStartDate ? new Date(plan.plannedStartDate).toISOString().slice(0, 10) : '',
+      plantsCount: plan?.plantsCount ?? '',
+      floweringDays: String(plan?.floweringDays ?? 56),
+      notes: plan?.notes || ''
+    });
+  };
+
+  const closePlanMode = () => {
+    setPlanMode(null);
+  };
+
+  const handlePlanSubmit = async (e) => {
+    e.preventDefault();
+    if (!planMode) return;
+    setPlanSaving(true);
+    try {
+      const payload = {
+        roomId: planMode._id,
+        cycleName: planForm.cycleName.trim(),
+        strain: planForm.strain.trim(),
+        plannedStartDate: planForm.plannedStartDate || null,
+        plantsCount: Number(planForm.plantsCount) || 0,
+        floweringDays: Number(planForm.floweringDays) || 56,
+        notes: planForm.notes.trim()
+      };
+      if (planMode.plannedCycle?._id) {
+        await roomService.updatePlan(planMode.plannedCycle._id, {
+          cycleName: payload.cycleName,
+          strain: payload.strain,
+          plannedStartDate: payload.plannedStartDate,
+          plantsCount: payload.plantsCount,
+          floweringDays: payload.floweringDays,
+          notes: payload.notes
+        });
+      } else {
+        await roomService.createPlan(payload);
+      }
+      closePlanMode();
+      await loadRooms();
+      const list = await roomService.getRoomsSummary();
+      const updated = list.find(r => r._id === planMode._id);
+      if (updated) setSelectedRoom(updated);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка сохранения плана');
+    } finally {
+      setPlanSaving(false);
+    }
+  };
+
+  const handlePlanDelete = async () => {
+    if (!planMode?.plannedCycle?._id) return;
+    if (!confirm('Удалить запланированный цикл?')) return;
+    setPlanSaving(true);
+    try {
+      await roomService.deletePlan(planMode.plannedCycle._id);
+      closePlanMode();
+      await loadRooms();
+      const list = await roomService.getRoomsSummary();
+      const updated = list.find(r => r._id === planMode._id);
+      if (updated) setSelectedRoom(updated);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка удаления плана');
+    } finally {
+      setPlanSaving(false);
     }
   };
 
@@ -552,20 +638,143 @@ export default function ActiveRooms() {
                       </div>
                     </div>
                   ) : (
-                    <div className="text-center py-8">
-                      <div className="text-6xl mb-4">🌱</div>
-                      <p className="text-dark-400 mb-6">Комната свободна и готова к новому циклу</p>
-                      <button
-                        onClick={startStartMode}
-                        className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-500 transition font-medium"
-                      >
-                        Начать новый цикл
-                      </button>
+                    <div className="space-y-4">
+                      {selectedRoom.plannedCycle ? (
+                        <div className="bg-dark-700/50 rounded-lg p-4 text-left">
+                          <div className="text-xs text-dark-400 mb-2">Планируется</div>
+                          <div className="text-white font-medium">{selectedRoom.plannedCycle.cycleName || selectedRoom.plannedCycle.strain || 'Цикл'}</div>
+                          {selectedRoom.plannedCycle.strain && selectedRoom.plannedCycle.cycleName && (
+                            <div className="text-dark-300 text-sm">{selectedRoom.plannedCycle.strain}</div>
+                          )}
+                          <div className="text-dark-400 text-sm mt-2">
+                            {selectedRoom.plannedCycle.plannedStartDate && `Старт: ${formatDate(selectedRoom.plannedCycle.plannedStartDate)} · `}
+                            {selectedRoom.plannedCycle.plantsCount > 0 && `${selectedRoom.plannedCycle.plantsCount} кустов`}
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-dark-400 text-sm">План следующего цикла не задан</p>
+                      )}
+                      <div className="flex flex-wrap gap-2 pt-2 border-t border-dark-700">
+                        <button
+                          onClick={() => openPlanMode(selectedRoom)}
+                          className="px-4 py-2 bg-dark-700 text-white rounded-lg hover:bg-dark-600 transition"
+                        >
+                          {selectedRoom.plannedCycle ? 'Изменить план' : 'Планировать'}
+                        </button>
+                        <button
+                          onClick={startStartMode}
+                          className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-500 transition font-medium"
+                        >
+                          Начать новый цикл
+                        </button>
+                      </div>
                     </div>
                   )}
                 </>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно планирования цикла */}
+      {planMode && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60" onClick={closePlanMode}>
+          <div
+            className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-md p-6"
+            onClick={e => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-white mb-1">Планирование цикла · {planMode.name}</h3>
+            <p className="text-sm text-dark-400 mb-4">Следующий цикл в этой комнате</p>
+            <form onSubmit={handlePlanSubmit} className="space-y-4">
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Название цикла</label>
+                <input
+                  type="text"
+                  value={planForm.cycleName}
+                  onChange={e => setPlanForm(f => ({ ...f, cycleName: e.target.value }))}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                  placeholder="Например: Лето-2025"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Сорт</label>
+                <input
+                  type="text"
+                  value={planForm.strain}
+                  onChange={e => setPlanForm(f => ({ ...f, strain: e.target.value }))}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                  placeholder="Название сорта"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Планируемая дата заезда</label>
+                <input
+                  type="date"
+                  value={planForm.plannedStartDate}
+                  onChange={e => setPlanForm(f => ({ ...f, plannedStartDate: e.target.value }))}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">Кустов</label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={planForm.plantsCount}
+                    onChange={e => setPlanForm(f => ({ ...f, plantsCount: e.target.value }))}
+                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-dark-400 mb-1">Дней цветения</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={planForm.floweringDays}
+                    onChange={e => setPlanForm(f => ({ ...f, floweringDays: e.target.value }))}
+                    className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <textarea
+                  value={planForm.notes}
+                  onChange={e => setPlanForm(f => ({ ...f, notes: e.target.value }))}
+                  rows={2}
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none"
+                  placeholder="Заметки по плану..."
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-2">
+                <button
+                  type="submit"
+                  disabled={planSaving}
+                  className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition font-medium disabled:opacity-50"
+                >
+                  {planSaving ? 'Сохранение...' : 'Сохранить план'}
+                </button>
+                {planMode.plannedCycle?._id && (
+                  <button
+                    type="button"
+                    onClick={handlePlanDelete}
+                    disabled={planSaving}
+                    className="px-4 py-2 text-red-400 hover:bg-red-900/30 rounded-lg transition text-sm"
+                  >
+                    Удалить план
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={closePlanMode}
+                  className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg transition text-sm"
+                >
+                  Отмена
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
