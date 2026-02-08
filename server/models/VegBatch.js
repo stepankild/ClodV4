@@ -36,6 +36,7 @@ const vegBatchSchema = new mongoose.Schema({
     strain: { type: String, default: '' },
     quantity: { type: Number, default: 0 }
   }],
+  disposedCount: { type: Number, default: 0 },
   deletedAt: { type: Date, default: null }
 }, {
   timestamps: true

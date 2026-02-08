@@ -39,7 +39,8 @@ const getBatchGoodCount = (b) => {
   const total = getBatchTotal(b);
   const died = Number(b.diedCount) || 0;
   const notGrown = Number(b.notGrownCount) || 0;
-  return Math.max(0, total - died - notGrown);
+  const disposed = Number(b.disposedCount) || 0;
+  return Math.max(0, total - died - notGrown - disposed);
 };
 
 const getBatchGoodPercent = (b) => {
@@ -48,7 +49,7 @@ const getBatchGoodPercent = (b) => {
   return Math.round((getBatchGoodCount(b) / total) * 100);
 };
 
-const getBatchRemainder = (b) => Math.max(0, getBatchGoodCount(b) - (Number(b.sentToFlowerCount) || 0));
+const getBatchRemainder = (b) => getBatchGoodCount(b);
 
 const getBatchLightChanges = (b) => {
   let list = [];
@@ -277,6 +278,23 @@ const Vegetation = () => {
       await load();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка удаления');
+    }
+  };
+
+  const handleDisposeRemaining = async (batch) => {
+    const remainder = getBatchRemainder(batch);
+    if (remainder <= 0) return;
+    if (!confirm(`Утилизировать оставшиеся ${remainder} кустов? Они никуда не поедут и будут списаны.`)) return;
+    try {
+      setSaving(true);
+      await vegBatchService.disposeRemaining(batch._id);
+      setSendToFlowerModal(null);
+      setEditBatch(null);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -650,7 +668,10 @@ const Vegetation = () => {
                                 <div className="text-dark-300 text-xs">Всего: <span className="text-white">{getBatchTotal(b)}</span></div>
                                 <div className="text-dark-300 text-xs mt-1">Хороших: <span className="text-primary-400">{getBatchGoodCount(b)}</span></div>
                                 <div className="text-dark-300 text-xs mt-1">В цвет: <span className="text-white">{b.sentToFlowerCount || 0}</span></div>
-                                <div className="text-dark-300 text-xs mt-1">Остаток: <span className="text-white font-medium">{getBatchRemainder(b)}</span></div>
+                                {(b.disposedCount || 0) > 0 && (
+                                  <div className="text-dark-300 text-xs mt-1">Утилизировано: <span className="text-amber-400">{b.disposedCount}</span></div>
+                                )}
+                                <div className="text-dark-300 text-xs mt-1">Остаток в бэтче: <span className="text-white font-medium">{getBatchRemainder(b)}</span></div>
                               </div>
                               {b.notes && (
                                 <div className="col-span-2 md:col-span-4">
@@ -687,6 +708,16 @@ const Vegetation = () => {
                                 >
                                   В цвет
                                 </button>
+                                {getBatchRemainder(b) > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); handleDisposeRemaining(b); }}
+                                    className="px-3 py-1.5 text-amber-400 hover:bg-amber-900/30 rounded text-xs"
+                                    title="Оставшиеся кусты никуда не поедут, будут утилизированы"
+                                  >
+                                    Удалить оставшиеся (утилизация)
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); handleDelete(b._id); }}
@@ -929,7 +960,7 @@ const Vegetation = () => {
           >
             <h3 className="text-lg font-semibold text-white mb-1">Отправить в цветение</h3>
             <p className="text-dark-400 text-sm mb-4">
-              Хороших в бэтче: {getBatchGoodCount(sendToFlowerModal)} шт. Остаток после заезда: {getBatchRemainder(sendToFlowerModal)}.
+              Хороших в бэтче: {getBatchGoodCount(sendToFlowerModal)} шт. После отправки в бэтче останется меньше на выбранное количество.
             </p>
             <form onSubmit={handleSendToFlower} className="space-y-4">
               {sendStrains.length > 0 ? (

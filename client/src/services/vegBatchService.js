@@ -21,6 +21,11 @@ export const vegBatchService = {
     return response.data;
   },
 
+  async disposeRemaining(id) {
+    const response = await api.put(`/veg-batches/${id}`, { disposeRemaining: true });
+    return response.data;
+  },
+
   async delete(id) {
     await api.delete(`/veg-batches/${id}`);
   },

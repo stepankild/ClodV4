@@ -19,6 +19,54 @@ const normalizeStrains = (strains, legacyStrain, legacyQuantity) => {
   return { strains: [{ strain: String(legacyStrain || '').trim(), quantity: parseInt(legacyQuantity, 10) || 0 }], strain: legacyStrain || '', quantity: parseInt(legacyQuantity, 10) || 0 };
 };
 
+const getDocTotal = (doc) => {
+  if (Array.isArray(doc.strains) && doc.strains.length > 0) {
+    return doc.strains.reduce((sum, s) => sum + (parseInt(s.quantity, 10) || 0), 0);
+  }
+  return parseInt(doc.quantity, 10) || 0;
+};
+
+const reduceStrainsBySent = (doc, newSentToFlowerStrains, oldSentStrains) => {
+  if (!Array.isArray(newSentToFlowerStrains) || newSentToFlowerStrains.length === 0) return;
+  const oldSent = Array.isArray(oldSentStrains) ? oldSentStrains : [];
+  const oldByStrain = new Map(oldSent.map((s) => [String(s.strain || '').trim(), parseInt(s.quantity, 10) || 0]));
+  const newByStrain = new Map();
+  for (const s of newSentToFlowerStrains) {
+    const name = String(s.strain || '').trim();
+    const qty = Math.max(0, parseInt(s.quantity, 10) || 0);
+    if (name || qty) newByStrain.set(name, (newByStrain.get(name) || 0) + qty);
+  }
+  const deltaByStrain = new Map();
+  for (const [name, newQty] of newByStrain) {
+    const oldQty = oldByStrain.get(name) || 0;
+    const delta = Math.max(0, newQty - oldQty);
+    if (delta > 0) deltaByStrain.set(name, delta);
+  }
+  const totalNew = [...newByStrain.values()].reduce((a, b) => a + b, 0);
+  const totalOld = [...oldByStrain.values()].reduce((a, b) => a + b, 0);
+  const deltaTotal = Math.max(0, totalNew - totalOld);
+  if (deltaTotal === 0) return;
+  if (Array.isArray(doc.strains) && doc.strains.length > 0) {
+    if (deltaByStrain.size > 0) {
+      doc.strains = doc.strains.map((row) => {
+        const name = String(row.strain || '').trim();
+        const sub = deltaByStrain.get(name) || 0;
+        const newQty = Math.max(0, (parseInt(row.quantity, 10) || 0) - sub);
+        return { strain: row.strain, quantity: newQty };
+      });
+    } else {
+      doc.strains = doc.strains.map((row, i) => ({
+        strain: row.strain,
+        quantity: i === 0 ? Math.max(0, (parseInt(row.quantity, 10) || 0) - deltaTotal) : (parseInt(row.quantity, 10) || 0)
+      }));
+    }
+    doc.quantity = doc.strains.reduce((sum, s) => sum + (s.quantity || 0), 0);
+    doc.strain = doc.strains.map((s) => s.strain).filter(Boolean).join(', ') || doc.strain || '';
+  } else {
+    doc.quantity = Math.max(0, (parseInt(doc.quantity, 10) || 0) - deltaTotal);
+  }
+};
+
 // @desc    Get veg batches (in veg only or by flower room)
 // @route   GET /api/veg-batches?inVeg=true | ?flowerRoom=:id
 export const getVegBatches = async (req, res) => {
@@ -98,7 +146,7 @@ export const updateVegBatch = async (req, res) => {
   try {
     const doc = await VegBatch.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Бэтч не найден' });
-    const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes, diedCount, notGrownCount, lightChanges, sentToFlowerCount, sentToFlowerStrains } = req.body;
+    const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes, diedCount, notGrownCount, lightChanges, sentToFlowerCount, sentToFlowerStrains, disposeRemaining, disposedCount } = req.body;
     if (name !== undefined) doc.name = String(name).trim();
     if (strains !== undefined) {
       const norm = normalizeStrains(strains, doc.strain, doc.quantity);
@@ -138,10 +186,23 @@ export const updateVegBatch = async (req, res) => {
     }
     if (sentToFlowerCount !== undefined) doc.sentToFlowerCount = parseInt(sentToFlowerCount, 10) >= 0 ? parseInt(sentToFlowerCount, 10) : 0;
     if (sentToFlowerStrains !== undefined && Array.isArray(sentToFlowerStrains)) {
+      const oldSentStrains = Array.isArray(doc.sentToFlowerStrains) ? [...doc.sentToFlowerStrains] : [];
       doc.sentToFlowerStrains = sentToFlowerStrains
         .filter((s) => s && (s.strain !== undefined || s.quantity > 0))
         .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Math.max(0, parseInt(s.quantity, 10) || 0) }));
+      if (flowerRoom !== undefined && doc.sentToFlowerStrains.length > 0) {
+        reduceStrainsBySent(doc, doc.sentToFlowerStrains, oldSentStrains);
+      }
     }
+    if (disposeRemaining === true) {
+      const total = getDocTotal(doc);
+      const died = parseInt(doc.diedCount, 10) || 0;
+      const notGrown = parseInt(doc.notGrownCount, 10) || 0;
+      const disposed = parseInt(doc.disposedCount, 10) || 0;
+      const remainder = Math.max(0, total - died - notGrown - disposed);
+      doc.disposedCount = disposed + remainder;
+    }
+    if (disposedCount !== undefined) doc.disposedCount = Math.max(0, parseInt(disposedCount, 10) || 0);
     await doc.save();
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
     await doc.populate('flowerRoom', 'name roomNumber');
