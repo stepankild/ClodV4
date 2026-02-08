@@ -263,8 +263,9 @@ export const getDeletedVegBatches = async (req, res) => {
 export const restoreVegBatch = async (req, res) => {
   try {
     const doc = await VegBatch.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!doc) return res.status(404).json({ message: 'Р‘СЌС‚С‡ РЅРµ РЅР°Р№РґРµРЅ РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ' });
+    if (!doc) return res.status(404).json({ message: 'Бэтч не найден или уже восстановлен' });
     doc.deletedAt = null;
+    doc.disposedCount = 0;
     await doc.save();
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
     await doc.populate('flowerRoom', 'name roomNumber');
