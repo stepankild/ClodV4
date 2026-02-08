@@ -521,16 +521,13 @@ export default function ArchiveDetail() {
             <Section title="Освещение и комната" icon="💡">
               <div className="space-y-3">
                 {archive?.squareMeters > 0 && (
-                  <InfoRow label="Площадь" value={`${archive.squareMeters} м²`} />
+                  <InfoRow label="Зелёная площадь" value={`${archive.squareMeters} м²`} />
                 )}
                 {light?.lampCount > 0 && (
                   <InfoRow label="Лампы" value={`${light.lampCount} шт × ${light.lampWattage || '?'} Вт`} />
                 )}
                 {light?.lampType && (
                   <InfoRow label="Тип ламп" value={light.lampType} />
-                )}
-                {light?.totalWatts > 0 && (
-                  <InfoRow label="Общая мощность" value={`${light.totalWatts} Вт`} highlight color="text-amber-400" />
                 )}
                 {m.gramsPerWatt > 0 && (
                   <InfoRow label="г/ватт" value={formatNum(m.gramsPerWatt)} highlight color="text-amber-400" />

@@ -69,13 +69,7 @@ export default function ActiveRooms() {
     lampCount: '',
     lampWattage: '',
     lampType: '',
-    length: '',
-    width: '',
-    height: '',
-    potSize: '',
-    intakeType: '',
-    exhaustType: '',
-    co2: false
+    potSize: ''
   });
 
   useEffect(() => {
@@ -160,13 +154,7 @@ export default function ActiveRooms() {
       lampCount: selectedRoom.lighting?.lampCount ?? '',
       lampWattage: selectedRoom.lighting?.lampWattage ?? '',
       lampType: selectedRoom.lighting?.lampType ?? '',
-      length: selectedRoom.roomDimensions?.length ?? '',
-      width: selectedRoom.roomDimensions?.width ?? '',
-      height: selectedRoom.roomDimensions?.height ?? '',
-      potSize: selectedRoom.potSize ?? '',
-      intakeType: selectedRoom.ventilation?.intakeType ?? '',
-      exhaustType: selectedRoom.ventilation?.exhaustType ?? '',
-      co2: selectedRoom.ventilation?.co2 ?? false
+      potSize: selectedRoom.potSize ?? ''
     });
     setSettingsMode(true);
     setEditMode(false);
@@ -184,17 +172,7 @@ export default function ActiveRooms() {
           lampWattage: settingsForm.lampWattage === '' ? null : Number(settingsForm.lampWattage),
           lampType: settingsForm.lampType || null
         },
-        roomDimensions: {
-          length: settingsForm.length === '' ? null : Number(settingsForm.length),
-          width: settingsForm.width === '' ? null : Number(settingsForm.width),
-          height: settingsForm.height === '' ? null : Number(settingsForm.height)
-        },
-        potSize: settingsForm.potSize === '' ? null : Number(settingsForm.potSize),
-        ventilation: {
-          intakeType: settingsForm.intakeType,
-          exhaustType: settingsForm.exhaustType,
-          co2: settingsForm.co2
-        }
+        potSize: settingsForm.potSize === '' ? null : Number(settingsForm.potSize)
       });
       setSettingsMode(false);
       await refreshSelectedRoom();
@@ -664,33 +642,24 @@ export default function ActiveRooms() {
               {/* Настройки комнаты */}
               {settingsMode && (
                 <div className="space-y-4">
-                  <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2">Физические параметры</h4>
+                  <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2">Зелёная площадь и горшки</h4>
                   <div>
-                    <label className="block text-xs text-dark-400 mb-1">Площадь (м&#178;)</label>
+                    <label className="block text-xs text-dark-400 mb-1">Зелёная площадь (м&#178;)</label>
                     <input
                       type="number" min="0" step="0.1"
                       value={settingsForm.squareMeters}
                       onChange={e => setSettingsForm(f => ({ ...f, squareMeters: e.target.value }))}
                       className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                      placeholder="Например: 12.5"
+                      placeholder="Площадь под растениями"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-dark-400 mb-1">Размеры комнаты (м)</label>
-                    <div className="grid grid-cols-3 gap-2">
-                      <input type="number" min="0" step="0.1" placeholder="Длина"
-                        value={settingsForm.length}
-                        onChange={e => setSettingsForm(f => ({ ...f, length: e.target.value }))}
-                        className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-                      <input type="number" min="0" step="0.1" placeholder="Ширина"
-                        value={settingsForm.width}
-                        onChange={e => setSettingsForm(f => ({ ...f, width: e.target.value }))}
-                        className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-                      <input type="number" min="0" step="0.1" placeholder="Высота"
-                        value={settingsForm.height}
-                        onChange={e => setSettingsForm(f => ({ ...f, height: e.target.value }))}
-                        className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-                    </div>
+                    <label className="block text-xs text-dark-400 mb-1">Размер горшка (литры)</label>
+                    <input type="number" min="0" step="0.5"
+                      value={settingsForm.potSize}
+                      onChange={e => setSettingsForm(f => ({ ...f, potSize: e.target.value }))}
+                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                      placeholder="Например: 11" />
                   </div>
 
                   <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2 pt-2">Освещение</h4>
@@ -710,13 +679,6 @@ export default function ActiveRooms() {
                         className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                     </div>
                   </div>
-                  {settingsForm.lampCount && settingsForm.lampWattage && (
-                    <div className="text-sm text-dark-400">
-                      Общая мощность: <span className="text-primary-400 font-medium">
-                        {Number(settingsForm.lampCount) * Number(settingsForm.lampWattage)} Вт
-                      </span>
-                    </div>
-                  )}
                   <div>
                     <label className="block text-xs text-dark-400 mb-1">Тип ламп</label>
                     <select
@@ -733,41 +695,6 @@ export default function ActiveRooms() {
                       <option value="other">Другое</option>
                     </select>
                   </div>
-
-                  <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2 pt-2">Горшки и вентиляция</h4>
-                  <div>
-                    <label className="block text-xs text-dark-400 mb-1">Размер горшка (литры)</label>
-                    <input type="number" min="0" step="0.5"
-                      value={settingsForm.potSize}
-                      onChange={e => setSettingsForm(f => ({ ...f, potSize: e.target.value }))}
-                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                      placeholder="Например: 11" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-dark-400 mb-1">Приток</label>
-                      <input type="text"
-                        value={settingsForm.intakeType}
-                        onChange={e => setSettingsForm(f => ({ ...f, intakeType: e.target.value }))}
-                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                        placeholder="Тип/модель" />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-dark-400 mb-1">Вытяжка</label>
-                      <input type="text"
-                        value={settingsForm.exhaustType}
-                        onChange={e => setSettingsForm(f => ({ ...f, exhaustType: e.target.value }))}
-                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                        placeholder="Тип/модель" />
-                    </div>
-                  </div>
-                  <label className="flex items-center gap-3 cursor-pointer">
-                    <input type="checkbox"
-                      checked={settingsForm.co2}
-                      onChange={e => setSettingsForm(f => ({ ...f, co2: e.target.checked }))}
-                      className="w-4 h-4 rounded border-dark-500 bg-dark-700 text-primary-600 focus:ring-primary-500" />
-                    <span className="text-sm text-dark-300">CO2 подача</span>
-                  </label>
 
                   <div className="flex gap-2 pt-2">
                     <button
@@ -917,15 +844,15 @@ export default function ActiveRooms() {
                         <div className="bg-dark-700/30 rounded-lg p-3 space-y-1 text-xs text-dark-400">
                           {selectedRoom.squareMeters && (
                             <div className="flex justify-between">
-                              <span>Площадь:</span>
+                              <span>Зел. площадь:</span>
                               <span className="text-dark-300">{selectedRoom.squareMeters} м&#178;</span>
                             </div>
                           )}
                           {selectedRoom.lighting?.lampCount && selectedRoom.lighting?.lampWattage && (
                             <div className="flex justify-between">
-                              <span>Освещение:</span>
+                              <span>Лампы:</span>
                               <span className="text-dark-300">
-                                {selectedRoom.lighting.lampCount} x {selectedRoom.lighting.lampWattage}Вт = {selectedRoom.totalWatts}Вт
+                                {selectedRoom.lighting.lampCount} × {selectedRoom.lighting.lampWattage}Вт
                                 {selectedRoom.lighting.lampType ? ` (${selectedRoom.lighting.lampType})` : ''}
                               </span>
                             </div>
@@ -934,12 +861,6 @@ export default function ActiveRooms() {
                             <div className="flex justify-between">
                               <span>Горшок:</span>
                               <span className="text-dark-300">{selectedRoom.potSize}л</span>
-                            </div>
-                          )}
-                          {selectedRoom.ventilation?.co2 && (
-                            <div className="flex justify-between">
-                              <span>CO2:</span>
-                              <span className="text-green-400">Да</span>
                             </div>
                           )}
                         </div>

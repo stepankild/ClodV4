@@ -96,8 +96,6 @@ const Overview = () => {
   // ── Computed data ──
   const activeRooms = safeRooms.filter(r => r.isActive);
   const totalPlants = activeRooms.reduce((s, r) => s + (r.plantsCount || 0), 0);
-  const totalWatts = activeRooms.reduce((s, r) => s + (r.totalWatts || 0), 0);
-
   const nearestHarvest = activeRooms
     .filter(r => r.expectedHarvestDate)
     .sort((a, b) => new Date(a.expectedHarvestDate) - new Date(b.expectedHarvestDate))[0] || null;
@@ -174,7 +172,7 @@ const Overview = () => {
       )}
 
       {/* ═══ Farm summary stats ═══ */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">Активных</div>
           <div className="text-xl font-bold text-primary-400 mt-0.5">{activeRooms.length}<span className="text-dark-500 text-sm font-normal"> / {safeRooms.length}</span></div>
@@ -182,10 +180,6 @@ const Overview = () => {
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">Кустов</div>
           <div className="text-xl font-bold text-green-400 mt-0.5">{totalPlants > 0 ? formatNum(totalPlants) : '—'}</div>
-        </div>
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
-          <div className="text-dark-400 text-xs font-medium">Общая мощность</div>
-          <div className="text-xl font-bold text-amber-400 mt-0.5">{totalWatts > 0 ? `${formatNum(totalWatts)} Вт` : '—'}</div>
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">Ближайший урожай</div>
@@ -272,13 +266,10 @@ const Overview = () => {
               </div>
 
               {/* Room info badges */}
-              {(room.totalWatts > 0 || room.squareMeters > 0) && (
+              {(room.squareMeters > 0 || room.lighting?.lampType) && (
                 <div className="px-4 pb-2 flex flex-wrap gap-1.5">
                   {room.squareMeters > 0 && (
-                    <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">{room.squareMeters} м²</span>
-                  )}
-                  {room.totalWatts > 0 && (
-                    <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">{room.totalWatts} Вт</span>
+                    <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">зел. {room.squareMeters} м²</span>
                   )}
                   {room.lighting?.lampType && (
                     <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">{room.lighting.lampType}</span>
