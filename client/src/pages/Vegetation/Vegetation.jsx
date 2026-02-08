@@ -74,6 +74,7 @@ const Vegetation = () => {
   const canCreateVeg = hasPermission && hasPermission('vegetation:create');
 
   const [batches, setBatches] = useState([]);
+  const [deletedBatches, setDeletedBatches] = useState([]);
   const [rooms, setRooms] = useState([]);
   const [cloneCuts, setCloneCuts] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -121,17 +122,20 @@ const Vegetation = () => {
     try {
       setLoading(true);
       setError('');
-      const [inVeg, roomsData, cutsData] = await Promise.all([
+      const [inVeg, deletedData, roomsData, cutsData] = await Promise.all([
         vegBatchService.getInVeg(),
+        vegBatchService.getDeleted().catch(() => []),
         roomService.getRoomsSummary().catch(() => []),
         cloneCutService.getAll().catch(() => [])
       ]);
       setBatches(Array.isArray(inVeg) ? inVeg : []);
+      setDeletedBatches(Array.isArray(deletedData) ? deletedData : []);
       setRooms(Array.isArray(roomsData) ? roomsData : []);
       setCloneCuts(Array.isArray(cutsData) ? cutsData : []);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Ошибка загрузки');
       setBatches([]);
+      setDeletedBatches([]);
       setRooms([]);
       setCloneCuts([]);
     } finally {
@@ -286,7 +290,7 @@ const Vegetation = () => {
   const handleDisposeRemaining = async (batch) => {
     const remainder = getBatchRemainder(batch);
     if (remainder <= 0) return;
-    if (!confirm(`Утилизировать оставшиеся ${remainder} кустов? Они никуда не поедут и будут списаны.`)) return;
+    if (!confirm(`Утилизировать оставшиеся ${remainder} кустов? Бэтч попадёт в корзину (можно восстановить).`)) return;
     try {
       setSaving(true);
       await vegBatchService.disposeRemaining(batch._id);
@@ -295,6 +299,18 @@ const Vegetation = () => {
       await load();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRestoreBatch = async (id) => {
+    try {
+      setSaving(true);
+      await vegBatchService.restore(id);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка восстановления');
     } finally {
       setSaving(false);
     }
@@ -739,6 +755,52 @@ const Vegetation = () => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* Списанные кусты (корзина) — лог удалённых бэтчей */}
+      <div className="mt-10 bg-dark-800 rounded-xl border border-dark-700 p-5">
+        <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+          <span className="text-amber-400">Списанные кусты (корзина)</span>
+          {deletedBatches.length > 0 && (
+            <span className="text-dark-400 text-sm font-normal">— {deletedBatches.length} бэтч(ей), можно восстановить</span>
+          )}
+        </h2>
+        {deletedBatches.length === 0 ? (
+          <p className="text-dark-500 text-sm">Нет списанных бэтчей. Сюда попадают бэтчи после «Удалить оставшиеся (утилизация)».</p>
+        ) : (
+          <div className="space-y-2">
+            {deletedBatches.map((b) => (
+              <div
+                key={b._id}
+                className="flex flex-wrap items-center justify-between gap-3 py-2 px-3 bg-dark-700/50 rounded-lg border border-dark-600"
+              >
+                <div className="flex flex-wrap items-center gap-3 text-sm">
+                  <span className="text-white font-medium">{b.name || 'Бэтч без названия'}</span>
+                  <span className="text-dark-400">
+                    {formatStrainsShort(getStrainsFromBatch(b))} · всего {getBatchInitialTotal(b) || b.initialQuantity || getBatchTotal(b)}
+                  </span>
+                  {(b.disposedCount > 0 || b.sentToFlowerCount > 0) && (
+                    <span className="text-dark-500 text-xs">
+                      в цвет: {b.sentToFlowerCount || 0}
+                      {b.disposedCount > 0 && ` · утилизировано: ${b.disposedCount}`}
+                    </span>
+                  )}
+                  <span className="text-dark-500 text-xs">удалён {formatDate(b.deletedAt)}</span>
+                </div>
+                {canCreateVeg && (
+                  <button
+                    type="button"
+                    onClick={() => handleRestoreBatch(b._id)}
+                    disabled={saving}
+                    className="px-3 py-1.5 text-primary-400 hover:bg-primary-900/30 rounded text-xs disabled:opacity-50"
+                  >
+                    Восстановить
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Модалка: добавить бэтч */}

@@ -217,12 +217,14 @@ export const updateVegBatch = async (req, res) => {
       const disposed = parseInt(doc.disposedCount, 10) || 0;
       const remainder = Math.max(0, total - died - notGrown - disposed);
       doc.disposedCount = disposed + remainder;
+      doc.deletedAt = new Date();
     }
     if (disposedCount !== undefined) doc.disposedCount = Math.max(0, parseInt(disposedCount, 10) || 0);
     await doc.save();
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
     await doc.populate('flowerRoom', 'name roomNumber');
-    await createAuditLog(req, { action: 'veg_batch.update', entityType: 'VegBatch', entityId: doc._id, details: { name: doc.name, flowerRoom: doc.flowerRoom?.toString() } });
+    const auditAction = disposeRemaining === true ? 'veg_batch.dispose_remaining' : 'veg_batch.update';
+    await createAuditLog(req, { action: auditAction, entityType: 'VegBatch', entityId: doc._id, details: { name: doc.name, flowerRoom: doc.flowerRoom?.toString(), disposedCount: doc.disposedCount } });
     res.json(doc);
   } catch (error) {
     console.error('Update veg batch error:', error);
