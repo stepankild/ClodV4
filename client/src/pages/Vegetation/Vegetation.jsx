@@ -243,6 +243,13 @@ const Vegetation = () => {
         setSaving(false);
         return;
       }
+      // Сначала обновляем бэтч (привязка к комнате) — сервер проверит, что комната ещё не активна
+      await vegBatchService.update(sendToFlowerModal._id, {
+        flowerRoom: sendRoomId,
+        transplantedToFlowerAt: sendDate,
+        sentToFlowerCount: count,
+        sentToFlowerStrains: flowerStrainsPayload.length ? flowerStrainsPayload : undefined
+      });
       if (room && !room.isActive) {
         await roomService.startCycle(sendRoomId, {
           cycleName: sendToFlowerModal.name || sendToFlowerModal.strain || '',
@@ -253,12 +260,6 @@ const Vegetation = () => {
           flowerStrains: flowerStrainsPayload.length ? flowerStrainsPayload : undefined
         });
       }
-      await vegBatchService.update(sendToFlowerModal._id, {
-        flowerRoom: sendRoomId,
-        transplantedToFlowerAt: sendDate,
-        sentToFlowerCount: count,
-        sentToFlowerStrains: flowerStrainsPayload.length ? flowerStrainsPayload : undefined
-      });
       setSendToFlowerModal(null);
       await load();
     } catch (err) {
