@@ -13,6 +13,7 @@ const vegBatchSchema = new mongoose.Schema({
   }],
   strain: { type: String, default: '' },
   quantity: { type: Number, default: 0 },
+  initialQuantity: { type: Number, default: null },
   cutDate: { type: Date, required: true },
   transplantedToVegAt: { type: Date, required: true },
   vegDaysTarget: { type: Number, default: 21 },

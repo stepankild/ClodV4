@@ -35,6 +35,8 @@ const getBatchTotal = (b) => {
   return fromStrains || Number(b.quantity) || 0;
 };
 
+const getBatchInitialTotal = (b) => (b.initialQuantity != null && b.initialQuantity !== '') ? Number(b.initialQuantity) : getBatchTotal(b);
+
 const getBatchGoodCount = (b) => {
   const total = getBatchTotal(b);
   const died = Number(b.diedCount) || 0;
@@ -44,7 +46,7 @@ const getBatchGoodCount = (b) => {
 };
 
 const getBatchGoodPercent = (b) => {
-  const total = getBatchTotal(b);
+  const total = getBatchInitialTotal(b);
   if (total <= 0) return 0;
   return Math.round((getBatchGoodCount(b) / total) * 100);
 };
@@ -543,7 +545,7 @@ const Vegetation = () => {
                           </div>
                         </td>
                         <td className="px-3 py-2 align-top">
-                          <span className="text-dark-300">{getBatchTotal(b)}</span>
+                          <span className="text-dark-300">{getBatchInitialTotal(b)}</span>
                           <span className="text-dark-500 mx-1">/</span>
                           <span className="text-primary-400/90">{getBatchGoodCount(b)}</span>
                         </td>
@@ -665,7 +667,7 @@ const Vegetation = () => {
                               </div>
                               <div>
                                 <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Количество</div>
-                                <div className="text-dark-300 text-xs">Всего: <span className="text-white">{getBatchTotal(b)}</span></div>
+                                <div className="text-dark-300 text-xs">Всего: <span className="text-white">{getBatchInitialTotal(b)}</span></div>
                                 <div className="text-dark-300 text-xs mt-1">Хороших: <span className="text-primary-400">{getBatchGoodCount(b)}</span></div>
                                 <div className="text-dark-300 text-xs mt-1">В цвет: <span className="text-white">{b.sentToFlowerCount || 0}</span></div>
                                 {(b.disposedCount || 0) > 0 && (

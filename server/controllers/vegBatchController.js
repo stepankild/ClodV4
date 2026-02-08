@@ -102,7 +102,8 @@ export const getVegBatches = async (req, res) => {
           return { date: c.date, powerPercent };
         })
         : (doc.lightChangeDate ? [{ date: doc.lightChangeDate, powerPercent: doc.lightPowerPercent != null ? Math.round(Math.min(100, Math.max(0, Number(doc.lightPowerPercent)))) : null }] : []);
-      return { ...doc, lightChanges };
+      const initialQty = doc.initialQuantity != null ? doc.initialQuantity : getDocTotal(doc);
+      return { ...doc, lightChanges, initialQuantity: initialQty };
     });
     res.json(normalized);
   } catch (error) {
@@ -135,6 +136,7 @@ export const createVegBatch = async (req, res) => {
       strains: normalizedStrains,
       strain: derivedStrain,
       quantity: derivedQuantity,
+      initialQuantity: derivedQuantity,
       cutDate: new Date(cutDate),
       transplantedToVegAt: new Date(transplantedToVegAt),
       vegDaysTarget: parseInt(vegDaysTarget, 10) || 21,
