@@ -85,15 +85,12 @@ export const getVegBatches = async (req, res) => {
     if (inVeg !== 'true' && flowerRoom && mongoose.Types.ObjectId.isValid(flowerRoom)) {
       filter.flowerRoom = flowerRoom;
     }
-    // при inVeg=true не ставим flowerRoom=null: показываем все бэтчи с остатком в веге (частично отправленные остаются)
-    let list = await VegBatch.find(filter)
+    // при inVeg=true показываем все неудалённые бэтчи (в т.ч. с нулевым остатком — восстановленные из корзины)
+    const list = await VegBatch.find(filter)
       .populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } })
       .populate('flowerRoom', 'name roomNumber')
       .sort({ transplantedToVegAt: -1 })
       .lean();
-    if (inVeg === 'true') {
-      list = list.filter((doc) => getDocRemainder(doc) > 0);
-    }
     const normalized = list.map((doc) => {
       const lightChanges = Array.isArray(doc.lightChanges) && doc.lightChanges.length > 0
         ? doc.lightChanges.map((c) => {
