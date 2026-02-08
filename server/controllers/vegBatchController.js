@@ -67,19 +67,33 @@ const reduceStrainsBySent = (doc, newSentToFlowerStrains, oldSentStrains) => {
   }
 };
 
+// Остаток в бэтче (хороших): всего − погибло − не выросло − утилизировано
+const getDocRemainder = (doc) => {
+  const total = getDocTotal(doc);
+  const died = parseInt(doc.diedCount, 10) || 0;
+  const notGrown = parseInt(doc.notGrownCount, 10) || 0;
+  const disposed = parseInt(doc.disposedCount, 10) || 0;
+  return Math.max(0, total - died - notGrown - disposed);
+};
+
 // @desc    Get veg batches (in veg only or by flower room)
 // @route   GET /api/veg-batches?inVeg=true | ?flowerRoom=:id
 export const getVegBatches = async (req, res) => {
   try {
     const { inVeg, flowerRoom } = req.query;
     const filter = { ...notDeleted };
-    if (inVeg === 'true') filter.flowerRoom = null;
-    if (flowerRoom && mongoose.Types.ObjectId.isValid(flowerRoom)) filter.flowerRoom = flowerRoom;
-    const list = await VegBatch.find(filter)
+    if (inVeg !== 'true' && flowerRoom && mongoose.Types.ObjectId.isValid(flowerRoom)) {
+      filter.flowerRoom = flowerRoom;
+    }
+    // при inVeg=true не ставим flowerRoom=null: показываем все бэтчи с остатком в веге (частично отправленные остаются)
+    let list = await VegBatch.find(filter)
       .populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } })
       .populate('flowerRoom', 'name roomNumber')
       .sort({ transplantedToVegAt: -1 })
       .lean();
+    if (inVeg === 'true') {
+      list = list.filter((doc) => getDocRemainder(doc) > 0);
+    }
     const normalized = list.map((doc) => {
       const lightChanges = Array.isArray(doc.lightChanges) && doc.lightChanges.length > 0
         ? doc.lightChanges.map((c) => {
