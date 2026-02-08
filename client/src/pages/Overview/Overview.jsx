@@ -20,7 +20,6 @@ const getCutDateForRoom = (room) => {
   return null;
 };
 
-/** Дней до даты нарезки: положительное = осталось, отрицательное = уже прошло */
 const getDaysUntilCut = (cutDate) => {
   if (!cutDate) return null;
   const cut = new Date(cutDate);
@@ -35,6 +34,23 @@ const formatDate = (date) => {
   return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 };
 
+const formatNum = (n) => (n != null && Number.isFinite(n) ? Number(n).toLocaleString('ru-RU') : '—');
+
+// ── Urgency helpers ──
+const getProgressColor = (progress) => {
+  if (progress >= 95) return 'bg-red-500';
+  if (progress >= 80) return 'bg-yellow-500';
+  return 'bg-primary-500';
+};
+
+const getBorderColor = (room) => {
+  if (!room.isActive) return 'border-dark-700';
+  const p = room.progress ?? 0;
+  if (p >= 95) return 'border-red-700/60';
+  if (p >= 80) return 'border-yellow-700/40';
+  return 'border-primary-700/40';
+};
+
 const Overview = () => {
   const [rooms, setRooms] = useState([]);
   const safeRooms = (Array.isArray(rooms) ? rooms : []).filter((r) => r != null);
@@ -47,9 +63,7 @@ const Overview = () => {
     setExpandedNotes(prev => ({ ...prev, [roomId]: !prev[roomId] }));
   };
 
-  useEffect(() => {
-    loadSummary();
-  }, []);
+  useEffect(() => { loadSummary(); }, []);
 
   const loadSummary = async () => {
     try {
@@ -64,12 +78,8 @@ const Overview = () => {
     } catch (err) {
       const msg = err.response?.data?.message || err.message;
       const isNetwork = err.code === 'ECONNREFUSED' || err.message?.includes('Network Error');
-      setError(
-        isNetwork
-          ? 'Не удалось подключиться к серверу. Убедитесь, что бэкенд запущен (порт 5000).'
-          : msg || 'Ошибка загрузки обзора'
-      );
-      console.error('Overview load error:', err);
+      setError(isNetwork ? 'Не удалось подключиться к серверу.' : msg || 'Ошибка загрузки');
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -83,365 +93,385 @@ const Overview = () => {
     );
   }
 
+  // ── Computed data ──
+  const activeRooms = safeRooms.filter(r => r.isActive);
+  const totalPlants = activeRooms.reduce((s, r) => s + (r.plantsCount || 0), 0);
+  const totalWatts = activeRooms.reduce((s, r) => s + (r.totalWatts || 0), 0);
+
+  const nearestHarvest = activeRooms
+    .filter(r => r.expectedHarvestDate)
+    .sort((a, b) => new Date(a.expectedHarvestDate) - new Date(b.expectedHarvestDate))[0] || null;
+
+  const nearestDays = nearestHarvest?.daysRemaining;
+
+  // Alerts — things requiring attention
+  const alerts = [];
+
+  // Overdue clone cuts
+  safeRooms.forEach(room => {
+    const cutDate = getCutDateForRoom(room);
+    if (!cutDate) return;
+    const daysUntil = getDaysUntilCut(cutDate);
+    const cut = (Array.isArray(cloneCuts) ? cloneCuts : []).find(c => c.room?._id === room._id || c.room === room._id);
+    const isDone = cut?.isDone ?? false;
+    if (!isDone && daysUntil !== null && daysUntil <= 3) {
+      alerts.push({
+        type: daysUntil < 0 ? 'danger' : 'warning',
+        icon: '✂️',
+        text: daysUntil < 0
+          ? `${room.name}: нарезка клонов просрочена на ${-daysUntil} дн.`
+          : daysUntil === 0
+            ? `${room.name}: нарезать клоны сегодня!`
+            : `${room.name}: нарезать клоны через ${daysUntil} дн.`,
+        link: '/clones'
+      });
+    }
+  });
+
+  // Rooms ready to harvest
+  activeRooms.forEach(room => {
+    if ((room.progress ?? 0) >= 100) {
+      alerts.push({
+        type: 'danger',
+        icon: '🌿',
+        text: `${room.name}: готова к сбору урожая (день ${room.currentDay} из ${room.floweringDays})`,
+        link: '/harvest'
+      });
+    }
+  });
+
+  // Overdue pending tasks
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  safeRooms.forEach(room => {
+    (room.pendingTasks || []).forEach(task => {
+      if (task.scheduledDate && new Date(task.scheduledDate) < today) {
+        alerts.push({
+          type: 'warning',
+          icon: '⚠️',
+          text: `${room.name}: просрочена задача «${task.title}»`,
+          link: '/active'
+        });
+      }
+    });
+  });
+
   return (
     <div>
-      <div className="mb-8">
+      {/* Header */}
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Обзор фермы</h1>
-        <p className="text-dark-400 mt-1">Только просмотр. Редактирование циклов и планов — в разделе «Активные комнаты»</p>
+        <p className="text-dark-400 mt-1 text-sm">Общая картина. Редактирование — в <Link to="/active" className="text-primary-400 hover:text-primary-300">Активных комнатах</Link></p>
       </div>
 
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex flex-wrap items-center gap-3">
           <span>{error}</span>
-          <button
-            type="button"
-            onClick={() => { setError(''); loadSummary(); }}
-            className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium whitespace-nowrap"
-          >
+          <button type="button" onClick={() => { setError(''); loadSummary(); }} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">
             Повторить
           </button>
         </div>
       )}
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {safeRooms.map((room) => (
-          <div key={room._id} className="flex flex-col gap-2">
-            {/* Прошлый цикл — коротко над карточкой */}
-            <div className="text-xs text-dark-500 px-1">
-              <span className="font-medium text-dark-400">Прошлый цикл:</span>{' '}
-              {room.lastArchive ? (
-                <Link
-                  to={`/archive/${room.lastArchive._id}`}
-                  className="text-primary-400 hover:text-primary-300"
-                >
-                  {room.lastArchive.cycleName || room.lastArchive.strain || 'Цикл'}
-                  {room.lastArchive.harvestData?.dryWeight > 0 && ` · ${room.lastArchive.harvestData.dryWeight} г сух.`}
-                  {' · '}
-                  {formatDate(room.lastArchive.harvestDate)}
-                </Link>
-              ) : (
-                '—'
-              )}
-            </div>
-
-            {/* Карточка комнаты */}
-            <div
-              className="bg-dark-800 rounded-xl border border-dark-700 p-5 hover:border-dark-600 transition flex-1 min-w-0 overflow-hidden"
-            >
-            <div className="flex items-start justify-between mb-1">
-              <Link to="/active" className="text-lg font-semibold text-white hover:text-primary-400 transition">
-                {room.name}
-              </Link>
-              {room.isActive ? (
-                <span className="inline-flex items-center gap-1.5 text-primary-400 text-sm shrink-0">
-                  <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
-                  Цветёт
-                </span>
-              ) : (
-                <span className="text-dark-500 text-sm">Свободна</span>
-              )}
-            </div>
-
-            {/* Название цикла — крупно под номером комнаты */}
-            {room.isActive ? (
-              <div className="mb-3">
-                <div className="text-primary-400 font-medium text-sm">
-                  {room.cycleName || '—'}
-                </div>
-                {room.strain && (
-                  <div className="text-dark-300 text-sm">{room.strain}</div>
-                )}
-                {room.plantsCount > 0 && (
-                  <div className="text-dark-500 text-xs mt-0.5">{room.plantsCount} кустов</div>
-                )}
-              </div>
-            ) : (
-              <div className="text-dark-500 text-xs mb-3">Нет активного цикла</div>
-            )}
-
-            {room.isActive && (
-              <>
-                <div className="mb-3">
-                  <div className="flex justify-between text-xs text-dark-400 mb-1">
-                    <span>Прогресс</span>
-                    <span className="text-white">
-                      {room.currentDay != null && room.floweringDays != null
-                        ? `День ${room.currentDay} из ${room.floweringDays}`
-                        : ''}{' '}
-                      {room.progress != null ? `${room.progress}%` : '0%'}
-                    </span>
-                  </div>
-                  <div className="h-2 bg-dark-700 rounded-full overflow-hidden">
-                    <div
-                      className="h-full bg-primary-500 rounded-full transition-all"
-                      style={{ width: `${Math.min(room.progress ?? 0, 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-xs text-dark-500 mt-1">
-                    <span>
-                      {room.expectedHarvestDate
-                        ? `Урожай: ${formatDate(room.expectedHarvestDate)}`
-                        : '—'}
-                    </span>
-                    {room.daysRemaining != null && room.daysRemaining >= 0 && (
-                      <span className="text-dark-400">
-                        Осталось {room.daysRemaining} дн.
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {/* Подрезка нед.2 и Листики нед.4 — в виде прогресс-баров */}
-                {(() => {
-                  const day = room.currentDay ?? 0;
-                  const trimDone = !!room.trimWeek2Done;
-                  const defolDone = !!room.defoliationWeek4Done;
-                  const trimProgress = trimDone ? 100 : Math.min(100, Math.round((day / 14) * 100));
-                  const defolProgress = defolDone ? 100 : Math.min(100, Math.round((day / 28) * 100));
-                  const trimDaysLeft = Math.max(0, 14 - day);
-                  const defolDaysLeft = Math.max(0, 28 - day);
-                  return (
-                    <div className="space-y-2 border-t border-dark-700 pt-3">
-                      <div>
-                        <div className="flex justify-between text-xs text-dark-400 mb-0.5">
-                          <span>Подрезка (нед.2)</span>
-                          <span className={trimDone ? 'text-green-400' : 'text-dark-400'}>
-                            {trimDone ? formatDate(room.trimWeek2Done) : `осталось ${trimDaysLeft} дн.`}
-                          </span>
-                        </div>
-                        <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all ${trimDone ? 'bg-green-500' : 'bg-primary-500'}`}
-                            style={{ width: `${trimProgress}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div>
-                        <div className="flex justify-between text-xs text-dark-400 mb-0.5">
-                          <span>Листики (нед.4)</span>
-                          <span className={defolDone ? 'text-green-400' : 'text-dark-400'}>
-                            {defolDone ? formatDate(room.defoliationWeek4Done) : `осталось ${defolDaysLeft} дн.`}
-                          </span>
-                        </div>
-                        <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
-                          <div
-                            className={`h-full rounded-full transition-all ${defolDone ? 'bg-green-500' : 'bg-primary-500'}`}
-                            style={{ width: `${defolProgress}%` }}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Выполненные работы */}
-                {room.completedTasks && Object.keys(room.completedTasks).length > 0 && (
-                  <div className="space-y-1.5 border-t border-dark-700 pt-3 mt-3">
-                    <div className="text-xs text-dark-400 font-medium mb-1">Выполнено</div>
-                    {room.completedTasks.net?.length > 0 && (
-                      <div className="flex items-baseline justify-between gap-2 text-xs">
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-green-400 shrink-0">&#10003;</span>
-                          <span className="text-dark-300">Сетки натянуты</span>
-                        </div>
-                        <span className="text-dark-500 shrink-0">{formatDate(room.completedTasks.net[0].completedAt)}</span>
-                      </div>
-                    )}
-                    {room.completedTasks.spray?.map((task) => (
-                      <div key={task._id} className="flex items-baseline justify-between gap-2 text-xs">
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-green-400 shrink-0">&#10003;</span>
-                          <span className="text-dark-300 truncate">
-                            {task.sprayProduct ? `Обработка: ${task.sprayProduct}` : 'Обработка'}
-                          </span>
-                        </div>
-                        <span className="text-dark-500 shrink-0">{formatDate(task.completedAt)}</span>
-                      </div>
-                    ))}
-                    {room.completedTasks.trim?.map((task) => (
-                      <div key={task._id} className="flex items-baseline justify-between gap-2 text-xs">
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-green-400 shrink-0">&#10003;</span>
-                          <span className="text-dark-300">Подрезка{task.dayOfCycle ? ` (день ${task.dayOfCycle})` : ''}</span>
-                        </div>
-                        <span className="text-dark-500 shrink-0">{formatDate(task.completedAt)}</span>
-                      </div>
-                    ))}
-                    {room.completedTasks.defoliation?.map((task) => (
-                      <div key={task._id} className="flex items-baseline justify-between gap-2 text-xs">
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-green-400 shrink-0">&#10003;</span>
-                          <span className="text-dark-300">Дефолиация{task.dayOfCycle ? ` (день ${task.dayOfCycle})` : ''}</span>
-                        </div>
-                        <span className="text-dark-500 shrink-0">{formatDate(task.completedAt)}</span>
-                      </div>
-                    ))}
-                    {room.completedTasks.feed?.map((task) => (
-                      <div key={task._id} className="flex items-baseline justify-between gap-2 text-xs">
-                        <div className="flex items-baseline gap-1.5 min-w-0">
-                          <span className="text-green-400 shrink-0">&#10003;</span>
-                          <span className="text-dark-300 truncate">
-                            {task.feedProduct ? `Подкормка: ${task.feedProduct}` : 'Подкормка'}
-                          </span>
-                        </div>
-                        <span className="text-dark-500 shrink-0">{formatDate(task.completedAt)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Запланированные задачи */}
-                {room.pendingTasks?.length > 0 && (
-                  <div className="space-y-1 border-t border-dark-700 pt-3 mt-3">
-                    <div className="text-xs text-dark-400 font-medium mb-1">Запланировано</div>
-                    {room.pendingTasks.map(task => (
-                      <div key={task._id} className="flex items-center gap-2 text-xs">
-                        <span className="text-dark-500">&#9675;</span>
-                        <span className="text-dark-400 truncate">{task.title}</span>
-                        {task.scheduledDate && (
-                          <span className="text-dark-500 ml-auto shrink-0">{formatDate(task.scheduledDate)}</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-
-            {/* Последняя обработка */}
-            {(room.lastTreatmentAt != null && room.lastTreatmentAt !== '') && (
-              <div className="border-t border-dark-700 pt-3 mt-3">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span className="text-dark-500 text-xs shrink-0">Последняя обработка</span>
-                  <span className="text-dark-300 text-xs min-w-0 truncate text-right" title={[room.lastTreatmentTitle, formatDate(room.lastTreatmentAt)].filter(Boolean).join(' · ')}>
-                    {room.lastTreatmentTitle} {formatDate(room.lastTreatmentAt)}
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* Раскрываемые заметки */}
-            {room.notes && (
-              <div className="border-t border-dark-700 pt-3 mt-3">
-                <button
-                  onClick={(e) => { e.preventDefault(); toggleNotes(room._id); }}
-                  className="flex items-center gap-1.5 text-xs text-dark-400 hover:text-dark-300 w-full text-left"
-                >
-                  <span className={`transition-transform inline-block ${expandedNotes[room._id] ? 'rotate-90' : ''}`} style={{ fontSize: '8px' }}>&#9654;</span>
-                  Заметки
-                </button>
-                {expandedNotes[room._id] && (
-                  <p className="text-xs text-dark-300 mt-2 whitespace-pre-wrap bg-dark-700/30 rounded-lg p-2.5 max-h-32 overflow-y-auto">
-                    {room.notes}
-                  </p>
-                )}
-              </div>
-            )}
-            </div>
-
-            {/* Планируется — только просмотр */}
-            <div className="text-xs text-dark-500 px-1">
-              <span className="font-medium text-dark-400">Планируется:</span>{' '}
-              {room.plannedCycle ? (
-                <>
-                  {room.plannedCycle.cycleName || room.plannedCycle.strain || 'Цикл'}
-                  {room.plannedCycle.plannedStartDate && ` · с ${formatDate(room.plannedCycle.plannedStartDate)}`}
-                  {room.plannedCycle.plantsCount > 0 && ` · ${room.plannedCycle.plantsCount} кустов`}
-                </>
-              ) : (
-                '—'
-              )}
-            </div>
+      {/* ═══ Farm summary stats ═══ */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Активных</div>
+          <div className="text-xl font-bold text-primary-400 mt-0.5">{activeRooms.length}<span className="text-dark-500 text-sm font-normal"> / {safeRooms.length}</span></div>
+        </div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Кустов</div>
+          <div className="text-xl font-bold text-green-400 mt-0.5">{totalPlants > 0 ? formatNum(totalPlants) : '—'}</div>
+        </div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Общая мощность</div>
+          <div className="text-xl font-bold text-amber-400 mt-0.5">{totalWatts > 0 ? `${formatNum(totalWatts)} Вт` : '—'}</div>
+        </div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Ближайший урожай</div>
+          <div className="text-xl font-bold text-white mt-0.5">
+            {nearestDays != null ? (
+              nearestDays <= 0 ? <span className="text-red-400">Сейчас!</span> : `${nearestDays} дн.`
+            ) : '—'}
           </div>
-        ))}
+          {nearestHarvest && <p className="text-dark-500 text-xs mt-0.5">{nearestHarvest.name}</p>}
+        </div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Сортов в цвете</div>
+          <div className="text-xl font-bold text-purple-400 mt-0.5">
+            {[...new Set(activeRooms.map(r => r.strain).filter(Boolean))].length || '—'}
+          </div>
+        </div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Задач ожидает</div>
+          <div className="text-xl font-bold text-white mt-0.5">
+            {safeRooms.reduce((s, r) => s + (r.pendingTasks?.length || 0), 0) || '—'}
+          </div>
+        </div>
       </div>
 
-      {/* План нарезки клонов — все комнаты в столбец, прогресс до нарезки и статус */}
-      <div className="mt-8 bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
-        <div className="flex items-center justify-between px-4 py-3 border-b border-dark-700">
-          <h2 className="text-lg font-semibold text-white">План нарезки клонов</h2>
-          <Link to="/clones" className="text-primary-400 hover:text-primary-300 text-sm font-medium">
-            Подробнее →
-          </Link>
+      {/* ═══ Alerts ═══ */}
+      {alerts.length > 0 && (
+        <div className="mb-6 space-y-2">
+          {alerts.map((a, i) => (
+            <Link
+              key={i}
+              to={a.link}
+              className={`flex items-center gap-3 px-4 py-3 rounded-xl border transition hover:brightness-110 ${
+                a.type === 'danger'
+                  ? 'bg-red-900/20 border-red-700/50 text-red-300'
+                  : 'bg-yellow-900/20 border-yellow-700/50 text-yellow-300'
+              }`}
+            >
+              <span className="text-lg shrink-0">{a.icon}</span>
+              <span className="text-sm font-medium">{a.text}</span>
+              <svg className="w-4 h-4 ml-auto shrink-0 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          ))}
         </div>
-        <p className="text-dark-400 text-sm px-4 pt-2 pb-1">
-          Клоны режутся за {WEEKS_BEFORE_CLONE} недели до даты цветения. Все комнаты ниже.
-        </p>
-        <div className="flex flex-col">
-          {safeRooms.map((room) => {
-            const cutDate = getCutDateForRoom(room);
-            const daysUntil = cutDate != null ? getDaysUntilCut(cutDate) : null;
-            const cut = (Array.isArray(cloneCuts) ? cloneCuts : []).find(
-              (c) => c.room?._id === room._id || c.room === room._id
-            );
-            const isDone = cut?.isDone ?? false;
-            const hasPlanOrActive = cutDate != null;
+      )}
 
-            return (
-              <div
-                key={room._id}
-                className="flex flex-col gap-2 px-4 py-3 border-t border-dark-700 first:border-t-0 hover:bg-dark-700/30"
-              >
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <Link to="/clones" className="font-medium text-white hover:text-primary-400">
+      {/* ═══ Room cards ═══ */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+        {safeRooms.map((room) => {
+          const cutDate = getCutDateForRoom(room);
+          const daysUntilCut = cutDate ? getDaysUntilCut(cutDate) : null;
+          const cut = (Array.isArray(cloneCuts) ? cloneCuts : []).find(c => c.room?._id === room._id || c.room === room._id);
+          const clonesDone = cut?.isDone ?? false;
+          const hasCutPlan = cutDate != null;
+
+          return (
+            <div key={room._id} className={`bg-dark-800 rounded-xl border ${getBorderColor(room)} overflow-hidden transition hover:border-dark-500`}>
+              {/* Card header */}
+              <div className="px-4 pt-4 pb-2 flex items-start justify-between">
+                <div className="min-w-0">
+                  <Link to="/active" className="text-base font-semibold text-white hover:text-primary-400 transition block truncate">
                     {room.name}
                   </Link>
-                  {!hasPlanOrActive ? (
-                    <span className="text-dark-500 text-sm">Комната не активна · нет плана</span>
+                  {room.isActive ? (
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="text-primary-400 text-sm font-medium truncate">{room.strain || room.cycleName || '—'}</span>
+                      {room.plantsCount > 0 && (
+                        <span className="text-dark-500 text-xs shrink-0">{room.plantsCount} кустов</span>
+                      )}
+                    </div>
                   ) : (
-                    <span
-                      className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
-                        isDone ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'
-                      }`}
-                    >
-                      {isDone ? 'Нарезано' : 'Не нарезано'}
-                    </span>
+                    <span className="text-dark-500 text-xs">Нет активного цикла</span>
                   )}
                 </div>
-                {hasPlanOrActive ? (
-                  <>
-                    <div className="flex justify-between text-xs text-dark-400">
-                      <span>До нарезки</span>
-                      <span className="text-white">
-                        {daysUntil === null
-                          ? '—'
-                          : daysUntil > 0
-                            ? `осталось ${daysUntil} дн.`
-                            : daysUntil === 0
-                              ? 'сегодня'
-                              : `просрочено ${-daysUntil} дн.`}
+                {room.isActive ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-medium shrink-0 ml-2">
+                    <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
+                    <span className="text-primary-400">Цветёт</span>
+                  </span>
+                ) : (
+                  <span className="text-dark-600 text-xs shrink-0 ml-2">Свободна</span>
+                )}
+              </div>
+
+              {/* Room info badges */}
+              {(room.totalWatts > 0 || room.squareMeters > 0) && (
+                <div className="px-4 pb-2 flex flex-wrap gap-1.5">
+                  {room.squareMeters > 0 && (
+                    <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">{room.squareMeters} м²</span>
+                  )}
+                  {room.totalWatts > 0 && (
+                    <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">{room.totalWatts} Вт</span>
+                  )}
+                  {room.lighting?.lampType && (
+                    <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">{room.lighting.lampType}</span>
+                  )}
+                </div>
+              )}
+
+              {/* Active cycle content */}
+              {room.isActive && (
+                <div className="px-4 pb-3">
+                  {/* Progress bar */}
+                  <div className="mb-3">
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="text-dark-400">
+                        День <span className="text-white font-medium">{room.currentDay ?? 0}</span>
+                        <span className="text-dark-600"> / {room.floweringDays ?? '?'}</span>
+                      </span>
+                      <span className={`font-medium ${(room.progress ?? 0) >= 95 ? 'text-red-400' : (room.progress ?? 0) >= 80 ? 'text-yellow-400' : 'text-primary-400'}`}>
+                        {room.progress ?? 0}%
                       </span>
                     </div>
                     <div className="h-2 bg-dark-700 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-primary-500 rounded-full transition-all"
-                        style={{
-                          width: `${Math.min(
-                            100,
-                            Math.max(0, ((DAYS_BEFORE_CUT - (daysUntil ?? 0)) / DAYS_BEFORE_CUT) * 100)
-                          )}%`
-                        }}
+                        className={`h-full rounded-full transition-all ${getProgressColor(room.progress ?? 0)}`}
+                        style={{ width: `${Math.min(room.progress ?? 0, 100)}%` }}
                       />
                     </div>
-                    <div className="text-xs text-dark-500">
-                      Нарезка: {formatDate(cutDate)}
+                    <div className="flex justify-between text-xs text-dark-500 mt-1">
+                      <span>Урожай: {formatDate(room.expectedHarvestDate)}</span>
+                      {room.daysRemaining != null && room.daysRemaining >= 0 && (
+                        <span className={room.daysRemaining <= 3 ? 'text-red-400 font-medium' : ''}>
+                          {room.daysRemaining === 0 ? 'Сегодня!' : `${room.daysRemaining} дн.`}
+                        </span>
+                      )}
                     </div>
-                  </>
-                ) : null}
+                  </div>
+
+                  {/* Milestones — compact row */}
+                  {(() => {
+                    const day = room.currentDay ?? 0;
+                    const trimDone = !!room.trimWeek2Done;
+                    const defolDone = !!room.defoliationWeek4Done;
+                    return (
+                      <div className="flex gap-2 mb-3">
+                        <div className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs ${trimDone ? 'bg-green-900/30 text-green-400' : day >= 14 ? 'bg-red-900/20 text-red-400' : 'bg-dark-700/50 text-dark-400'}`}>
+                          <div className="font-medium">Подрезка</div>
+                          <div>{trimDone ? formatDate(room.trimWeek2Done) : day >= 14 ? 'Просрочено' : `через ${14 - day} дн.`}</div>
+                        </div>
+                        <div className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs ${defolDone ? 'bg-green-900/30 text-green-400' : day >= 28 ? 'bg-red-900/20 text-red-400' : 'bg-dark-700/50 text-dark-400'}`}>
+                          <div className="font-medium">Дефолиация</div>
+                          <div>{defolDone ? formatDate(room.defoliationWeek4Done) : day >= 28 ? 'Просрочено' : `через ${28 - day} дн.`}</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Completed tasks — compact chips */}
+                  {room.completedTasks && Object.keys(room.completedTasks).length > 0 && (
+                    <div className="border-t border-dark-700 pt-2 mb-2">
+                      <div className="text-xs text-dark-500 mb-1.5">Выполнено</div>
+                      <div className="flex flex-wrap gap-1">
+                        {room.completedTasks.net?.length > 0 && (
+                          <span className="px-2 py-0.5 bg-green-900/30 text-green-400 rounded text-xs">Сетки</span>
+                        )}
+                        {room.completedTasks.spray?.map((t, i) => (
+                          <span key={`sp-${i}`} className="px-2 py-0.5 bg-blue-900/30 text-blue-400 rounded text-xs truncate max-w-[140px]">
+                            {t.sprayProduct || 'Обработка'}
+                          </span>
+                        ))}
+                        {room.completedTasks.feed?.map((t, i) => (
+                          <span key={`fd-${i}`} className="px-2 py-0.5 bg-emerald-900/30 text-emerald-400 rounded text-xs truncate max-w-[140px]">
+                            {t.feedProduct || 'Подкормка'}
+                          </span>
+                        ))}
+                        {room.completedTasks.trim?.length > 0 && (
+                          <span className="px-2 py-0.5 bg-purple-900/30 text-purple-400 rounded text-xs">
+                            Подрезка ×{room.completedTasks.trim.length}
+                          </span>
+                        )}
+                        {room.completedTasks.defoliation?.length > 0 && (
+                          <span className="px-2 py-0.5 bg-yellow-900/30 text-yellow-400 rounded text-xs">
+                            Дефол. ×{room.completedTasks.defoliation.length}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pending tasks — compact */}
+                  {room.pendingTasks?.length > 0 && (
+                    <div className="border-t border-dark-700 pt-2 mb-2">
+                      <div className="text-xs text-dark-500 mb-1">Запланировано ({room.pendingTasks.length})</div>
+                      <div className="space-y-0.5">
+                        {room.pendingTasks.slice(0, 3).map(task => {
+                          const isOverdue = task.scheduledDate && new Date(task.scheduledDate) < today;
+                          return (
+                            <div key={task._id} className="flex items-center gap-1.5 text-xs">
+                              <span className={isOverdue ? 'text-red-400' : 'text-dark-500'}>○</span>
+                              <span className={`truncate ${isOverdue ? 'text-red-400' : 'text-dark-400'}`}>{task.title}</span>
+                              {task.scheduledDate && (
+                                <span className={`ml-auto shrink-0 ${isOverdue ? 'text-red-500' : 'text-dark-600'}`}>{formatDate(task.scheduledDate)}</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {room.pendingTasks.length > 3 && (
+                          <div className="text-xs text-dark-600">+{room.pendingTasks.length - 3} ещё</div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Card footer — last archive, planned, notes, clone plan */}
+              <div className="px-4 pb-3 space-y-2">
+                {/* Clone cut status for this room */}
+                {hasCutPlan && (
+                  <div className={`flex items-center justify-between gap-2 text-xs rounded-lg px-2.5 py-1.5 ${
+                    clonesDone ? 'bg-green-900/20 text-green-400'
+                      : daysUntilCut !== null && daysUntilCut < 0 ? 'bg-red-900/20 text-red-400'
+                      : daysUntilCut !== null && daysUntilCut <= 7 ? 'bg-yellow-900/20 text-yellow-400'
+                      : 'bg-dark-700/30 text-dark-400'
+                  }`}>
+                    <span className="font-medium">✂️ Клоны</span>
+                    <span>
+                      {clonesDone ? 'Нарезано ✓' :
+                        daysUntilCut === null ? '—' :
+                        daysUntilCut < 0 ? `Просрочено ${-daysUntilCut} дн.` :
+                        daysUntilCut === 0 ? 'Сегодня!' :
+                        `через ${daysUntilCut} дн.`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Last archive */}
+                {room.lastArchive && (
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-dark-500">Прошлый:</span>
+                    <Link to={`/archive/${room.lastArchive._id}`} className="text-primary-400 hover:text-primary-300 truncate text-right">
+                      {room.lastArchive.strain || room.lastArchive.cycleName || 'Цикл'}
+                      {room.lastArchive.harvestData?.dryWeight > 0 && ` · ${room.lastArchive.harvestData.dryWeight}г`}
+                    </Link>
+                  </div>
+                )}
+
+                {/* Planned cycle */}
+                {room.plannedCycle && (
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="text-dark-500">План:</span>
+                    <span className="text-dark-300 truncate text-right">
+                      {room.plannedCycle.strain || room.plannedCycle.cycleName || 'Цикл'}
+                      {room.plannedCycle.plannedStartDate && ` · ${formatDate(room.plannedCycle.plannedStartDate)}`}
+                    </span>
+                  </div>
+                )}
+
+                {/* Notes toggle */}
+                {room.notes && (
+                  <div>
+                    <button
+                      onClick={(e) => { e.preventDefault(); toggleNotes(room._id); }}
+                      className="flex items-center gap-1.5 text-xs text-dark-500 hover:text-dark-300 w-full text-left"
+                    >
+                      <span className={`transition-transform inline-block ${expandedNotes[room._id] ? 'rotate-90' : ''}`} style={{ fontSize: '8px' }}>▶</span>
+                      Заметки
+                    </button>
+                    {expandedNotes[room._id] && (
+                      <p className="text-xs text-dark-300 mt-1.5 whitespace-pre-wrap bg-dark-700/30 rounded-lg p-2 max-h-24 overflow-y-auto">
+                        {room.notes}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
-            );
-          })}
-        </div>
+            </div>
+          );
+        })}
       </div>
 
-      <div className="mt-6 flex gap-4">
-        <Link to="/active" className="text-primary-400 hover:text-primary-300 font-medium">
+      {/* ═══ Quick links ═══ */}
+      <div className="mt-6 flex flex-wrap gap-3">
+        <Link to="/active" className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-primary-400 hover:border-primary-700/50 transition text-sm font-medium">
           Активные комнаты →
         </Link>
-        <Link to="/clones" className="text-primary-400 hover:text-primary-300 font-medium">
+        <Link to="/clones" className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-primary-400 hover:border-primary-700/50 transition text-sm font-medium">
           Клоны →
         </Link>
-        <Link to="/archive" className="text-primary-400 hover:text-primary-300 font-medium">
-          Архив циклов →
+        <Link to="/statistics" className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-primary-400 hover:border-primary-700/50 transition text-sm font-medium">
+          Статистика →
+        </Link>
+        <Link to="/archive" className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-primary-400 hover:border-primary-700/50 transition text-sm font-medium">
+          Архив →
         </Link>
       </div>
     </div>
