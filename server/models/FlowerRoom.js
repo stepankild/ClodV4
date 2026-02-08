@@ -80,9 +80,43 @@ const flowerRoomSchema = new mongoose.Schema({
     type: Number,
     default: null,
     min: 0
+  },
+  // Освещение
+  lighting: {
+    lampCount: { type: Number, default: null, min: 0 },
+    lampWattage: { type: Number, default: null, min: 0 },
+    lampType: {
+      type: String,
+      enum: ['LED', 'HPS', 'CMH', 'MH', 'fluorescent', 'other', null],
+      default: null
+    }
+  },
+  // Размеры комнаты (метры)
+  roomDimensions: {
+    length: { type: Number, default: null, min: 0 },
+    width: { type: Number, default: null, min: 0 },
+    height: { type: Number, default: null, min: 0 }
+  },
+  // Размер горшка (литры)
+  potSize: {
+    type: Number,
+    default: null,
+    min: 0
+  },
+  // Вентиляция
+  ventilation: {
+    intakeType: { type: String, default: '' },
+    exhaustType: { type: String, default: '' },
+    co2: { type: Boolean, default: false }
   }
 }, {
   timestamps: true
+});
+
+// Calculate total watts
+flowerRoomSchema.virtual('totalWatts').get(function() {
+  if (!this.lighting?.lampCount || !this.lighting?.lampWattage) return null;
+  return this.lighting.lampCount * this.lighting.lampWattage;
 });
 
 // Calculate progress percentage

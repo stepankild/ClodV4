@@ -81,7 +81,9 @@ export const getArchiveStats = async (req, res) => {
           totalDryWeight: { $sum: '$harvestData.dryWeight' },
           totalWetWeight: { $sum: '$harvestData.wetWeight' },
           avgDaysFlowering: { $avg: '$actualDays' },
-          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' }
+          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
+          avgGramsPerDay: { $avg: '$metrics.gramsPerDay' }
         }
       }
     ]);
@@ -96,6 +98,7 @@ export const getArchiveStats = async (req, res) => {
           totalWeight: { $sum: '$harvestData.dryWeight' },
           avgWeight: { $avg: '$harvestData.dryWeight' },
           avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
           avgDays: { $avg: '$actualDays' }
         }
       },
@@ -114,7 +117,8 @@ export const getArchiveStats = async (req, res) => {
           },
           cycles: { $sum: 1 },
           totalWeight: { $sum: '$harvestData.dryWeight' },
-          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' }
+          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' }
         }
       },
       { $sort: { '_id.year': 1, '_id.month': 1 } }
@@ -156,7 +160,9 @@ export const getArchiveStats = async (req, res) => {
         totalPlants: 0,
         totalDryWeight: 0,
         avgDaysFlowering: 0,
-        avgGramsPerPlant: 0
+        avgGramsPerPlant: 0,
+        avgGramsPerWatt: 0,
+        avgGramsPerDay: 0
       },
       byStrain: strainStats,
       byMonth: monthlyStats,
@@ -246,12 +252,36 @@ export const harvestAndArchive = async (req, res) => {
     const harvestDate = new Date();
     const actualDays = room.currentDay;
 
-    // Создаём архивную запись (название/код цикла из комнаты или из запроса)
+    const totalWatts = (room.lighting?.lampCount && room.lighting?.lampWattage)
+      ? room.lighting.lampCount * room.lighting.lampWattage : null;
+
+    // Собираем список сортов из flowerStrains или из основного strain
+    const strainsList = (room.flowerStrains && room.flowerStrains.length > 0)
+      ? room.flowerStrains.map(s => s.strain || '').filter(Boolean)
+      : [room.strain || '—'];
+    const uniqueStrains = [...new Set(strainsList)];
+
+    const strainDataArr = (room.flowerStrains && room.flowerStrains.length > 0)
+      ? room.flowerStrains.map(s => ({
+          strain: s.strain || '—',
+          wetWeight: 0,
+          dryWeight: 0,
+          popcornWeight: 0
+        }))
+      : [{ strain: room.strain || '—', wetWeight: wetWeight || 0, dryWeight: dryWeight || 0, popcornWeight: 0 }];
+
+    // Создаём архивную запись
     const archive = await CycleArchive.create({
       room: roomId,
       roomNumber: room.roomNumber,
       roomName: room.name,
       squareMeters: room.squareMeters || null,
+      lighting: {
+        lampCount: room.lighting?.lampCount || null,
+        lampWattage: room.lighting?.lampWattage || null,
+        lampType: room.lighting?.lampType || null,
+        totalWatts
+      },
       cycleName: (cycleName && String(cycleName).trim()) || room.cycleName || '',
       strain: room.strain,
       plantsCount: room.plantsCount,
@@ -259,13 +289,8 @@ export const harvestAndArchive = async (req, res) => {
       harvestDate,
       floweringDays: room.floweringDays,
       actualDays,
-      strains: [room.strain || ''],
-      strainData: [{
-        strain: room.strain || '',
-        wetWeight: wetWeight || 0,
-        dryWeight: dryWeight || 0,
-        popcornWeight: 0
-      }],
+      strains: uniqueStrains,
+      strainData: strainDataArr,
       harvestData: {
         wetWeight: wetWeight || 0,
         dryWeight: dryWeight || 0,
@@ -275,7 +300,8 @@ export const harvestAndArchive = async (req, res) => {
       },
       metrics: {
         gramsPerPlant: room.plantsCount > 0 ? Math.round((dryWeight || 0) / room.plantsCount) : 0,
-        gramsPerDay: actualDays > 0 ? Math.round((dryWeight || 0) / actualDays * 10) / 10 : 0
+        gramsPerDay: actualDays > 0 ? Math.round((dryWeight || 0) / actualDays * 10) / 10 : 0,
+        gramsPerWatt: (totalWatts && dryWeight > 0) ? Math.round((dryWeight / totalWatts) * 100) / 100 : 0
       },
       environment: environment || room.environment,
       notes: room.notes,
@@ -366,6 +392,9 @@ export const updateArchive = async (req, res) => {
           : 0;
         archive.metrics.gramsPerDay = archive.actualDays > 0
           ? Math.round(harvestData.dryWeight / archive.actualDays * 10) / 10
+          : 0;
+        archive.metrics.gramsPerWatt = (archive.lighting?.totalWatts > 0 && harvestData.dryWeight > 0)
+          ? Math.round(harvestData.dryWeight / archive.lighting.totalWatts * 100) / 100
           : 0;
       }
     }

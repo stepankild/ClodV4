@@ -167,8 +167,13 @@ export default function ArchiveDetail() {
   const env = archive?.environment || {};
   const veg = archive?.vegData || null;
   const clone = archive?.cloneData || null;
+  const light = archive?.lighting || null;
   const tasks = Array.isArray(archive?.completedTasks) ? archive.completedTasks : [];
   const issues = Array.isArray(archive?.issues) ? archive.issues : [];
+
+  const gramsPerSqm = (archive?.squareMeters > 0 && h.dryWeight > 0)
+    ? Math.round(h.dryWeight / archive.squareMeters * 100) / 100
+    : null;
 
   // Calculate total cycle duration (from clones to harvest)
   const totalDays = (() => {
@@ -241,6 +246,18 @@ export default function ArchiveDetail() {
             {qualityLabel[h.quality] || h.quality || '—'}
           </p>
         </div>
+        {m.gramsPerWatt > 0 && (
+          <div className="bg-amber-900/30 border border-amber-700/50 rounded-xl p-4 text-center">
+            <p className="text-dark-400 text-sm">г/ватт</p>
+            <p className="text-amber-400 text-2xl font-bold">{formatNum(m.gramsPerWatt)}</p>
+          </div>
+        )}
+        {gramsPerSqm > 0 && (
+          <div className="bg-teal-900/30 border border-teal-700/50 rounded-xl p-4 text-center">
+            <p className="text-dark-400 text-sm">г/м²</p>
+            <p className="text-teal-400 text-2xl font-bold">{formatNum(gramsPerSqm)}</p>
+          </div>
+        )}
         {totalDays && (
           <div className="bg-dark-700/50 border border-dark-600 rounded-xl p-4 text-center">
             <p className="text-dark-400 text-sm">Весь цикл</p>
@@ -362,6 +379,7 @@ export default function ArchiveDetail() {
                 <InfoRow label="Трим" value={`${formatNum(h.trimWeight)} г`} />
                 <InfoRow label="г/куст" value={formatNum(m.gramsPerPlant)} highlight color="text-primary-400" />
                 <InfoRow label="г/день" value={formatNum(m.gramsPerDay)} />
+                {m.gramsPerWatt > 0 && <InfoRow label="г/ватт" value={formatNum(m.gramsPerWatt)} color="text-amber-400" />}
                 {dryingRatio && <InfoRow label="Усушка" value={`${dryingRatio}%`} />}
                 <InfoRow
                   label="Качество"
@@ -493,6 +511,32 @@ export default function ArchiveDetail() {
                     <span className="text-dark-400 text-sm">Заметки</span>
                     <p className="text-dark-300 text-sm">{veg.notes}</p>
                   </div>
+                )}
+              </div>
+            </Section>
+          )}
+
+          {/* Lighting & Room */}
+          {(light?.totalWatts || archive?.squareMeters) && (
+            <Section title="Освещение и комната" icon="💡">
+              <div className="space-y-3">
+                {archive?.squareMeters > 0 && (
+                  <InfoRow label="Площадь" value={`${archive.squareMeters} м²`} />
+                )}
+                {light?.lampCount > 0 && (
+                  <InfoRow label="Лампы" value={`${light.lampCount} шт × ${light.lampWattage || '?'} Вт`} />
+                )}
+                {light?.lampType && (
+                  <InfoRow label="Тип ламп" value={light.lampType} />
+                )}
+                {light?.totalWatts > 0 && (
+                  <InfoRow label="Общая мощность" value={`${light.totalWatts} Вт`} highlight color="text-amber-400" />
+                )}
+                {m.gramsPerWatt > 0 && (
+                  <InfoRow label="г/ватт" value={formatNum(m.gramsPerWatt)} highlight color="text-amber-400" />
+                )}
+                {gramsPerSqm > 0 && (
+                  <InfoRow label="г/м²" value={formatNum(gramsPerSqm)} highlight color="text-teal-400" />
                 )}
               </div>
             </Section>

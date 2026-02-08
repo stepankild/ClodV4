@@ -62,6 +62,22 @@ export default function ActiveRooms() {
   const [noteInput, setNoteInput] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
 
+  // Room settings state
+  const [settingsMode, setSettingsMode] = useState(false);
+  const [settingsForm, setSettingsForm] = useState({
+    squareMeters: '',
+    lampCount: '',
+    lampWattage: '',
+    lampType: '',
+    length: '',
+    width: '',
+    height: '',
+    potSize: '',
+    intakeType: '',
+    exhaustType: '',
+    co2: false
+  });
+
   useEffect(() => {
     loadRooms();
   }, []);
@@ -105,6 +121,7 @@ export default function ActiveRooms() {
     setSelectedRoom(room);
     setEditMode(false);
     setStartMode(false);
+    setSettingsMode(false);
     setSprayFormOpen(false);
     setSprayProduct('');
     setNoteInput('');
@@ -119,6 +136,7 @@ export default function ActiveRooms() {
     setSelectedRoom(null);
     setEditMode(false);
     setStartMode(false);
+    setSettingsMode(false);
     setRoomTasks([]);
   };
 
@@ -133,6 +151,58 @@ export default function ActiveRooms() {
       startDate: formatDateInput(selectedRoom.startDate)
     });
     setEditMode(true);
+  };
+
+  const openSettings = () => {
+    if (!selectedRoom) return;
+    setSettingsForm({
+      squareMeters: selectedRoom.squareMeters ?? '',
+      lampCount: selectedRoom.lighting?.lampCount ?? '',
+      lampWattage: selectedRoom.lighting?.lampWattage ?? '',
+      lampType: selectedRoom.lighting?.lampType ?? '',
+      length: selectedRoom.roomDimensions?.length ?? '',
+      width: selectedRoom.roomDimensions?.width ?? '',
+      height: selectedRoom.roomDimensions?.height ?? '',
+      potSize: selectedRoom.potSize ?? '',
+      intakeType: selectedRoom.ventilation?.intakeType ?? '',
+      exhaustType: selectedRoom.ventilation?.exhaustType ?? '',
+      co2: selectedRoom.ventilation?.co2 ?? false
+    });
+    setSettingsMode(true);
+    setEditMode(false);
+    setStartMode(false);
+  };
+
+  const handleSettingsSave = async () => {
+    if (!selectedRoom) return;
+    setSaving(true);
+    try {
+      await roomService.updateRoom(selectedRoom._id, {
+        squareMeters: settingsForm.squareMeters === '' ? null : Number(settingsForm.squareMeters),
+        lighting: {
+          lampCount: settingsForm.lampCount === '' ? null : Number(settingsForm.lampCount),
+          lampWattage: settingsForm.lampWattage === '' ? null : Number(settingsForm.lampWattage),
+          lampType: settingsForm.lampType || null
+        },
+        roomDimensions: {
+          length: settingsForm.length === '' ? null : Number(settingsForm.length),
+          width: settingsForm.width === '' ? null : Number(settingsForm.width),
+          height: settingsForm.height === '' ? null : Number(settingsForm.height)
+        },
+        potSize: settingsForm.potSize === '' ? null : Number(settingsForm.potSize),
+        ventilation: {
+          intakeType: settingsForm.intakeType,
+          exhaustType: settingsForm.exhaustType,
+          co2: settingsForm.co2
+        }
+      });
+      setSettingsMode(false);
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка сохранения настроек');
+    } finally {
+      setSaving(false);
+    }
   };
 
   const startStartMode = () => {
@@ -498,9 +568,17 @@ export default function ActiveRooms() {
                     {selectedRoom.isActive ? 'Активный цикл' : 'Комната свободна'}
                   </p>
                 </div>
-                <button onClick={closeRoom} className="text-dark-400 hover:text-white text-2xl leading-none">
-                  ×
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={openSettings} className="text-dark-400 hover:text-white p-1" title="Настройки комнаты">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  </button>
+                  <button onClick={closeRoom} className="text-dark-400 hover:text-white text-2xl leading-none">
+                    ×
+                  </button>
+                </div>
               </div>
 
               {/* Режим редактирования */}
@@ -575,6 +653,132 @@ export default function ActiveRooms() {
                     </button>
                     <button
                       onClick={() => setEditMode(false)}
+                      className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg transition"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Настройки комнаты */}
+              {settingsMode && (
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2">Физические параметры</h4>
+                  <div>
+                    <label className="block text-xs text-dark-400 mb-1">Площадь (м&#178;)</label>
+                    <input
+                      type="number" min="0" step="0.1"
+                      value={settingsForm.squareMeters}
+                      onChange={e => setSettingsForm(f => ({ ...f, squareMeters: e.target.value }))}
+                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                      placeholder="Например: 12.5"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-dark-400 mb-1">Размеры комнаты (м)</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input type="number" min="0" step="0.1" placeholder="Длина"
+                        value={settingsForm.length}
+                        onChange={e => setSettingsForm(f => ({ ...f, length: e.target.value }))}
+                        className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" step="0.1" placeholder="Ширина"
+                        value={settingsForm.width}
+                        onChange={e => setSettingsForm(f => ({ ...f, width: e.target.value }))}
+                        className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" step="0.1" placeholder="Высота"
+                        value={settingsForm.height}
+                        onChange={e => setSettingsForm(f => ({ ...f, height: e.target.value }))}
+                        className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                    </div>
+                  </div>
+
+                  <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2 pt-2">Освещение</h4>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-dark-400 mb-1">Количество ламп</label>
+                      <input type="number" min="0"
+                        value={settingsForm.lampCount}
+                        onChange={e => setSettingsForm(f => ({ ...f, lampCount: e.target.value }))}
+                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-dark-400 mb-1">Мощность лампы (Вт)</label>
+                      <input type="number" min="0"
+                        value={settingsForm.lampWattage}
+                        onChange={e => setSettingsForm(f => ({ ...f, lampWattage: e.target.value }))}
+                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                    </div>
+                  </div>
+                  {settingsForm.lampCount && settingsForm.lampWattage && (
+                    <div className="text-sm text-dark-400">
+                      Общая мощность: <span className="text-primary-400 font-medium">
+                        {Number(settingsForm.lampCount) * Number(settingsForm.lampWattage)} Вт
+                      </span>
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs text-dark-400 mb-1">Тип ламп</label>
+                    <select
+                      value={settingsForm.lampType || ''}
+                      onChange={e => setSettingsForm(f => ({ ...f, lampType: e.target.value }))}
+                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                    >
+                      <option value="">Не указан</option>
+                      <option value="LED">LED</option>
+                      <option value="HPS">HPS (ДНАТ)</option>
+                      <option value="CMH">CMH (Керамика)</option>
+                      <option value="MH">MH (МГЛ)</option>
+                      <option value="fluorescent">Люминесцентные</option>
+                      <option value="other">Другое</option>
+                    </select>
+                  </div>
+
+                  <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2 pt-2">Горшки и вентиляция</h4>
+                  <div>
+                    <label className="block text-xs text-dark-400 mb-1">Размер горшка (литры)</label>
+                    <input type="number" min="0" step="0.5"
+                      value={settingsForm.potSize}
+                      onChange={e => setSettingsForm(f => ({ ...f, potSize: e.target.value }))}
+                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                      placeholder="Например: 11" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs text-dark-400 mb-1">Приток</label>
+                      <input type="text"
+                        value={settingsForm.intakeType}
+                        onChange={e => setSettingsForm(f => ({ ...f, intakeType: e.target.value }))}
+                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                        placeholder="Тип/модель" />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-dark-400 mb-1">Вытяжка</label>
+                      <input type="text"
+                        value={settingsForm.exhaustType}
+                        onChange={e => setSettingsForm(f => ({ ...f, exhaustType: e.target.value }))}
+                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                        placeholder="Тип/модель" />
+                    </div>
+                  </div>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input type="checkbox"
+                      checked={settingsForm.co2}
+                      onChange={e => setSettingsForm(f => ({ ...f, co2: e.target.checked }))}
+                      className="w-4 h-4 rounded border-dark-500 bg-dark-700 text-primary-600 focus:ring-primary-500" />
+                    <span className="text-sm text-dark-300">CO2 подача</span>
+                  </label>
+
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={handleSettingsSave}
+                      disabled={saving}
+                      className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition disabled:opacity-50"
+                    >
+                      {saving ? 'Сохранение...' : 'Сохранить'}
+                    </button>
+                    <button
+                      onClick={() => setSettingsMode(false)}
                       className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg transition"
                     >
                       Отмена
@@ -666,7 +870,7 @@ export default function ActiveRooms() {
               )}
 
               {/* Просмотр информации */}
-              {!editMode && !startMode && (
+              {!editMode && !startMode && !settingsMode && (
                 <>
                   {selectedRoom.isActive ? (
                     <div className="space-y-4">
@@ -707,6 +911,39 @@ export default function ActiveRooms() {
                           <span className="text-primary-400">{formatDate(selectedRoom.expectedHarvestDate)}</span>
                         </div>
                       </div>
+
+                      {/* Параметры комнаты */}
+                      {(selectedRoom.lighting?.lampCount || selectedRoom.squareMeters || selectedRoom.potSize) && (
+                        <div className="bg-dark-700/30 rounded-lg p-3 space-y-1 text-xs text-dark-400">
+                          {selectedRoom.squareMeters && (
+                            <div className="flex justify-between">
+                              <span>Площадь:</span>
+                              <span className="text-dark-300">{selectedRoom.squareMeters} м&#178;</span>
+                            </div>
+                          )}
+                          {selectedRoom.lighting?.lampCount && selectedRoom.lighting?.lampWattage && (
+                            <div className="flex justify-between">
+                              <span>Освещение:</span>
+                              <span className="text-dark-300">
+                                {selectedRoom.lighting.lampCount} x {selectedRoom.lighting.lampWattage}Вт = {selectedRoom.totalWatts}Вт
+                                {selectedRoom.lighting.lampType ? ` (${selectedRoom.lighting.lampType})` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {selectedRoom.potSize && (
+                            <div className="flex justify-between">
+                              <span>Горшок:</span>
+                              <span className="text-dark-300">{selectedRoom.potSize}л</span>
+                            </div>
+                          )}
+                          {selectedRoom.ventilation?.co2 && (
+                            <div className="flex justify-between">
+                              <span>CO2:</span>
+                              <span className="text-green-400">Да</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
 
                       {/* Прогресс */}
                       <div>

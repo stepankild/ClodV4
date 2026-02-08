@@ -4,6 +4,8 @@ import FlowerRoom from '../models/FlowerRoom.js';
 import CycleArchive from '../models/CycleArchive.js';
 import RoomTask from '../models/RoomTask.js';
 import RoomLog from '../models/RoomLog.js';
+import VegBatch from '../models/VegBatch.js';
+import CloneCut from '../models/CloneCut.js';
 import { createAuditLog } from '../utils/auditLog.js';
 
 // Симуляция весов: случайный вес в граммах (50–500 г)
@@ -205,26 +207,87 @@ export const completeSession = async (req, res) => {
 
       const harvestDate = new Date();
       const actualDays = room.currentDay || 0;
+      const plantsCount = room.plantsCount || session.plantsCount || 0;
+
+      const totalWatts = (room.lighting?.lampCount && room.lighting?.lampWattage)
+        ? room.lighting.lampCount * room.lighting.lampWattage : null;
+
+      // Получаем данные веги и клонов (как в harvestAndArchive)
+      const vegBatch = await VegBatch.findOne({ flowerRoom: room._id })
+        .sort({ transplantedToFlowerAt: -1 });
+
+      let cloneData = null;
+      let vegData = null;
+
+      if (vegBatch) {
+        const vegDaysActual = vegBatch.transplantedToFlowerAt && vegBatch.transplantedToVegAt
+          ? Math.floor((new Date(vegBatch.transplantedToFlowerAt) - new Date(vegBatch.transplantedToVegAt)) / (1000 * 60 * 60 * 24))
+          : null;
+
+        vegData = {
+          transplantedToVegAt: vegBatch.transplantedToVegAt,
+          vegDaysTarget: vegBatch.vegDaysTarget,
+          vegDaysActual,
+          transplantedToFlowerAt: vegBatch.transplantedToFlowerAt,
+          notes: vegBatch.notes || ''
+        };
+
+        if (vegBatch.sourceCloneCut) {
+          const cloneCut = await CloneCut.findById(vegBatch.sourceCloneCut);
+          if (cloneCut) {
+            cloneData = {
+              cutDate: cloneCut.cutDate,
+              quantity: cloneCut.quantity || cloneCut.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
+              strains: cloneCut.strains || [],
+              notes: cloneCut.notes || ''
+            };
+          }
+        } else {
+          cloneData = {
+            cutDate: vegBatch.cutDate,
+            quantity: vegBatch.quantity || vegBatch.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
+            strains: vegBatch.strains || [],
+            notes: ''
+          };
+        }
+      }
+
+      // Собираем список сортов из flowerStrains или из основного strain
+      const strainsList = (room.flowerStrains && room.flowerStrains.length > 0)
+        ? room.flowerStrains.map(s => s.strain || '').filter(Boolean)
+        : [room.strain || '—'];
+      const uniqueStrains = [...new Set(strainsList)];
+
+      // strainData — по каждому сорту
+      const strainData = (room.flowerStrains && room.flowerStrains.length > 0)
+        ? room.flowerStrains.map(s => ({
+            strain: s.strain || '—',
+            wetWeight: 0,
+            dryWeight: 0,
+            popcornWeight: 0
+          }))
+        : [{ strain: room.strain || '—', wetWeight: totalWet, dryWeight: 0, popcornWeight: 0 }];
 
       const archive = await CycleArchive.create({
         room: room._id,
         roomNumber: room.roomNumber,
         roomName: room.name,
         squareMeters: room.squareMeters || null,
+        lighting: {
+          lampCount: room.lighting?.lampCount || null,
+          lampWattage: room.lighting?.lampWattage || null,
+          lampType: room.lighting?.lampType || null,
+          totalWatts
+        },
         cycleName: session.cycleName || room.cycleName || '',
         strain: room.strain || '—',
-        plantsCount: room.plantsCount || session.plantsCount || 0,
+        plantsCount,
         startDate: room.startDate,
         harvestDate,
         floweringDays: room.floweringDays || 56,
         actualDays,
-        strains: [room.strain || '—'],
-        strainData: [{
-          strain: room.strain || '—',
-          wetWeight: totalWet,
-          dryWeight: 0,
-          popcornWeight: 0
-        }],
+        strains: uniqueStrains,
+        strainData,
         harvestData: {
           wetWeight: totalWet,
           dryWeight: 0,
@@ -234,10 +297,13 @@ export const completeSession = async (req, res) => {
         },
         metrics: {
           gramsPerPlant: 0,
-          gramsPerDay: 0
+          gramsPerDay: 0,
+          gramsPerWatt: 0
         },
         environment: room.environment,
         notes: room.notes,
+        cloneData,
+        vegData,
         completedTasks: completedTasks.map(t => ({
           type: t.type,
           title: t.title,

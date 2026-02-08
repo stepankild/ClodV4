@@ -21,6 +21,8 @@ export const getActiveTrimArchives = async (req, res) => {
     }).sort({ harvestDate: -1 });
 
     const archiveIds = archives.map(a => a._id);
+
+    // Общий трим по архивам
     const trimSums = await TrimLog.aggregate([
       { $match: { archive: { $in: archiveIds }, ...notDeleted } },
       { $group: { _id: '$archive', totalTrimmed: { $sum: '$weight' } } }
@@ -28,9 +30,22 @@ export const getActiveTrimArchives = async (req, res) => {
     const sumMap = {};
     trimSums.forEach(s => { sumMap[s._id.toString()] = s.totalTrimmed; });
 
+    // Трим по сортам для каждого архива
+    const trimByStrainAgg = await TrimLog.aggregate([
+      { $match: { archive: { $in: archiveIds }, ...notDeleted } },
+      { $group: { _id: { archive: '$archive', strain: '$strain' }, weight: { $sum: '$weight' } } }
+    ]);
+    const strainMap = {};
+    trimByStrainAgg.forEach(s => {
+      const key = s._id.archive.toString();
+      if (!strainMap[key]) strainMap[key] = {};
+      strainMap[key][s._id.strain || '—'] = s.weight;
+    });
+
     const result = archives.map(a => {
       const obj = a.toJSON();
       obj.totalTrimmed = sumMap[a._id.toString()] || 0;
+      obj.trimByStrain = strainMap[a._id.toString()] || {};
       return obj;
     });
 
@@ -202,7 +217,18 @@ export const updateTrimArchive = async (req, res) => {
     }
 
     const { dryWeight, popcornWeight, trimProgressPercent, strainData, strains } = req.body;
-    if (dryWeight !== undefined) archive.harvestData.dryWeight = Number(dryWeight) || 0;
+    if (dryWeight !== undefined) {
+      archive.harvestData.dryWeight = Number(dryWeight) || 0;
+      // Пересчитать метрики при изменении сухого веса
+      const dry = Number(dryWeight) || 0;
+      if (!archive.metrics) archive.metrics = {};
+      archive.metrics.gramsPerPlant = (archive.plantsCount > 0 && dry > 0)
+        ? Math.round(dry / archive.plantsCount * 100) / 100 : 0;
+      archive.metrics.gramsPerDay = (archive.actualDays > 0 && dry > 0)
+        ? Math.round(dry / archive.actualDays * 100) / 100 : 0;
+      archive.metrics.gramsPerWatt = (archive.lighting?.totalWatts > 0 && dry > 0)
+        ? Math.round(dry / archive.lighting.totalWatts * 100) / 100 : 0;
+    }
     if (popcornWeight !== undefined) archive.harvestData.popcornWeight = Number(popcornWeight) || 0;
     if (trimProgressPercent !== undefined) {
       const p = Math.min(100, Math.max(0, Number(trimProgressPercent) || 0));

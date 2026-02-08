@@ -92,6 +92,10 @@ const cycleArchiveSchema = new mongoose.Schema({
     gramsPerDay: {
       type: Number,
       default: 0
+    },
+    gramsPerWatt: {
+      type: Number,
+      default: 0
     }
   },
   // Условия выращивания (для анализа)
@@ -187,6 +191,13 @@ const cycleArchiveSchema = new mongoose.Schema({
   squareMeters: {
     type: Number,
     default: null
+  },
+  // Снимок освещения на момент архивирования
+  lighting: {
+    lampCount: { type: Number, default: null },
+    lampWattage: { type: Number, default: null },
+    lampType: { type: String, default: null },
+    totalWatts: { type: Number, default: null }
   },
   deletedAt: { type: Date, default: null }
 }, {
