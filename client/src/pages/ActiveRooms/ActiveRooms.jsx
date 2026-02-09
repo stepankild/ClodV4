@@ -400,6 +400,9 @@ export default function ActiveRooms() {
   };
 
   const handleDeleteTask = async (taskId) => {
+    const task = roomTasks.find(t => t._id === taskId);
+    if (!task) return;
+    if (!confirm(`Удалить задачу "${task.title}"?`)) return;
     try {
       await roomService.deleteTask(taskId);
       await loadRoomTasks(selectedRoom._id);
@@ -1040,17 +1043,20 @@ export default function ActiveRooms() {
                           <h4 className="text-sm font-medium text-dark-300">История работ</h4>
                           <div className="space-y-1 max-h-40 overflow-y-auto">
                             {completedTasks.map(task => (
-                              <div key={task._id} className="flex items-center justify-between text-xs py-1 group">
-                                <div className="flex items-center gap-2 min-w-0">
+                              <div key={task._id} className="flex items-center justify-between text-xs py-1.5 px-2 hover:bg-dark-700/30 rounded group">
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
                                   <span className="text-green-400 shrink-0">&#10003;</span>
                                   <span className="text-dark-300 truncate">{task.title}</span>
+                                  {task.description && (
+                                    <span className="text-dark-500 text-xs">({task.description})</span>
+                                  )}
                                 </div>
                                 <div className="flex items-center gap-2 shrink-0 ml-2">
                                   <span className="text-dark-500">{formatDate(task.completedAt)}</span>
                                   <button
                                     onClick={() => handleDeleteTask(task._id)}
-                                    className="text-dark-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
-                                    title="Отменить"
+                                    className="text-dark-500 hover:text-red-400 hover:bg-red-900/20 px-1.5 py-0.5 rounded transition"
+                                    title="Удалить задачу"
                                   >
                                     &#10005;
                                   </button>
