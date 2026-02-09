@@ -162,7 +162,7 @@ const Clones = () => {
       const quantity = strains.reduce((sum, s) => sum + s.quantity, 0);
       const strain = (strains.map((s) => s.strain).filter(Boolean).join(', ') || cut?.strain) ?? '';
       const hasTransplanted = cutId && (Array.isArray(vegBatches) ? vegBatches : []).some(
-        (b) => (b.sourceCloneCut?._id || b.sourceCloneCut) === cutId
+        (b) => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cutId)
       );
       return {
         room,

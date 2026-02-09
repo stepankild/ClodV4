@@ -144,6 +144,13 @@ export const createVegBatch = async (req, res) => {
       sentToFlowerCount: parseInt(sentToFlowerCount, 10) >= 0 ? parseInt(sentToFlowerCount, 10) : 0
     });
     await doc.save();
+
+    // Mark source clone cut batch as done
+    if (sourceCloneCut) {
+      const CloneCut = (await import('../models/CloneCut.js')).default;
+      await CloneCut.findByIdAndUpdate(sourceCloneCut, { isDone: true });
+    }
+
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
     await createAuditLog(req, { action: 'veg_batch.create', entityType: 'VegBatch', entityId: doc._id, details: { name: doc.name, quantity: doc.quantity } });
     res.status(201).json(doc);

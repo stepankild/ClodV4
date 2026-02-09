@@ -221,18 +221,31 @@ export const quickAddTask = async (req, res) => {
     if (type === 'spray') {
       taskData.sprayProduct = product || '';
       taskData.title = product ? `Опрыскивание: ${product}` : 'Опрыскивание';
+      if (description && description.trim()) {
+        taskData.description = description.trim();
+      }
     } else if (type === 'feed') {
       taskData.feedProduct = product || '';
       taskData.feedDosage = dosage || '';
       taskData.title = product ? `Подкормка: ${product}` : 'Подкормка';
     } else if (type === 'defoliation') {
       taskData.title = 'Дефолиация';
+      if (description && description.trim()) {
+        taskData.description = description.trim();
+      }
     } else if (type === 'trim') {
       if (description && description.trim()) {
         taskData.description = description.trim();
         taskData.title = `Подрезка: ${description.trim()}`;
       } else {
         taskData.title = 'Подрезка';
+      }
+    } else if (type === 'custom') {
+      if (description && description.trim()) {
+        taskData.title = description.trim();
+        taskData.description = description.trim();
+      } else {
+        taskData.title = 'Другое';
       }
     }
 

@@ -58,9 +58,18 @@ export default function ActiveRooms() {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [sprayFormOpen, setSprayFormOpen] = useState(false);
   const [sprayProduct, setSprayProduct] = useState('');
+  const [sprayDate, setSprayDate] = useState(new Date().toISOString().slice(0, 10));
+  const [sprayNote, setSprayNote] = useState('');
   const [trimFormOpen, setTrimFormOpen] = useState(false);
   const [trimDate, setTrimDate] = useState(new Date().toISOString().slice(0, 10));
   const [trimNote, setTrimNote] = useState('');
+  const [defolFormOpen, setDefolFormOpen] = useState(false);
+  const [defolDate, setDefolDate] = useState(new Date().toISOString().slice(0, 10));
+  const [defolNote, setDefolNote] = useState('');
+  const [customFormOpen, setCustomFormOpen] = useState(false);
+  const [customTitle, setCustomTitle] = useState('');
+  const [customDate, setCustomDate] = useState(new Date().toISOString().slice(0, 10));
+  const [customNote, setCustomNote] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
 
@@ -377,9 +386,13 @@ export default function ActiveRooms() {
     try {
       await roomService.quickTask(selectedRoom._id, {
         type: 'spray',
-        product: sprayProduct.trim()
+        product: sprayProduct.trim(),
+        completedAt: sprayDate ? new Date(sprayDate).toISOString() : undefined,
+        description: sprayNote.trim() || undefined
       });
       setSprayProduct('');
+      setSprayDate(new Date().toISOString().slice(0, 10));
+      setSprayNote('');
       setSprayFormOpen(false);
       await loadRoomTasks(selectedRoom._id);
       await refreshSelectedRoom();
@@ -409,7 +422,33 @@ export default function ActiveRooms() {
   const handleDefoliationAdd = async () => {
     if (!selectedRoom) return;
     try {
-      await roomService.quickTask(selectedRoom._id, { type: 'defoliation' });
+      await roomService.quickTask(selectedRoom._id, {
+        type: 'defoliation',
+        completedAt: defolDate ? new Date(defolDate).toISOString() : undefined,
+        description: defolNote.trim() || undefined
+      });
+      setDefolFormOpen(false);
+      setDefolDate(new Date().toISOString().slice(0, 10));
+      setDefolNote('');
+      await loadRoomTasks(selectedRoom._id);
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка');
+    }
+  };
+
+  const handleCustomAdd = async () => {
+    if (!selectedRoom || !customTitle.trim()) return;
+    try {
+      await roomService.quickTask(selectedRoom._id, {
+        type: 'custom',
+        description: customTitle.trim(),
+        completedAt: customDate ? new Date(customDate).toISOString() : undefined
+      });
+      setCustomFormOpen(false);
+      setCustomTitle('');
+      setCustomDate(new Date().toISOString().slice(0, 10));
+      setCustomNote('');
       await loadRoomTasks(selectedRoom._id);
       await refreshSelectedRoom();
     } catch (err) {
@@ -523,7 +562,12 @@ export default function ActiveRooms() {
                 <div className="text-xs text-dark-500 space-y-1">
                   <div className="flex justify-between">
                     <span>Кустов:</span>
-                    <span className="text-dark-300">{room.plantsCount || 0}</span>
+                    <span className="text-dark-300">
+                      {room.plantsCount || 0}
+                      {room.squareMeters > 0 && room.plantsCount > 0 && (
+                        <span className="text-dark-500 ml-1">({(room.plantsCount / room.squareMeters).toFixed(1)}/м&#178;)</span>
+                      )}
+                    </span>
                   </div>
                   {room.flowerStrains && room.flowerStrains.length > 1 && (
                     <div className="text-dark-400">
@@ -894,7 +938,12 @@ export default function ActiveRooms() {
                         )}
                         <div className="flex justify-between">
                           <span className="text-dark-400">Кустов:</span>
-                          <span className="text-white">{selectedRoom.plantsCount || 0}</span>
+                          <span className="text-white">
+                            {selectedRoom.plantsCount || 0}
+                            {selectedRoom.squareMeters > 0 && selectedRoom.plantsCount > 0 && (
+                              <span className="text-dark-400 ml-1">({(selectedRoom.plantsCount / selectedRoom.squareMeters).toFixed(1)}/м&#178;)</span>
+                            )}
+                          </span>
                         </div>
                         {selectedRoom.flowerStrains && selectedRoom.flowerStrains.length > 0 && (
                           <div className="text-sm space-y-0.5">
@@ -996,23 +1045,52 @@ export default function ActiveRooms() {
                             + Добавить обработку
                           </button>
                           {sprayFormOpen && (
-                            <div className="flex gap-2 mt-2">
+                            <div className="mt-2 space-y-2 p-3 bg-dark-700/50 rounded-lg border border-dark-600">
                               <input
                                 type="text"
                                 value={sprayProduct}
                                 onChange={e => setSprayProduct(e.target.value)}
-                                onKeyDown={e => e.key === 'Enter' && handleSprayAdd()}
                                 placeholder="Название препарата"
-                                className="flex-1 px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                                 autoFocus
                               />
-                              <button
-                                onClick={handleSprayAdd}
-                                disabled={!sprayProduct.trim()}
-                                className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500 disabled:opacity-50"
-                              >
-                                OK
-                              </button>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-xs text-dark-400 mb-1">Дата</label>
+                                  <input
+                                    type="date"
+                                    value={sprayDate}
+                                    onChange={e => setSprayDate(e.target.value)}
+                                    className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-dark-400 mb-1">Заметка</label>
+                                  <input
+                                    type="text"
+                                    value={sprayNote}
+                                    onChange={e => setSprayNote(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleSprayAdd()}
+                                    placeholder="Необязательно"
+                                    className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleSprayAdd}
+                                  disabled={!sprayProduct.trim()}
+                                  className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500 disabled:opacity-50"
+                                >
+                                  Сохранить
+                                </button>
+                                <button
+                                  onClick={() => { setSprayFormOpen(false); setSprayProduct(''); setSprayNote(''); }}
+                                  className="px-3 py-1.5 bg-dark-600 text-dark-300 rounded-lg text-sm hover:bg-dark-500"
+                                >
+                                  Отмена
+                                </button>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1071,12 +1149,104 @@ export default function ActiveRooms() {
                         </div>
 
                         {/* Дефолиация */}
-                        <button
-                          onClick={handleDefoliationAdd}
-                          className="text-sm text-primary-400 hover:text-primary-300 block"
-                        >
-                          + Записать дефолиацию
-                        </button>
+                        <div>
+                          <button
+                            onClick={() => setDefolFormOpen(!defolFormOpen)}
+                            className="text-sm text-primary-400 hover:text-primary-300"
+                          >
+                            + Записать дефолиацию
+                          </button>
+                          {defolFormOpen && (
+                            <div className="mt-2 space-y-2 p-3 bg-dark-700/50 rounded-lg border border-dark-600">
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-xs text-dark-400 mb-1">Дата</label>
+                                  <input
+                                    type="date"
+                                    value={defolDate}
+                                    onChange={e => setDefolDate(e.target.value)}
+                                    className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-xs text-dark-400 mb-1">Заметка</label>
+                                  <input
+                                    type="text"
+                                    value={defolNote}
+                                    onChange={e => setDefolNote(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && handleDefoliationAdd()}
+                                    placeholder="Необязательно"
+                                    className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                    autoFocus
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleDefoliationAdd}
+                                  className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500"
+                                >
+                                  Сохранить
+                                </button>
+                                <button
+                                  onClick={() => { setDefolFormOpen(false); setDefolNote(''); }}
+                                  className="px-3 py-1.5 bg-dark-600 text-dark-300 rounded-lg text-sm hover:bg-dark-500"
+                                >
+                                  Отмена
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Кастомное действие */}
+                        <div>
+                          <button
+                            onClick={() => setCustomFormOpen(!customFormOpen)}
+                            className="text-sm text-primary-400 hover:text-primary-300"
+                          >
+                            + Другое действие
+                          </button>
+                          {customFormOpen && (
+                            <div className="mt-2 space-y-2 p-3 bg-dark-700/50 rounded-lg border border-dark-600">
+                              <div>
+                                <label className="block text-xs text-dark-400 mb-1">Название действия</label>
+                                <input
+                                  type="text"
+                                  value={customTitle}
+                                  onChange={e => setCustomTitle(e.target.value)}
+                                  placeholder="Что было сделано?"
+                                  className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                  autoFocus
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-dark-400 mb-1">Дата</label>
+                                <input
+                                  type="date"
+                                  value={customDate}
+                                  onChange={e => setCustomDate(e.target.value)}
+                                  className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleCustomAdd}
+                                  disabled={!customTitle.trim()}
+                                  className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500 disabled:opacity-50"
+                                >
+                                  Сохранить
+                                </button>
+                                <button
+                                  onClick={() => { setCustomFormOpen(false); setCustomTitle(''); setCustomNote(''); }}
+                                  className="px-3 py-1.5 bg-dark-600 text-dark-300 rounded-lg text-sm hover:bg-dark-500"
+                                >
+                                  Отмена
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Заметки */}
@@ -1146,15 +1316,6 @@ export default function ActiveRooms() {
                         >
                           Редактировать
                         </button>
-                        {canHarvest && (
-                          <button
-                            onClick={handleHarvest}
-                            disabled={saving}
-                            className="px-4 py-2 bg-red-600/80 text-white rounded-lg hover:bg-red-600 transition disabled:opacity-50"
-                          >
-                            {saving ? '...' : 'Завершить цикл'}
-                          </button>
-                        )}
                       </div>
                     </div>
                   ) : (
