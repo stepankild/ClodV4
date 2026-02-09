@@ -19,7 +19,7 @@ export const protect = async (req, res, next) => {
         return res.status(401).json({ message: 'Пользователь не найден' });
       }
 
-      if (!user.isActive) {
+      if (!user.isActive || user.deletedAt) {
         return res.status(401).json({ message: 'Аккаунт деактивирован' });
       }
 

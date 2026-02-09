@@ -328,8 +328,11 @@ export const harvestRoom = async (req, res) => {
       return res.status(404).json({ message: 'Комната не найдена' });
     }
 
-    // Удаляем все задачи комнаты
-    await RoomTask.deleteMany({ room: room._id });
+    // Мягкое удаление задач комнаты
+    await RoomTask.updateMany(
+      { room: room._id, deletedAt: null },
+      { $set: { deletedAt: new Date() } }
+    );
 
     // Reset room
     room.cycleName = '';

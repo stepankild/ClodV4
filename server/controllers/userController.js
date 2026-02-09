@@ -2,12 +2,13 @@ import User from '../models/User.js';
 import Role from '../models/Role.js';
 import Permission from '../models/Permission.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
 // @desc    Get all users
 // @route   GET /api/users
 export const getUsers = async (req, res) => {
   try {
-    const users = await User.find()
+    const users = await User.find({ ...notDeleted })
       .select('-password -refreshToken')
       .populate('roles', 'name description')
       .sort({ createdAt: -1 });
@@ -166,10 +167,12 @@ export const deleteUser = async (req, res) => {
 
     const deletedEmail = user.email;
     const deletedName = user.name;
-    await user.deleteOne();
+    user.deletedAt = new Date();
+    user.isActive = false;
+    await user.save();
 
     await createAuditLog(req, { action: 'user.delete', entityType: 'User', entityId: req.params.id, details: { email: deletedEmail, name: deletedName } });
-    res.json({ message: 'Пользователь удалён' });
+    res.json({ message: 'Пользователь удалён (можно восстановить)' });
   } catch (error) {
     console.error('Delete user error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
@@ -180,7 +183,7 @@ export const deleteUser = async (req, res) => {
 // @route   GET /api/users/roles
 export const getRoles = async (req, res) => {
   try {
-    const roles = await Role.find()
+    const roles = await Role.find({ ...notDeleted })
       .populate('permissions', 'name description module')
       .sort({ name: 1 });
 
@@ -297,11 +300,74 @@ export const deleteRole = async (req, res) => {
     }
 
     const roleName = role.name;
-    await role.deleteOne();
+    role.deletedAt = new Date();
+    await role.save();
     await createAuditLog(req, { action: 'role.delete', entityType: 'Role', entityId: req.params.id, details: { name: roleName } });
-    res.json({ message: 'Роль удалена' });
+    res.json({ message: 'Роль удалена (можно восстановить)' });
   } catch (error) {
     console.error('Delete role error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Get deleted users
+// @route   GET /api/users/deleted
+export const getDeletedUsers = async (req, res) => {
+  try {
+    const users = await User.find({ ...deletedOnly })
+      .select('-password -refreshToken')
+      .populate('roles', 'name')
+      .sort({ deletedAt: -1 });
+    res.json(users);
+  } catch (error) {
+    console.error('Get deleted users error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Restore deleted user
+// @route   POST /api/users/deleted/:id/restore
+export const restoreUser = async (req, res) => {
+  try {
+    const user = await User.findOne({ _id: req.params.id, ...deletedOnly }).select('-password -refreshToken');
+    if (!user) return res.status(404).json({ message: 'Удалённый пользователь не найден' });
+    user.deletedAt = null;
+    user.isActive = true;
+    await user.save();
+    await createAuditLog(req, { action: 'user.restore', entityType: 'User', entityId: user._id, details: { email: user.email, name: user.name } });
+    res.json(user);
+  } catch (error) {
+    console.error('Restore user error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Get deleted roles
+// @route   GET /api/users/roles/deleted
+export const getDeletedRoles = async (req, res) => {
+  try {
+    const roles = await Role.find({ ...deletedOnly })
+      .populate('permissions', 'name description module')
+      .sort({ deletedAt: -1 });
+    res.json(roles);
+  } catch (error) {
+    console.error('Get deleted roles error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Restore deleted role
+// @route   POST /api/users/roles/deleted/:id/restore
+export const restoreRole = async (req, res) => {
+  try {
+    const role = await Role.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!role) return res.status(404).json({ message: 'Удалённая роль не найдена' });
+    role.deletedAt = null;
+    await role.save();
+    await createAuditLog(req, { action: 'role.restore', entityType: 'Role', entityId: role._id, details: { name: role.name } });
+    res.json(role);
+  } catch (error) {
+    console.error('Restore role error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
