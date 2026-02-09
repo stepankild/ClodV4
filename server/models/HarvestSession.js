@@ -18,6 +18,7 @@ const harvestSessionSchema = new mongoose.Schema({
   },
   plants: [{
     plantNumber: { type: Number, required: true },
+    strain: { type: String, default: '' },
     wetWeight: { type: Number, required: true },
     recordedAt: { type: Date, default: Date.now },
     recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

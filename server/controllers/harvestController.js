@@ -136,8 +136,26 @@ export const addPlant = async (req, res) => {
       return res.status(400).json({ message: `Куст №${num} уже записан` });
     }
 
+    // Авто-определение сорта по номеру куста из диапазонов flowerStrains
+    let strainForPlant = '';
+    const room = await FlowerRoom.findById(session.room);
+    if (room && room.flowerStrains && room.flowerStrains.length > 0) {
+      const match = room.flowerStrains.find(
+        fs => fs.startNumber != null && fs.endNumber != null &&
+              num >= fs.startNumber && num <= fs.endNumber
+      );
+      if (match) {
+        strainForPlant = match.strain || '';
+      } else if (room.flowerStrains.length === 1) {
+        strainForPlant = room.flowerStrains[0].strain || '';
+      }
+    } else if (room && room.strain) {
+      strainForPlant = room.strain;
+    }
+
     session.plants.push({
       plantNumber: num,
+      strain: strainForPlant,
       wetWeight: weight,
       recordedAt: new Date(),
       recordedBy: req.user._id
@@ -258,15 +276,23 @@ export const completeSession = async (req, res) => {
         : [room.strain || '—'];
       const uniqueStrains = [...new Set(strainsList)];
 
-      // strainData — по каждому сорту
-      const strainData = (room.flowerStrains && room.flowerStrains.length > 0)
-        ? room.flowerStrains.map(s => ({
-            strain: s.strain || '—',
-            wetWeight: 0,
-            dryWeight: 0,
-            popcornWeight: 0
-          }))
-        : [{ strain: room.strain || '—', wetWeight: totalWet, dryWeight: 0, popcornWeight: 0 }];
+      // strainData — по каждому сорту с реальными весами из session.plants
+      let strainData;
+      if (room.flowerStrains && room.flowerStrains.length > 0) {
+        const wetByStrain = {};
+        for (const plant of (session.plants || [])) {
+          const s = plant.strain || '—';
+          wetByStrain[s] = (wetByStrain[s] || 0) + (plant.wetWeight || 0);
+        }
+        strainData = room.flowerStrains.map(s => ({
+          strain: s.strain || '—',
+          wetWeight: wetByStrain[s.strain] || wetByStrain[s.strain || '—'] || 0,
+          dryWeight: 0,
+          popcornWeight: 0
+        }));
+      } else {
+        strainData = [{ strain: room.strain || '—', wetWeight: totalWet, dryWeight: 0, popcornWeight: 0 }];
+      }
 
       const archive = await CycleArchive.create({
         room: room._id,

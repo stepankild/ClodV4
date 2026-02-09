@@ -195,6 +195,27 @@ const Harvest = () => {
   const progressPct = expected > 0 ? Math.round((recorded / expected) * 100) : 0;
   const avgWeight = recorded > 0 ? Math.round(totalWet / recorded) : 0;
 
+  // Агрегация по сортам
+  const strainStats = (() => {
+    if (!session?.plants?.length) return [];
+    const map = {};
+    for (const p of session.plants) {
+      const s = p.strain || '—';
+      if (!map[s]) map[s] = { strain: s, count: 0, totalWet: 0 };
+      map[s].count++;
+      map[s].totalWet += p.wetWeight || 0;
+    }
+    return Object.values(map).sort((a, b) => b.totalWet - a.totalWet);
+  })();
+
+  const STRAIN_COLORS = ['bg-primary-500', 'bg-green-500', 'bg-yellow-500', 'bg-pink-500', 'bg-blue-500', 'bg-orange-500'];
+  const strainColorMap = (() => {
+    const map = {};
+    const strains = [...new Set((session?.plants || []).map(p => p.strain || '—'))];
+    strains.forEach((s, i) => { map[s] = STRAIN_COLORS[i % STRAIN_COLORS.length]; });
+    return map;
+  })();
+
   return (
     <div>
       <div className="mb-8">
@@ -329,6 +350,33 @@ const Harvest = () => {
             </div>
           </div>
 
+          {/* Статистика по сортам */}
+          {strainStats.length > 1 && (
+            <div className="bg-dark-800 rounded-xl p-4 border border-dark-700 mb-6">
+              <h3 className="text-sm font-semibold text-white mb-3">По сортам</h3>
+              <div className="space-y-2">
+                {strainStats.map(st => {
+                  const pct = totalWet > 0 ? Math.round((st.totalWet / totalWet) * 100) : 0;
+                  const colorClass = strainColorMap[st.strain] || 'bg-primary-500';
+                  return (
+                    <div key={st.strain}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-dark-300 flex items-center gap-1.5">
+                          <span className={`inline-block w-2.5 h-2.5 rounded-sm ${colorClass}`} />
+                          {st.strain}
+                        </span>
+                        <span className="text-white">{st.count} кустов · {st.totalWet} г · {Math.round(st.totalWet / st.count)} г/куст</span>
+                      </div>
+                      <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
+                        <div className={`h-full ${colorClass} rounded-full`} style={{ width: `${pct}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Прогресс-бар */}
           <div className="mb-6">
             <div className="flex justify-between text-sm text-dark-400 mb-1">
@@ -356,6 +404,7 @@ const Harvest = () => {
                       <th className="pb-2 pr-3">Время</th>
                       <th className="pb-2 pr-3">Кто записал</th>
                       <th className="pb-2 pr-3">№ куста</th>
+                      <th className="pb-2 pr-3">Сорт</th>
                       <th className="pb-2 pr-3">Вес (г)</th>
                       <th className="pb-2">Пометка об ошибке</th>
                     </tr>
@@ -368,6 +417,7 @@ const Harvest = () => {
                           <td className="py-2 pr-3 text-dark-300">{formatDate(p.recordedAt)}</td>
                           <td className="py-2 pr-3 text-white">{p.recordedBy?.name || '—'}</td>
                           <td className="py-2 pr-3 font-medium text-white">{p.plantNumber}</td>
+                          <td className="py-2 pr-3 text-dark-300">{p.strain || '—'}</td>
                           <td className="py-2 pr-3 text-green-400">{p.wetWeight}</td>
                           <td className="py-2">
                             {errorNoteEdit.plantNumber === p.plantNumber ? (
@@ -436,6 +486,7 @@ const Harvest = () => {
                     <thead>
                       <tr className="text-left text-dark-400 border-b border-dark-600">
                         <th className="pb-2 pr-4">№</th>
+                        <th className="pb-2 pr-4">Сорт</th>
                         <th className="pb-2 pr-4">Вес (г)</th>
                         <th className="pb-2 pr-4">Когда</th>
                         <th className="pb-2">Кто записал</th>
@@ -445,6 +496,7 @@ const Harvest = () => {
                       {[...(session.plants || [])].sort((a, b) => a.plantNumber - b.plantNumber).map((p) => (
                         <tr key={`${p.plantNumber}-${p.recordedAt}`} className="border-b border-dark-700">
                           <td className="py-2 pr-4 font-medium text-white">{p.plantNumber}</td>
+                          <td className="py-2 pr-4 text-dark-300">{p.strain || '—'}</td>
                           <td className="py-2 pr-4 text-green-400">{p.wetWeight}</td>
                           <td className="py-2 pr-4 text-dark-300">{formatDate(p.recordedAt)}</td>
                           <td className="py-2 text-white">{p.recordedBy?.name || '—'}</td>
@@ -464,12 +516,13 @@ const Harvest = () => {
                   {[...(session.plants || [])].sort((a, b) => a.plantNumber - b.plantNumber).map((p) => {
                     const maxW = Math.max(...session.plants.map(x => x.wetWeight), 1);
                     const h = (p.wetWeight / maxW) * 100;
+                    const barColor = strainColorMap[p.strain || '—'] || 'bg-primary-500';
                     return (
                       <div key={`${p.plantNumber}-bar`} className="flex-1 flex flex-col items-center gap-1">
                         <div
-                          className="w-full bg-primary-500 rounded-t min-h-[4px] transition-all"
+                          className={`w-full ${barColor} rounded-t min-h-[4px] transition-all`}
                           style={{ height: `${h}%` }}
-                          title={`Куст ${p.plantNumber}: ${p.wetWeight} г`}
+                          title={`Куст ${p.plantNumber} (${p.strain || '—'}): ${p.wetWeight} г`}
                         />
                         <span className="text-xs text-dark-400">{p.plantNumber}</span>
                       </div>

@@ -26,7 +26,9 @@ const flowerRoomSchema = new mongoose.Schema({
   },
   flowerStrains: [{
     strain: { type: String, default: '' },
-    quantity: { type: Number, default: 0 }
+    quantity: { type: Number, default: 0 },
+    startNumber: { type: Number, default: null },
+    endNumber: { type: Number, default: null }
   }],
   startDate: {
     type: Date,

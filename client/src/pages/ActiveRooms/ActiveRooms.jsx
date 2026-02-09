@@ -36,8 +36,7 @@ export default function ActiveRooms() {
 
   const [startForm, setStartForm] = useState({
     cycleName: '',
-    strain: '',
-    plantsCount: '',
+    flowerStrains: [{ strain: '', quantity: '' }],
     floweringDays: '56',
     notes: '',
     startDate: ''
@@ -190,8 +189,7 @@ export default function ActiveRooms() {
     const today = new Date().toISOString().slice(0, 10);
     setStartForm({
       cycleName: '',
-      strain: '',
-      plantsCount: '',
+      flowerStrains: [{ strain: '', quantity: '' }],
       floweringDays: '56',
       notes: '',
       startDate: today
@@ -220,14 +218,48 @@ export default function ActiveRooms() {
     }
   };
 
+  // Хелперы для мульти-сорт формы
+  const computeStrainRanges = (strains) => {
+    let current = 1;
+    return strains.map(s => {
+      const qty = parseInt(s.quantity, 10) || 0;
+      if (qty <= 0) return { ...s, startNumber: null, endNumber: null };
+      const start = current;
+      const end = current + qty - 1;
+      current = end + 1;
+      return { ...s, startNumber: start, endNumber: end };
+    });
+  };
+  const totalPlantsFromStrains = (strains) => strains.reduce((sum, s) => sum + (parseInt(s.quantity, 10) || 0), 0);
+  const updateFlowerStrain = (index, field, value) => {
+    setStartForm(f => {
+      const updated = [...f.flowerStrains];
+      updated[index] = { ...updated[index], [field]: value };
+      return { ...f, flowerStrains: updated };
+    });
+  };
+  const addFlowerStrain = () => {
+    setStartForm(f => ({ ...f, flowerStrains: [...f.flowerStrains, { strain: '', quantity: '' }] }));
+  };
+  const removeFlowerStrain = (index) => {
+    setStartForm(f => {
+      const updated = f.flowerStrains.filter((_, i) => i !== index);
+      return { ...f, flowerStrains: updated.length ? updated : [{ strain: '', quantity: '' }] };
+    });
+  };
+
   const handleStartCycle = async () => {
     if (!selectedRoom) return;
     setSaving(true);
     try {
+      const fs = startForm.flowerStrains.filter(s => s.strain.trim() || (parseInt(s.quantity, 10) || 0) > 0);
+      const strainJoined = fs.map(s => s.strain.trim()).filter(Boolean).join(' / ');
+      const totalPlants = fs.reduce((sum, s) => sum + (parseInt(s.quantity, 10) || 0), 0);
       await roomService.startCycle(selectedRoom._id, {
         cycleName: startForm.cycleName.trim(),
-        strain: startForm.strain.trim(),
-        plantsCount: Number(startForm.plantsCount) || 0,
+        strain: strainJoined,
+        plantsCount: totalPlants,
+        flowerStrains: fs.map(s => ({ strain: s.strain.trim(), quantity: parseInt(s.quantity, 10) || 0 })),
         floweringDays: Number(startForm.floweringDays) || 56,
         notes: startForm.notes.trim(),
         startDate: startForm.startDate || new Date().toISOString()
@@ -493,9 +525,9 @@ export default function ActiveRooms() {
                     <span>Кустов:</span>
                     <span className="text-dark-300">{room.plantsCount || 0}</span>
                   </div>
-                  {room.flowerStrains && room.flowerStrains.length > 0 && (
+                  {room.flowerStrains && room.flowerStrains.length > 1 && (
                     <div className="text-dark-400">
-                      {room.flowerStrains.map((s, i) => (s.strain || s.quantity) && `${s.strain || '—'}: ${s.quantity}`).filter(Boolean).join(', ')}
+                      {room.flowerStrains.map(s => `${s.strain || '—'}: ${s.quantity}`).join(', ')}
                     </div>
                   )}
                   <div className="flex justify-between">
@@ -740,27 +772,59 @@ export default function ActiveRooms() {
                       placeholder="Например: Зима-2026"
                     />
                   </div>
+
+                  {/* Мульти-сорт редактор */}
                   <div>
-                    <label className="block text-xs text-dark-400 mb-1">Сорт</label>
-                    <input
-                      type="text"
-                      value={startForm.strain}
-                      onChange={e => setStartForm(f => ({ ...f, strain: e.target.value }))}
-                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                      placeholder="Название сорта"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs text-dark-400 mb-1">Кустов</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={startForm.plantsCount}
-                        onChange={e => setStartForm(f => ({ ...f, plantsCount: e.target.value }))}
-                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                      />
+                    <label className="block text-xs text-dark-400 mb-2">Сорта и кусты</label>
+                    <div className="space-y-2">
+                      {computeStrainRanges(startForm.flowerStrains).map((fs, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            value={startForm.flowerStrains[idx].strain}
+                            onChange={e => updateFlowerStrain(idx, 'strain', e.target.value)}
+                            placeholder="Сорт"
+                            className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                          />
+                          <input
+                            type="number"
+                            min="0"
+                            value={startForm.flowerStrains[idx].quantity}
+                            onChange={e => updateFlowerStrain(idx, 'quantity', e.target.value)}
+                            placeholder="Кустов"
+                            className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                          />
+                          <span className="text-xs text-dark-500 whitespace-nowrap w-16 text-center">
+                            {fs.startNumber != null ? `${fs.startNumber}–${fs.endNumber}` : '—'}
+                          </span>
+                          {startForm.flowerStrains.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => removeFlowerStrain(idx)}
+                              className="text-dark-500 hover:text-red-400 text-lg leading-none px-1"
+                              title="Удалить сорт"
+                            >
+                              &#10005;
+                            </button>
+                          )}
+                        </div>
+                      ))}
                     </div>
+                    <div className="flex items-center justify-between mt-2">
+                      <button
+                        type="button"
+                        onClick={addFlowerStrain}
+                        className="text-sm text-primary-400 hover:text-primary-300"
+                      >
+                        + Добавить сорт
+                      </button>
+                      <span className="text-xs text-dark-400">
+                        Всего: <span className="text-white font-medium">{totalPlantsFromStrains(startForm.flowerStrains)}</span> кустов
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs text-dark-400 mb-1">Дней цветения</label>
                       <input
@@ -771,15 +835,15 @@ export default function ActiveRooms() {
                         className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                       />
                     </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-dark-400 mb-1">Дата старта</label>
-                    <input
-                      type="date"
-                      value={startForm.startDate}
-                      onChange={e => setStartForm(f => ({ ...f, startDate: e.target.value }))}
-                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                    />
+                    <div>
+                      <label className="block text-xs text-dark-400 mb-1">Дата старта</label>
+                      <input
+                        type="date"
+                        value={startForm.startDate}
+                        onChange={e => setStartForm(f => ({ ...f, startDate: e.target.value }))}
+                        className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs text-dark-400 mb-1">Заметки</label>
@@ -794,7 +858,7 @@ export default function ActiveRooms() {
                   <div className="flex gap-2 pt-2">
                     <button
                       onClick={handleStartCycle}
-                      disabled={saving}
+                      disabled={saving || totalPlantsFromStrains(startForm.flowerStrains) === 0}
                       className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 transition disabled:opacity-50"
                     >
                       {saving ? 'Запуск...' : 'Начать цикл'}
@@ -833,9 +897,16 @@ export default function ActiveRooms() {
                           <span className="text-white">{selectedRoom.plantsCount || 0}</span>
                         </div>
                         {selectedRoom.flowerStrains && selectedRoom.flowerStrains.length > 0 && (
-                          <div className="flex flex-wrap gap-x-3 gap-y-1 text-sm">
+                          <div className="text-sm space-y-0.5">
                             <span className="text-dark-400">По сортам:</span>
-                            <span className="text-white">{selectedRoom.flowerStrains.map((s) => `${s.strain || '—'}: ${s.quantity}`).join(', ')}</span>
+                            {selectedRoom.flowerStrains.map((s, i) => (
+                              <div key={i} className="flex justify-between text-xs pl-2">
+                                <span className="text-white">{s.strain || '—'}: {s.quantity} кустов</span>
+                                {s.startNumber != null && (
+                                  <span className="text-dark-500">№{s.startNumber}–{s.endNumber}</span>
+                                )}
+                              </div>
+                            ))}
                           </div>
                         )}
                         <div className="flex justify-between">

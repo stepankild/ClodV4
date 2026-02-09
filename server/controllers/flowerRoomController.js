@@ -230,6 +230,20 @@ export const startCycle = async (req, res) => {
       room.flowerStrains = flowerStrains
         .filter((s) => s && (s.strain !== undefined || s.quantity > 0))
         .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Math.max(0, parseInt(s.quantity, 10) || 0) }));
+      // Вычисляем диапазоны номеров кустов последовательно по сортам
+      let currentStart = 1;
+      for (const fs of room.flowerStrains) {
+        if (fs.quantity > 0) {
+          fs.startNumber = currentStart;
+          fs.endNumber = currentStart + fs.quantity - 1;
+          currentStart = fs.endNumber + 1;
+        }
+      }
+      // Auto-compute plantsCount и legacy strain
+      room.plantsCount = room.flowerStrains.reduce((sum, fs) => sum + fs.quantity, 0);
+      if (!room.strain) {
+        room.strain = room.flowerStrains.map(s => s.strain).filter(Boolean).join(' / ');
+      }
     } else {
       room.flowerStrains = [];
     }
