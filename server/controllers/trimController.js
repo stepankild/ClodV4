@@ -12,12 +12,21 @@ const recalcTrimWeight = async (archiveId) => {
   return result.length > 0 ? result[0].total : 0;
 };
 
-// @desc    Получить архивы трима (все: ожидающие, в процессе, завершённые)
-// @route   GET /api/trim/active
+// @desc    Получить архивы трима (фильтр по статусу)
+// @route   GET /api/trim/active?status=active|completed|all
 export const getActiveTrimArchives = async (req, res) => {
   try {
+    const statusParam = req.query.status || 'active';
+    let statusFilter = {};
+    if (statusParam === 'active') {
+      statusFilter = { trimStatus: { $in: ['pending', 'in_progress'] } };
+    } else if (statusParam === 'completed') {
+      statusFilter = { trimStatus: 'completed' };
+    }
+
     const archives = await CycleArchive.find({
-      ...notDeleted
+      ...notDeleted,
+      ...statusFilter
     }).sort({ harvestDate: -1 });
 
     const archiveIds = archives.map(a => a._id);
@@ -42,10 +51,24 @@ export const getActiveTrimArchives = async (req, res) => {
       strainMap[key][s._id.strain || '—'] = s.weight;
     });
 
+    // Последние 3 лога для каждого архива
+    const recentLogsAgg = await TrimLog.aggregate([
+      { $match: { archive: { $in: archiveIds }, ...notDeleted } },
+      { $sort: { date: -1, createdAt: -1 } },
+      { $group: {
+        _id: '$archive',
+        logs: { $push: { weight: '$weight', strain: '$strain', date: '$date' } }
+      }},
+      { $project: { logs: { $slice: ['$logs', 3] } } }
+    ]);
+    const recentLogsMap = {};
+    recentLogsAgg.forEach(r => { recentLogsMap[r._id.toString()] = r.logs; });
+
     const result = archives.map(a => {
       const obj = a.toJSON();
       obj.totalTrimmed = sumMap[a._id.toString()] || 0;
       obj.trimByStrain = strainMap[a._id.toString()] || {};
+      obj.recentLogs = recentLogsMap[a._id.toString()] || [];
       return obj;
     });
 
@@ -115,7 +138,14 @@ export const addTrimLog = async (req, res) => {
     }
 
     const strainsList = (archive.strains && archive.strains.length) ? archive.strains : [archive.strain || ''];
-    const strainStr = typeof strain === 'string' ? strain.trim() : String(strain || '').trim();
+    let strainStr = typeof strain === 'string' ? strain.trim() : String(strain || '').trim();
+    // Авто-выбор если один сорт и сорт не указан
+    if (!strainStr && strainsList.length === 1) {
+      strainStr = (strainsList[0] || '').trim();
+    }
+    if (!strainStr) {
+      return res.status(400).json({ message: 'Укажите сорт' });
+    }
     if (!strainsList.some(s => (s || '').trim() === strainStr)) {
       return res.status(400).json({ message: 'Выберите сорт из списка сортов этой комнаты' });
     }
@@ -207,7 +237,7 @@ export const deleteTrimLog = async (req, res) => {
   }
 };
 
-// @desc    Обновить поля трима в архиве (dryWeight, popcornWeight, strainData, trimProgressPercent)
+// @desc    Обновить поля трима в архиве (dryWeight, popcornWeight, strainData)
 // @route   PUT /api/trim/archive/:archiveId
 export const updateTrimArchive = async (req, res) => {
   try {
@@ -216,7 +246,7 @@ export const updateTrimArchive = async (req, res) => {
       return res.status(404).json({ message: 'Архив не найден' });
     }
 
-    const { dryWeight, popcornWeight, trimProgressPercent, strainData, strains } = req.body;
+    const { dryWeight, popcornWeight, strainData, strains } = req.body;
     if (dryWeight !== undefined) {
       archive.harvestData.dryWeight = Number(dryWeight) || 0;
       // Пересчитать метрики при изменении сухого веса
@@ -230,10 +260,6 @@ export const updateTrimArchive = async (req, res) => {
         ? Math.round(dry / archive.lighting.totalWatts * 100) / 100 : 0;
     }
     if (popcornWeight !== undefined) archive.harvestData.popcornWeight = Number(popcornWeight) || 0;
-    if (trimProgressPercent !== undefined) {
-      const p = Math.min(100, Math.max(0, Number(trimProgressPercent) || 0));
-      archive.harvestData.trimProgressPercent = p;
-    }
     if (Array.isArray(strains) && strains.length > 0) {
       archive.strains = strains.map(s => String(s || '').trim()).filter(Boolean);
     }
@@ -251,7 +277,7 @@ export const updateTrimArchive = async (req, res) => {
       action: 'trim.archive_update',
       entityType: 'CycleArchive',
       entityId: archive._id,
-      details: { dryWeight, popcornWeight, trimProgressPercent: archive.harvestData.trimProgressPercent, roomName: archive.roomName }
+      details: { dryWeight, popcornWeight, roomName: archive.roomName }
     });
 
     res.json(archive);

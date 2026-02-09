@@ -1,8 +1,8 @@
 import api from './api';
 
 export const trimService = {
-  async getActiveArchives() {
-    const response = await api.get('/trim/active');
+  async getActiveArchives(status = 'active') {
+    const response = await api.get('/trim/active', { params: { status } });
     return response.data;
   },
 
@@ -12,7 +12,9 @@ export const trimService = {
   },
 
   async addLog(archiveId, strain, weight, date) {
-    const response = await api.post('/trim/log', { archiveId, strain, weight, date });
+    const body = { archiveId, weight, date };
+    if (strain) body.strain = strain;
+    const response = await api.post('/trim/log', body);
     return response.data;
   },
 
