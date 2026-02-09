@@ -4,6 +4,7 @@ import RoomTask from '../models/RoomTask.js';
 import RoomLog from '../models/RoomLog.js';
 import VegBatch from '../models/VegBatch.js';
 import CloneCut from '../models/CloneCut.js';
+import TrimLog from '../models/TrimLog.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
@@ -20,7 +21,21 @@ export const getArchives = async (req, res) => {
     const archives = await CycleArchive.find(query)
       .sort({ harvestDate: -1 })
       .skip(parseInt(skip))
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
+
+    // Attach trim weight totals from TrimLog
+    const archiveIds = archives.map((a) => a._id);
+    const trimAgg = await TrimLog.aggregate([
+      { $match: { archive: { $in: archiveIds }, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] } },
+      { $group: { _id: '$archive', totalTrimWeight: { $sum: '$weight' }, trimEntries: { $sum: 1 } } }
+    ]);
+    const trimMap = new Map(trimAgg.map((t) => [String(t._id), t]));
+    for (const a of archives) {
+      const t = trimMap.get(String(a._id));
+      a.trimLogWeight = t?.totalTrimWeight || 0;
+      a.trimLogEntries = t?.trimEntries || 0;
+    }
 
     const total = await CycleArchive.countDocuments(query);
 
@@ -154,16 +169,27 @@ export const getArchiveStats = async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
 
+    // Total trim weight from TrimLog
+    const trimTotalAgg = await TrimLog.aggregate([
+      { $match: { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] } },
+      { $group: { _id: null, totalTrimWeight: { $sum: '$weight' }, totalTrimEntries: { $sum: 1 } } }
+    ]);
+
+    const totalData = totalStats[0] || {
+      totalCycles: 0,
+      totalPlants: 0,
+      totalDryWeight: 0,
+      totalWetWeight: 0,
+      avgDaysFlowering: 0,
+      avgGramsPerPlant: 0,
+      avgGramsPerWatt: 0,
+      avgGramsPerDay: 0
+    };
+    totalData.totalTrimWeight = trimTotalAgg[0]?.totalTrimWeight || 0;
+    totalData.totalTrimEntries = trimTotalAgg[0]?.totalTrimEntries || 0;
+
     res.json({
-      total: totalStats[0] || {
-        totalCycles: 0,
-        totalPlants: 0,
-        totalDryWeight: 0,
-        avgDaysFlowering: 0,
-        avgGramsPerPlant: 0,
-        avgGramsPerWatt: 0,
-        avgGramsPerDay: 0
-      },
+      total: totalData,
       byStrain: strainStats,
       byMonth: monthlyStats,
       byRoom: roomStats,

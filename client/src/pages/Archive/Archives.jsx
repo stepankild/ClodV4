@@ -9,6 +9,10 @@ const formatDate = (date) => {
 };
 
 const formatNum = (n) => (n != null && Number.isFinite(n) ? Number(n).toLocaleString('ru-RU') : '—');
+const formatG = (n) => (n != null && Number.isFinite(n) && n > 0 ? `${Number(n).toLocaleString('ru-RU')}г` : '—');
+const pct = (a, b) => (a > 0 && b > 0 ? ((a / b) * 100).toFixed(1) : null);
+
+const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
 const StatCard = ({ title, value, unit, icon, color = 'primary' }) => {
   const colors = {
@@ -16,11 +20,14 @@ const StatCard = ({ title, value, unit, icon, color = 'primary' }) => {
     green: 'from-green-900/50 to-green-800/30 border-green-700/50',
     blue: 'from-blue-900/50 to-blue-800/30 border-blue-700/50',
     yellow: 'from-yellow-900/50 to-yellow-800/30 border-yellow-700/50',
-    purple: 'from-purple-900/50 to-purple-800/30 border-purple-700/50'
+    purple: 'from-purple-900/50 to-purple-800/30 border-purple-700/50',
+    amber: 'from-amber-900/50 to-amber-800/30 border-amber-700/50',
+    teal: 'from-teal-900/50 to-teal-800/30 border-teal-700/50',
+    red: 'from-red-900/50 to-red-800/30 border-red-700/50'
   };
 
   return (
-    <div className={`bg-gradient-to-br ${colors[color]} border rounded-xl p-4`}>
+    <div className={`bg-gradient-to-br ${colors[color] || colors.primary} border rounded-xl p-4`}>
       <div className="flex items-center gap-3">
         <div className="text-2xl">{icon}</div>
         <div>
@@ -31,6 +38,36 @@ const StatCard = ({ title, value, unit, icon, color = 'primary' }) => {
         </div>
       </div>
     </div>
+  );
+};
+
+const QualityBadge = ({ quality }) => {
+  const styles = {
+    low: 'bg-red-900/50 text-red-400',
+    medium: 'bg-yellow-900/50 text-yellow-400',
+    high: 'bg-green-900/50 text-green-400',
+    premium: 'bg-purple-900/50 text-purple-400'
+  };
+  const labels = { low: 'Низ', medium: 'Сред', high: 'Выс', premium: 'Прем' };
+  return (
+    <span className={`px-1.5 py-0.5 text-xs rounded ${styles[quality] || styles.medium}`}>
+      {labels[quality] || '—'}
+    </span>
+  );
+};
+
+const TrimStatusBadge = ({ status }) => {
+  const styles = {
+    pending: 'bg-dark-700 text-dark-400',
+    in_progress: 'bg-yellow-900/50 text-yellow-400',
+    completed: 'bg-green-900/50 text-green-400'
+  };
+  const labels = { pending: 'Ожид', in_progress: 'Трим', completed: 'Готов' };
+  if (!status || status === 'pending') return null;
+  return (
+    <span className={`px-1.5 py-0.5 text-xs rounded ${styles[status] || styles.pending}`}>
+      {labels[status] || status}
+    </span>
   );
 };
 
@@ -83,6 +120,13 @@ export default function Archives() {
         } else if (sortBy === 'gramsPerPlant') {
           va = a.metrics?.gramsPerPlant || 0;
           vb = b.metrics?.gramsPerPlant || 0;
+        } else if (sortBy === 'shrinkage') {
+          const wa = a.harvestData?.wetWeight || 0;
+          const da = a.harvestData?.dryWeight || 0;
+          va = wa > 0 ? da / wa : 0;
+          const wb = b.harvestData?.wetWeight || 0;
+          const db = b.harvestData?.dryWeight || 0;
+          vb = wb > 0 ? db / wb : 0;
         }
         return sortOrder === 'desc' ? vb - va : va - vb;
       });
@@ -118,22 +162,8 @@ export default function Archives() {
   }, []);
 
   const archives = data.archives;
-
-  // Quality badge
-  const QualityBadge = ({ quality }) => {
-    const styles = {
-      low: 'bg-red-900/50 text-red-400',
-      medium: 'bg-yellow-900/50 text-yellow-400',
-      high: 'bg-green-900/50 text-green-400',
-      premium: 'bg-purple-900/50 text-purple-400'
-    };
-    const labels = { low: 'Низкое', medium: 'Среднее', high: 'Высокое', premium: 'Премиум' };
-    return (
-      <span className={`px-2 py-0.5 text-xs rounded ${styles[quality] || styles.medium}`}>
-        {labels[quality] || quality || 'Среднее'}
-      </span>
-    );
-  };
+  const t = stats?.total || {};
+  const shrinkagePct = pct(t.totalDryWeight, t.totalWetWeight);
 
   return (
     <div className="p-6">
@@ -141,52 +171,27 @@ export default function Archives() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-white">Архив циклов</h1>
-          <p className="text-dark-400 text-sm mt-1">История завершённых циклов со всей статистикой</p>
+          <p className="text-dark-400 text-sm mt-1">История завершённых циклов, статистика по сортам, комнатам и месяцам</p>
         </div>
         <button
           onClick={() => setShowStats(!showStats)}
           className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-dark-300 hover:text-white hover:border-dark-600 transition"
         >
-          {showStats ? 'Скрыть статистику' : 'Показать статистику'}
+          {showStats ? 'Скрыть аналитику' : 'Показать аналитику'}
         </button>
       </div>
 
-      {/* Stats */}
+      {/* Stats Cards */}
       {showStats && stats && (
-        <div className="mb-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          <StatCard
-            title="Всего циклов"
-            value={stats.total?.totalCycles || 0}
-            icon="🌿"
-            color="primary"
-          />
-          <StatCard
-            title="Всего растений"
-            value={formatNum(stats.total?.totalPlants)}
-            icon="🌱"
-            color="green"
-          />
-          <StatCard
-            title="Общий сухой вес"
-            value={formatNum(stats.total?.totalDryWeight)}
-            unit="г"
-            icon="⚖️"
-            color="blue"
-          />
-          <StatCard
-            title="Средний г/куст"
-            value={formatNum(Math.round(stats.total?.avgGramsPerPlant || 0))}
-            unit="г"
-            icon="📊"
-            color="yellow"
-          />
-          <StatCard
-            title="Средний цикл"
-            value={formatNum(Math.round(stats.total?.avgDaysFlowering || 0))}
-            unit="дней"
-            icon="📅"
-            color="purple"
-          />
+        <div className="mb-6 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+          <StatCard title="Циклов" value={t.totalCycles || 0} icon="🌿" color="primary" />
+          <StatCard title="Растений" value={formatNum(t.totalPlants)} icon="🌱" color="green" />
+          <StatCard title="Сухой вес" value={formatNum(t.totalDryWeight)} unit="г" icon="⚖️" color="blue" />
+          <StatCard title="Сырой вес" value={formatNum(t.totalWetWeight)} unit="г" icon="💧" color="teal" />
+          <StatCard title="Ср. г/куст" value={formatNum(Math.round(t.avgGramsPerPlant || 0))} unit="г" icon="📊" color="yellow" />
+          <StatCard title="Ср. цикл" value={formatNum(Math.round(t.avgDaysFlowering || 0))} unit="дн" icon="📅" color="purple" />
+          {shrinkagePct && <StatCard title="Усушка" value={shrinkagePct} unit="%" icon="🔥" color="red" />}
+          {t.avgGramsPerWatt > 0 && <StatCard title="Ср. г/ватт" value={formatNum(Math.round(t.avgGramsPerWatt * 100) / 100)} icon="💡" color="amber" />}
         </div>
       )}
 
@@ -195,19 +200,84 @@ export default function Archives() {
         <div className="mb-6 bg-dark-800/50 rounded-xl border border-dark-700 p-4">
           <h3 className="text-white font-semibold mb-3">Топ сортов по урожаю</h3>
           <div className="flex flex-wrap gap-2">
-            {stats.byStrain.slice(0, 5).map((s, i) => (
+            {stats.byStrain.slice(0, 8).map((s, i) => (
               <div
                 key={i}
                 onClick={() => setStrain(s._id || '')}
-                className="px-3 py-2 bg-dark-700/50 rounded-lg cursor-pointer hover:bg-dark-600/50 transition"
+                className={`px-3 py-2 rounded-lg cursor-pointer transition ${strain === s._id ? 'bg-primary-600/30 border border-primary-500' : 'bg-dark-700/50 hover:bg-dark-600/50'}`}
               >
                 <div className="text-white font-medium">{s._id || 'Без сорта'}</div>
                 <div className="text-dark-400 text-xs">
-                  {formatNum(s.totalWeight)}г · {s.cycles} цикл{s.cycles > 1 ? 'а' : ''} · {formatNum(Math.round(s.avgGramsPerPlant || 0))}г/куст
+                  {formatG(s.totalWeight)} · {s.cycles} цикл. · {formatNum(Math.round(s.avgGramsPerPlant || 0))}г/к · {formatNum(Math.round(s.avgDays || 0))}дн
                 </div>
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Room stats + Monthly trend side by side */}
+      {showStats && stats && (stats.byRoom?.length > 0 || stats.byMonth?.length > 0) && (
+        <div className="mb-6 grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Room stats */}
+          {stats.byRoom?.length > 0 && (
+            <div className="bg-dark-800/50 rounded-xl border border-dark-700 overflow-hidden">
+              <h3 className="text-white font-semibold px-4 py-3 border-b border-dark-700">По комнатам</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-dark-900">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs text-dark-500">Комната</th>
+                      <th className="px-3 py-2 text-right text-xs text-dark-500">Циклов</th>
+                      <th className="px-3 py-2 text-right text-xs text-dark-500">Общий вес</th>
+                      <th className="px-3 py-2 text-right text-xs text-dark-500">Ср. вес</th>
+                      <th className="px-3 py-2 text-right text-xs text-dark-500">Ср. дней</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dark-700">
+                    {stats.byRoom.map((r, i) => (
+                      <tr key={i} className="hover:bg-dark-700/30">
+                        <td className="px-3 py-2 text-white">{r._id != null ? `Комната ${r._id}` : '—'}</td>
+                        <td className="px-3 py-2 text-right text-dark-300">{r.cycles}</td>
+                        <td className="px-3 py-2 text-right text-green-400 font-medium">{formatG(r.totalWeight)}</td>
+                        <td className="px-3 py-2 text-right text-dark-300">{formatG(Math.round(r.avgWeight || 0))}</td>
+                        <td className="px-3 py-2 text-right text-dark-400">{Math.round(r.avgDays || 0)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Monthly trend */}
+          {stats.byMonth?.length > 0 && (
+            <div className="bg-dark-800/50 rounded-xl border border-dark-700 overflow-hidden">
+              <h3 className="text-white font-semibold px-4 py-3 border-b border-dark-700">По месяцам</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-dark-900">
+                    <tr>
+                      <th className="px-3 py-2 text-left text-xs text-dark-500">Месяц</th>
+                      <th className="px-3 py-2 text-right text-xs text-dark-500">Циклов</th>
+                      <th className="px-3 py-2 text-right text-xs text-dark-500">Общий вес</th>
+                      <th className="px-3 py-2 text-right text-xs text-dark-500">Ср. г/куст</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dark-700">
+                    {stats.byMonth.map((m, i) => (
+                      <tr key={i} className="hover:bg-dark-700/30">
+                        <td className="px-3 py-2 text-white">{MONTH_NAMES[(m._id?.month || 1) - 1]} {m._id?.year}</td>
+                        <td className="px-3 py-2 text-right text-dark-300">{m.cycles}</td>
+                        <td className="px-3 py-2 text-right text-green-400 font-medium">{formatG(m.totalWeight)}</td>
+                        <td className="px-3 py-2 text-right text-primary-400">{formatNum(Math.round(m.avgGramsPerPlant || 0))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -219,7 +289,7 @@ export default function Archives() {
             <select
               value={roomId}
               onChange={(e) => setRoomId(e.target.value)}
-              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm"
             >
               <option value="">Все комнаты</option>
               {rooms.map((r) => (
@@ -234,10 +304,10 @@ export default function Archives() {
             <label className="block text-dark-400 text-xs mb-1">Сорт</label>
             <input
               type="text"
-              placeholder="Поиск по сорту"
+              placeholder="Поиск"
               value={strain}
               onChange={(e) => setStrain(e.target.value)}
-              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm w-40 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm w-32"
             />
           </div>
 
@@ -246,13 +316,13 @@ export default function Archives() {
             <select
               value={period}
               onChange={(e) => setPeriod(e.target.value)}
-              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm"
             >
-              <option value="all">За всё время</option>
-              <option value="year">За год</option>
-              <option value="6months">За 6 месяцев</option>
-              <option value="3months">За 3 месяца</option>
-              <option value="month">За месяц</option>
+              <option value="all">Всё время</option>
+              <option value="year">Год</option>
+              <option value="6months">6 мес</option>
+              <option value="3months">3 мес</option>
+              <option value="month">Месяц</option>
             </select>
           </div>
 
@@ -261,13 +331,14 @@ export default function Archives() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm"
             >
-              <option value="harvestDate">По дате урожая</option>
-              <option value="startDate">По дате начала</option>
-              <option value="dryWeight">По сухому весу</option>
-              <option value="gramsPerPlant">По г/куст</option>
-              <option value="actualDays">По длительности</option>
+              <option value="harvestDate">Дата урожая</option>
+              <option value="startDate">Дата начала</option>
+              <option value="dryWeight">Сухой вес</option>
+              <option value="gramsPerPlant">г/куст</option>
+              <option value="actualDays">Длительность</option>
+              <option value="shrinkage">Усушка %</option>
             </select>
           </div>
 
@@ -276,7 +347,7 @@ export default function Archives() {
             <select
               value={sortOrder}
               onChange={(e) => setSortOrder(e.target.value)}
-              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+              className="bg-dark-800 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm"
             >
               <option value="desc">По убыванию</option>
               <option value="asc">По возрастанию</option>
@@ -288,7 +359,7 @@ export default function Archives() {
               onClick={() => { setRoomId(''); setStrain(''); setPeriod('all'); }}
               className="mt-5 px-3 py-2 text-dark-400 hover:text-white text-sm"
             >
-              Сбросить фильтры
+              Сбросить
             </button>
           )}
         </div>
@@ -311,57 +382,78 @@ export default function Archives() {
       ) : (
         <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full text-left text-sm">
               <thead className="bg-dark-900">
                 <tr>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Комната</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Сорт</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Цвет</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Урожай</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Дней</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Кустов</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Сырой</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Сухой</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">г/куст</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm">Качество</th>
-                  <th className="py-3 px-4 text-dark-400 font-medium text-sm w-20"></th>
+                  <th className="py-3 px-3 text-dark-400 font-medium">Комната</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium">Сорт</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium">Период</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium text-right">Дн</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium text-right">Куст</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium text-right">Сырой</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium text-right">Сухой</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium text-right">Трим</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium text-right">г/к</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium text-right">Усушка</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium">Кач</th>
+                  <th className="py-3 px-3 text-dark-400 font-medium w-16"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-700">
-                {archives.map((a) => (
-                  <tr key={a._id} className="hover:bg-dark-700/50 transition">
-                    <td className="py-3 px-4">
-                      <div className="text-white font-medium">{a.roomName || `Комната ${a.roomNumber}`}</div>
-                      {a.cycleName && <div className="text-dark-500 text-xs">{a.cycleName}</div>}
-                    </td>
-                    <td className="py-3 px-4 text-white">{a.strain || '—'}</td>
-                    <td className="py-3 px-4 text-dark-300 text-sm">{formatDate(a.startDate)}</td>
-                    <td className="py-3 px-4 text-dark-300 text-sm">{formatDate(a.harvestDate)}</td>
-                    <td className="py-3 px-4 text-dark-300">{formatNum(a.actualDays)}</td>
-                    <td className="py-3 px-4 text-dark-300">{formatNum(a.plantsCount)}</td>
-                    <td className="py-3 px-4 text-dark-400 text-sm">{formatNum(a.harvestData?.wetWeight)}г</td>
-                    <td className="py-3 px-4">
-                      <span className="text-green-400 font-medium">{formatNum(a.harvestData?.dryWeight)}г</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <span className="text-primary-400 font-medium">{formatNum(a.metrics?.gramsPerPlant)}</span>
-                    </td>
-                    <td className="py-3 px-4">
-                      <QualityBadge quality={a.harvestData?.quality} />
-                    </td>
-                    <td className="py-3 px-4">
-                      <Link
-                        to={`/archive/${a._id}`}
-                        className="inline-flex items-center gap-1 text-primary-400 hover:text-primary-300 text-sm font-medium"
-                      >
-                        Детали
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
+                {archives.map((a) => {
+                  const wet = a.harvestData?.wetWeight || 0;
+                  const dry = a.harvestData?.dryWeight || 0;
+                  const trim = a.trimLogWeight || a.harvestData?.trimWeight || 0;
+                  const shrink = pct(dry, wet);
+                  const strainCount = Array.isArray(a.strains) ? a.strains.length : 0;
+                  return (
+                    <tr key={a._id} className="hover:bg-dark-700/50 transition">
+                      <td className="py-2.5 px-3">
+                        <div className="text-white font-medium text-sm">{a.roomName || `К${a.roomNumber}`}</div>
+                        {a.cycleName && <div className="text-dark-500 text-xs">{a.cycleName}</div>}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <div className="text-white text-sm">{a.strain || '—'}</div>
+                        {strainCount > 1 && (
+                          <span className="text-dark-500 text-xs">{strainCount} сорт.</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-dark-400 text-xs">
+                        <div>{formatDate(a.startDate)}</div>
+                        <div>{formatDate(a.harvestDate)}</div>
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-dark-300">{a.actualDays || '—'}</td>
+                      <td className="py-2.5 px-3 text-right text-dark-300">{a.plantsCount || '—'}</td>
+                      <td className="py-2.5 px-3 text-right text-dark-400">{formatG(wet)}</td>
+                      <td className="py-2.5 px-3 text-right">
+                        <span className="text-green-400 font-medium">{formatG(dry)}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <span className="text-dark-400">{trim > 0 ? formatG(trim) : '—'}</span>
+                        {a.trimStatus && a.trimStatus !== 'pending' && (
+                          <div className="mt-0.5"><TrimStatusBadge status={a.trimStatus} /></div>
+                        )}
+                      </td>
+                      <td className="py-2.5 px-3 text-right">
+                        <span className="text-primary-400 font-medium">{formatNum(a.metrics?.gramsPerPlant)}</span>
+                      </td>
+                      <td className="py-2.5 px-3 text-right text-dark-400 text-xs">
+                        {shrink ? `${shrink}%` : '—'}
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <QualityBadge quality={a.harvestData?.quality} />
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <Link
+                          to={`/archive/${a._id}`}
+                          className="text-primary-400 hover:text-primary-300 text-xs font-medium"
+                        >
+                          Детали →
+                        </Link>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
