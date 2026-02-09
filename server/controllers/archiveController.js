@@ -24,17 +24,25 @@ export const getArchives = async (req, res) => {
       .limit(parseInt(limit))
       .lean();
 
-    // Attach trim weight totals from TrimLog
+    // Attach trim weight totals + date range from TrimLog
     const archiveIds = archives.map((a) => a._id);
     const trimAgg = await TrimLog.aggregate([
       { $match: { archive: { $in: archiveIds }, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] } },
-      { $group: { _id: '$archive', totalTrimWeight: { $sum: '$weight' }, trimEntries: { $sum: 1 } } }
+      { $group: {
+        _id: '$archive',
+        totalTrimWeight: { $sum: '$weight' },
+        trimEntries: { $sum: 1 },
+        firstTrimDate: { $min: '$date' },
+        lastTrimDate: { $max: '$date' }
+      } }
     ]);
     const trimMap = new Map(trimAgg.map((t) => [String(t._id), t]));
     for (const a of archives) {
       const t = trimMap.get(String(a._id));
       a.trimLogWeight = t?.totalTrimWeight || 0;
       a.trimLogEntries = t?.trimEntries || 0;
+      a.firstTrimDate = t?.firstTrimDate || null;
+      a.lastTrimDate = t?.lastTrimDate || null;
     }
 
     const total = await CycleArchive.countDocuments(query);
