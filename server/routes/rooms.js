@@ -8,7 +8,7 @@ import {
   harvestRoom,
   addNote
 } from '../controllers/flowerRoomController.js';
-import { getPlans, createPlan, updatePlan, deletePlan } from '../controllers/plannedController.js';
+import { getPlans, createPlan, updatePlan, deletePlan, getDeletedPlans, restorePlan } from '../controllers/plannedController.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -19,9 +19,11 @@ router.use(protect);
 router.get('/', getRooms);
 router.get('/summary', getRoomsSummary);
 router.get('/plans', getPlans);
+router.get('/plans/deleted', getDeletedPlans);
 router.post('/plans', createPlan);
 router.put('/plans/:id', updatePlan);
 router.delete('/plans/:id', deletePlan);
+router.post('/plans/deleted/:id/restore', restorePlan);
 router.get('/:id', getRoom);
 router.put('/:id', updateRoom);
 router.post('/:id/start', startCycle);

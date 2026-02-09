@@ -11,7 +11,11 @@ import {
   updateRole,
   createRole,
   deleteRole,
-  approveUser
+  approveUser,
+  getDeletedUsers,
+  restoreUser,
+  getDeletedRoles,
+  restoreRole
 } from '../controllers/userController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -27,11 +31,15 @@ router.get('/roles', checkPermission('users:read'), getRoles);
 router.get('/permissions', checkPermission('users:read'), getPermissions);
 
 // Role management (create, update, delete)
+router.get('/roles/deleted', checkPermission('users:read'), getDeletedRoles);
+router.post('/roles/deleted/:id/restore', checkPermission('users:update'), restoreRole);
 router.post('/roles', checkPermission('users:update'), createRole);
 router.put('/roles/:id', checkPermission('users:update'), updateRole);
 router.delete('/roles/:id', checkPermission('users:update'), deleteRole);
 
 // User CRUD
+router.get('/deleted', checkPermission('users:read'), getDeletedUsers);
+router.post('/deleted/:id/restore', checkPermission('users:update'), restoreUser);
 router.get('/', checkPermission('users:read'), getUsers);
 
 router.get('/:id', checkPermission('users:read'), getUser);

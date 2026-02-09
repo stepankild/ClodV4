@@ -9,7 +9,8 @@ import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 export const getPlans = async (req, res) => {
   try {
     const { roomId } = req.query;
-    const query = roomId ? { room: roomId } : {};
+    const query = { ...notDeleted };
+    if (roomId) query.room = roomId;
     const plans = await PlannedCycle.find(query).populate('room', 'name roomNumber').sort({ room: 1 });
     res.json(plans);
   } catch (error) {
@@ -57,7 +58,7 @@ export const createPlan = async (req, res) => {
 export const updatePlan = async (req, res) => {
   try {
     const { cycleName, strain, plannedStartDate, plantsCount, floweringDays, notes } = req.body;
-    const plan = await PlannedCycle.findById(req.params.id);
+    const plan = await PlannedCycle.findOne({ _id: req.params.id, ...notDeleted });
     if (!plan) return res.status(404).json({ message: 'План не найден' });
 
     if (cycleName !== undefined) plan.cycleName = String(cycleName).trim();
@@ -89,6 +90,36 @@ export const deletePlan = async (req, res) => {
     res.json({ message: 'План удалён (можно восстановить)' });
   } catch (error) {
     console.error('Delete plan error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Get deleted planned cycles
+// @route   GET /api/rooms/plans/deleted
+export const getDeletedPlans = async (req, res) => {
+  try {
+    const plans = await PlannedCycle.find({ ...deletedOnly })
+      .populate('room', 'name roomNumber')
+      .sort({ deletedAt: -1 });
+    res.json(plans);
+  } catch (error) {
+    console.error('Get deleted plans error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Restore deleted planned cycle
+// @route   POST /api/rooms/plans/deleted/:id/restore
+export const restorePlan = async (req, res) => {
+  try {
+    const plan = await PlannedCycle.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!plan) return res.status(404).json({ message: 'Удалённый план не найден' });
+    plan.deletedAt = null;
+    await plan.save();
+    await createAuditLog(req, { action: 'plan.restore', entityType: 'PlannedCycle', entityId: plan._id, details: { roomId: plan.room?.toString() } });
+    res.json(plan);
+  } catch (error) {
+    console.error('Restore plan error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

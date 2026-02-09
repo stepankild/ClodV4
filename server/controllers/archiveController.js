@@ -371,8 +371,11 @@ export const harvestAndArchive = async (req, res) => {
       dayOfCycle: actualDays
     });
 
-    // Удаляем все задачи комнаты
-    await RoomTask.deleteMany({ room: roomId });
+    // Мягкое удаление всех задач комнаты
+    await RoomTask.updateMany(
+      { room: roomId, deletedAt: null },
+      { $set: { deletedAt: new Date() } }
+    );
 
     // Сбрасываем комнату (переходим в «Планируется»)
     room.cycleName = '';

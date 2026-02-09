@@ -47,7 +47,7 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email }).populate({
+    const user = await User.findOne({ email, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).populate({
       path: 'roles',
       populate: { path: 'permissions' }
     });

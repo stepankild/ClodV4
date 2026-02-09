@@ -354,7 +354,11 @@ export const completeSession = async (req, res) => {
         dayOfCycle: actualDays
       });
 
-      await RoomTask.deleteMany({ room: room._id });
+      // Мягкое удаление задач комнаты
+      await RoomTask.updateMany(
+        { room: room._id, deletedAt: null },
+        { $set: { deletedAt: new Date() } }
+      );
 
       room.cycleName = '';
       room.strain = '';

@@ -1,6 +1,6 @@
 import CycleArchive from '../models/CycleArchive.js';
 import TrimLog from '../models/TrimLog.js';
-import { notDeleted } from '../utils/softDelete.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 import { createAuditLog } from '../utils/auditLog.js';
 
 // Пересчитать trimWeight для архива на основе TrimLog записей
@@ -310,6 +310,56 @@ export const completeTrim = async (req, res) => {
     res.json(archive);
   } catch (error) {
     console.error('completeTrim error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Получить удалённые записи трима
+// @route   GET /api/trim/deleted
+export const getDeletedTrimLogs = async (req, res) => {
+  try {
+    const logs = await TrimLog.find({ ...deletedOnly })
+      .populate('createdBy', 'name')
+      .sort({ deletedAt: -1 })
+      .limit(100);
+    res.json(logs);
+  } catch (error) {
+    console.error('getDeletedTrimLogs error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Восстановить удалённую запись трима
+// @route   POST /api/trim/deleted/:id/restore
+export const restoreTrimLog = async (req, res) => {
+  try {
+    const log = await TrimLog.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!log) return res.status(404).json({ message: 'Удалённая запись не найдена' });
+
+    log.deletedAt = null;
+    await log.save();
+
+    // Пересчитать trimWeight в архиве
+    const archive = await CycleArchive.findById(log.archive);
+    if (archive) {
+      const totalTrimmed = await recalcTrimWeight(archive._id);
+      archive.harvestData.trimWeight = totalTrimmed;
+      if (totalTrimmed > 0 && archive.trimStatus === 'pending') {
+        archive.trimStatus = 'in_progress';
+      }
+      await archive.save();
+    }
+
+    await createAuditLog(req, {
+      action: 'trim.log_restore',
+      entityType: 'TrimLog',
+      entityId: log._id,
+      details: { archiveId: log.archive.toString(), weight: log.weight }
+    });
+
+    res.json(log);
+  } catch (error) {
+    console.error('restoreTrimLog error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
