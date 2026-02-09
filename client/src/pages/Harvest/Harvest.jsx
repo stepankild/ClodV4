@@ -32,6 +32,7 @@ const Harvest = () => {
   const [errorNoteEdit, setErrorNoteEdit] = useState({ plantNumber: null, value: '' });
   const [errorNoteSaving, setErrorNoteSaving] = useState(false);
   const [completeSuccess, setCompleteSuccess] = useState(false);
+  const [fillAllLoading, setFillAllLoading] = useState(false);
 
   // Симуляция весов: каждые 4 сек случайное значение 50–500 г
   useEffect(() => {
@@ -142,6 +143,33 @@ const Harvest = () => {
       console.error(err);
     } finally {
       setRecordLoading(false);
+    }
+  };
+
+  /** Временная кнопка для теста: записать все кусты разом со случайным весом 80–350 г */
+  const handleFillAllPlants = async () => {
+    if (!session || session.status !== 'in_progress') return;
+    const expected = session.plantsCount ?? 0;
+    const recorded = session.plants?.length ?? 0;
+    const toAdd = expected - recorded;
+    if (toAdd <= 0) return;
+    if (!confirm(`Записать оставшиеся ${toAdd} кустов со случайным весом (80–350 г)? Только для теста.`)) return;
+    setFillAllLoading(true);
+    setError('');
+    try {
+      let updated = session;
+      for (let n = 1; n <= expected; n++) {
+        const already = updated.plants?.some(p => String(p.plantNumber) === String(n));
+        if (already) continue;
+        const weight = Math.round(80 + Math.random() * 270);
+        const res = await harvestService.addPlant(session._id, String(n), weight);
+        updated = res?.session ?? res;
+        setSession(updated);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка заполнения');
+    } finally {
+      setFillAllLoading(false);
     }
   };
 
@@ -326,6 +354,15 @@ const Harvest = () => {
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 font-medium"
               >
                 {recordLoading ? '...' : 'Записать'}
+              </button>
+              <button
+                type="button"
+                onClick={handleFillAllPlants}
+                disabled={!canDoHarvest || fillAllLoading || (session?.plantsCount ?? 0) <= (session?.plants?.length ?? 0)}
+                className="px-4 py-2 bg-amber-600/80 text-white rounded-lg hover:bg-amber-500/80 disabled:opacity-50 font-medium text-sm"
+                title="Для теста: записать все кусты со случайным весом"
+              >
+                {fillAllLoading ? '...' : 'Заполнить все кусты (тест)'}
               </button>
             </div>
           </div>
