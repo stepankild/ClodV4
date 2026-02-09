@@ -86,6 +86,8 @@ const Clones = () => {
     isDone: false
   });
   const [savingCreateBatch, setSavingCreateBatch] = useState(false);
+  const [archivedCuts, setArchivedCuts] = useState([]);
+  const [restoringId, setRestoringId] = useState(null);
 
   useEffect(() => {
     load();
@@ -116,6 +118,7 @@ const Clones = () => {
       setRooms(Array.isArray(roomsData) ? roomsData : []);
       let cutsData = [];
       let allVegBatches = [];
+      let deletedCuts = [];
       try {
         cutsData = await cloneCutService.getAll();
       } catch (cutsErr) {
@@ -138,14 +141,19 @@ const Clones = () => {
       try {
         allVegBatches = await vegBatchService.getAll();
       } catch (_) {}
+      try {
+        deletedCuts = await cloneCutService.getDeleted();
+      } catch (_) {}
       setCloneCuts(Array.isArray(cutsData) ? cutsData : []);
       setVegBatches(Array.isArray(allVegBatches) ? allVegBatches : []);
+      setArchivedCuts(Array.isArray(deletedCuts) ? deletedCuts : []);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Ошибка загрузки комнат');
       console.error('Clones load error:', err);
       setRooms([]);
       setCloneCuts([]);
       setVegBatches([]);
+      setArchivedCuts([]);
     } finally {
       setLoading(false);
     }
@@ -523,6 +531,18 @@ const Clones = () => {
       setError(err.response?.data?.message || 'Ошибка удаления');
     } finally {
       setSavingOrderId(null);
+    }
+  };
+
+  const restoreArchivedCut = async (cut) => {
+    try {
+      setRestoringId(cut._id);
+      await cloneCutService.restore(cut._id);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка восстановления');
+    } finally {
+      setRestoringId(null);
     }
   };
 
@@ -1164,6 +1184,54 @@ const Clones = () => {
                       <td className="px-4 py-3 text-dark-300">{formatDate(b.cutDate)}</td>
                       <td className="px-4 py-3 text-dark-300">{formatDate(b.transplantedToVegAt)}</td>
                       <td className="px-4 py-3 text-dark-300">{b.quantity > 0 ? b.quantity : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {archivedCuts.length > 0 && (
+        <div className="mt-8 bg-dark-800 rounded-xl border border-dark-700 overflow-hidden opacity-70">
+          <h2 className="text-lg font-semibold text-dark-300 px-4 py-3 border-b border-dark-700">Архив нарезок</h2>
+          <p className="text-dark-500 text-sm px-4 py-2">Бэтчи клонов, полностью отправленные в вегетацию или удалённые. Можно восстановить.</p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-dark-900">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">Комната</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">Дата нарезки</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">Сорт / кол-во</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">Удалено</th>
+                  {canCreateClones && (
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-dark-500 uppercase tracking-wider">Действия</th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-dark-700">
+                {archivedCuts.map((cut) => {
+                  const strains = getStrainsFromCut(cut);
+                  const roomName = cut.room?.name || cut.room?.roomNumber || (cut.room ? '—' : 'На заказ');
+                  return (
+                    <tr key={cut._id} className="hover:bg-dark-700/30">
+                      <td className="px-4 py-3 text-dark-400">{roomName}</td>
+                      <td className="px-4 py-3 text-dark-400">{formatDate(cut.cutDate)}</td>
+                      <td className="px-4 py-3 text-dark-400">{formatStrainsShort(strains)}</td>
+                      <td className="px-4 py-3 text-dark-500 text-xs">{formatDate(cut.deletedAt)}</td>
+                      {canCreateClones && (
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => restoreArchivedCut(cut)}
+                            disabled={restoringId === cut._id}
+                            className="px-2 py-1 bg-primary-600/30 text-primary-400 hover:bg-primary-600/50 rounded text-xs font-medium disabled:opacity-50"
+                          >
+                            {restoringId === cut._id ? 'Восстановление...' : 'Восстановить'}
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

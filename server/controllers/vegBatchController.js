@@ -145,10 +145,33 @@ export const createVegBatch = async (req, res) => {
     });
     await doc.save();
 
-    // Mark source clone cut batch as done
+    // Reduce source clone cut quantities by the amounts sent to veg
     if (sourceCloneCut) {
       const CloneCut = (await import('../models/CloneCut.js')).default;
-      await CloneCut.findByIdAndUpdate(sourceCloneCut, { isDone: true });
+      const cutDoc = await CloneCut.findOne({ _id: sourceCloneCut, ...notDeleted });
+      if (cutDoc) {
+        // Reduce each strain quantity in the clone cut
+        if (Array.isArray(cutDoc.strains) && cutDoc.strains.length > 0) {
+          const sentByStrain = new Map(normalizedStrains.map((s) => [s.strain, s.quantity]));
+          cutDoc.strains = cutDoc.strains.map((row) => {
+            const sent = sentByStrain.get(row.strain) || 0;
+            return { strain: row.strain, quantity: Math.max(0, (parseInt(row.quantity, 10) || 0) - sent) };
+          });
+          cutDoc.quantity = cutDoc.strains.reduce((sum, s) => sum + s.quantity, 0);
+          cutDoc.strain = cutDoc.strains.map((s) => s.strain).filter(Boolean).join(', ') || cutDoc.strain || '';
+        } else {
+          cutDoc.quantity = Math.max(0, (parseInt(cutDoc.quantity, 10) || 0) - derivedQuantity);
+        }
+        cutDoc.isDone = true;
+        // If all clones have been sent (remaining = 0), soft-delete the clone cut
+        const remaining = Array.isArray(cutDoc.strains)
+          ? cutDoc.strains.reduce((sum, s) => sum + (parseInt(s.quantity, 10) || 0), 0)
+          : (parseInt(cutDoc.quantity, 10) || 0);
+        if (remaining <= 0) {
+          cutDoc.deletedAt = new Date();
+        }
+        await cutDoc.save();
+      }
     }
 
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
