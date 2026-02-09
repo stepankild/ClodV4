@@ -56,8 +56,8 @@ export const roomService = {
     return response.data;
   },
 
-  async quickTask(roomId, { type, product, dosage }) {
-    const response = await api.post('/tasks/quick', { roomId, type, product, dosage });
+  async quickTask(roomId, { type, product, dosage, completedAt, description }) {
+    const response = await api.post('/tasks/quick', { roomId, type, product, dosage, completedAt, description });
     return response.data;
   },
 

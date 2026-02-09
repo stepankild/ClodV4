@@ -59,6 +59,9 @@ export default function ActiveRooms() {
   const [tasksLoading, setTasksLoading] = useState(false);
   const [sprayFormOpen, setSprayFormOpen] = useState(false);
   const [sprayProduct, setSprayProduct] = useState('');
+  const [trimFormOpen, setTrimFormOpen] = useState(false);
+  const [trimDate, setTrimDate] = useState(new Date().toISOString().slice(0, 10));
+  const [trimNote, setTrimNote] = useState('');
   const [noteInput, setNoteInput] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
 
@@ -356,7 +359,14 @@ export default function ActiveRooms() {
   const handleTrimAdd = async () => {
     if (!selectedRoom) return;
     try {
-      await roomService.quickTask(selectedRoom._id, { type: 'trim' });
+      await roomService.quickTask(selectedRoom._id, {
+        type: 'trim',
+        completedAt: trimDate ? new Date(trimDate).toISOString() : undefined,
+        description: trimNote.trim() || undefined
+      });
+      setTrimFormOpen(false);
+      setTrimDate(new Date().toISOString().slice(0, 10));
+      setTrimNote('');
       await loadRoomTasks(selectedRoom._id);
       await refreshSelectedRoom();
     } catch (err) {
@@ -934,12 +944,57 @@ export default function ActiveRooms() {
                         </div>
 
                         {/* Подрезка */}
-                        <button
-                          onClick={handleTrimAdd}
-                          className="text-sm text-primary-400 hover:text-primary-300 block"
-                        >
-                          + Записать подрезку
-                        </button>
+                        <div>
+                          <button
+                            onClick={() => setTrimFormOpen(!trimFormOpen)}
+                            className="text-sm text-primary-400 hover:text-primary-300"
+                          >
+                            + Записать подрезку
+                          </button>
+                          {trimFormOpen && (
+                            <div className="mt-2 space-y-2 p-3 bg-dark-700/50 rounded-lg border border-dark-600">
+                              <div>
+                                <label className="block text-xs text-dark-400 mb-1">Дата подрезки</label>
+                                <input
+                                  type="date"
+                                  value={trimDate}
+                                  onChange={e => setTrimDate(e.target.value)}
+                                  className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-dark-400 mb-1">Заметка (например: первая, вторая)</label>
+                                <input
+                                  type="text"
+                                  value={trimNote}
+                                  onChange={e => setTrimNote(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && handleTrimAdd()}
+                                  placeholder="первая, вторая, и т.д."
+                                  className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                  autoFocus
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleTrimAdd}
+                                  className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500"
+                                >
+                                  Сохранить
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    setTrimFormOpen(false);
+                                    setTrimDate(new Date().toISOString().slice(0, 10));
+                                    setTrimNote('');
+                                  }}
+                                  className="px-3 py-1.5 bg-dark-600 text-dark-300 rounded-lg text-sm hover:bg-dark-500"
+                                >
+                                  Отмена
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
 
                         {/* Дефолиация */}
                         <button

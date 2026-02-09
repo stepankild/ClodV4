@@ -200,7 +200,7 @@ export const deleteTask = async (req, res) => {
 // @route   POST /api/tasks/quick
 export const quickAddTask = async (req, res) => {
   try {
-    const { roomId, type, product, dosage } = req.body;
+    const { roomId, type, product, dosage, completedAt, description } = req.body;
 
     const room = await FlowerRoom.findById(roomId);
     if (!room) {
@@ -214,7 +214,7 @@ export const quickAddTask = async (req, res) => {
       title: TASK_LABELS[type],
       dayOfCycle: room.currentDay || null,
       completed: true,
-      completedAt: new Date(),
+      completedAt: completedAt ? new Date(completedAt) : new Date(),
       completedBy: req.user._id
     };
 
@@ -227,6 +227,13 @@ export const quickAddTask = async (req, res) => {
       taskData.title = product ? `Подкормка: ${product}` : 'Подкормка';
     } else if (type === 'defoliation') {
       taskData.title = 'Дефолиация';
+    } else if (type === 'trim') {
+      if (description && description.trim()) {
+        taskData.description = description.trim();
+        taskData.title = `Подрезка: ${description.trim()}`;
+      } else {
+        taskData.title = 'Подрезка';
+      }
     }
 
     const task = await RoomTask.create(taskData);
