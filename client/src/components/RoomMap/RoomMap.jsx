@@ -2,7 +2,6 @@ import { useState, useMemo } from 'react';
 import PlantCell, { STRAIN_COLORS } from './PlantCell';
 import RoomMapSetup from './RoomMapSetup';
 
-// Найти сорт по номеру куста
 function getStrainForPlant(plantNumber, flowerStrains) {
   if (!flowerStrains || !plantNumber) return null;
   const idx = flowerStrains.findIndex(
@@ -12,24 +11,32 @@ function getStrainForPlant(plantNumber, flowerStrains) {
   return { ...flowerStrains[idx], strainIndex: idx };
 }
 
-// Общее количество кустов
 function getTotalPlants(flowerStrains) {
   if (!flowerStrains) return 0;
   return flowerStrains.reduce((sum, fs) => sum + (fs.quantity || 0), 0);
 }
 
-// Миграция: старый формат (rows + positionsPerRow) → новый (customRows)
+// Количество мест в ряду
+function getRowPositions(row) {
+  return (row.cols || 1) * (row.rows || 1);
+}
+
+// Миграция старых форматов
 function migrateLayout(layout) {
   if (!layout) return { customRows: [], plantPositions: [] };
-  // Новый формат уже
   if (layout.customRows && layout.customRows.length > 0) {
-    return layout;
+    // Миграция positions → cols/rows если нужно
+    const migrated = layout.customRows.map(r => {
+      if (r.cols) return r;
+      // Старый формат с positions
+      return { name: r.name || '', cols: r.positions || 4, rows: 1 };
+    });
+    return { customRows: migrated, plantPositions: layout.plantPositions || [] };
   }
-  // Старый формат — конвертируем
   if (layout.rows > 0 && layout.positionsPerRow > 0) {
     const customRows = [];
     for (let i = 0; i < layout.rows; i++) {
-      customRows.push({ name: `Ряд ${i + 1}`, positions: layout.positionsPerRow });
+      customRows.push({ name: `Ряд ${i + 1}`, cols: layout.positionsPerRow, rows: 1 });
     }
     return { customRows, plantPositions: layout.plantPositions || [] };
   }
@@ -45,28 +52,19 @@ export default function RoomMap({ room, onSave, saving }) {
   const [plantPositions, setPlantPositions] = useState(layout.plantPositions || []);
   const [editMode, setEditMode] = useState(false);
   const [showSetup, setShowSetup] = useState(customRows.length === 0);
-
-  // Для назначения ряда целиком
   const [assignRowIdx, setAssignRowIdx] = useState(null);
+  const [assignCell, setAssignCell] = useState(null);
 
-  // Для назначения отдельной ячейки
-  const [assignCell, setAssignCell] = useState(null); // { row, position }
-
-  // Быстрая карта: row:position → plantNumber
   const positionMap = useMemo(() => {
     const m = {};
-    plantPositions.forEach(p => {
-      m[`${p.row}:${p.position}`] = p.plantNumber;
-    });
+    plantPositions.forEach(p => { m[`${p.row}:${p.position}`] = p.plantNumber; });
     return m;
   }, [plantPositions]);
 
-  // Какие кусты уже размещены
   const placedPlants = useMemo(() => {
     return new Set(plantPositions.map(p => p.plantNumber));
   }, [plantPositions]);
 
-  // Неразмещённые кусты
   const unplacedPlants = useMemo(() => {
     const result = [];
     flowerStrains.forEach(fs => {
@@ -78,12 +76,6 @@ export default function RoomMap({ room, onSave, saving }) {
     return result;
   }, [flowerStrains, placedPlants]);
 
-  // Макс кол-во позиций (для выравнивания столбцов по высоте)
-  const maxPositions = useMemo(() => {
-    return Math.max(...customRows.map(r => r.positions || 0), 0);
-  }, [customRows]);
-
-  // Сводка по рядам
   const rowSummaries = useMemo(() => {
     return customRows.map((_, rowIdx) => {
       const plantsInRow = plantPositions.filter(p => p.row === rowIdx);
@@ -98,10 +90,9 @@ export default function RoomMap({ room, onSave, saving }) {
   }, [customRows, plantPositions, flowerStrains]);
 
   const handleApplySetup = (newCustomRows) => {
-    // Очистить позиции которые выходят за пределы новых рядов
     const cleaned = plantPositions.filter(p => {
       if (p.row >= newCustomRows.length) return false;
-      if (p.position >= newCustomRows[p.row].positions) return false;
+      if (p.position >= getRowPositions(newCustomRows[p.row])) return false;
       return true;
     });
     setCustomRows(newCustomRows);
@@ -109,20 +100,18 @@ export default function RoomMap({ room, onSave, saving }) {
     setShowSetup(false);
   };
 
-  // Авто-заполнение: сверху вниз, слева направо (т.к. вертикальное отображение)
   const handleAutoFill = () => {
     const newPositions = [];
     let plantIdx = 0;
     const allPlants = [];
     flowerStrains.forEach(fs => {
       if (!fs.startNumber || !fs.endNumber) return;
-      for (let n = fs.startNumber; n <= fs.endNumber; n++) {
-        allPlants.push(n);
-      }
+      for (let n = fs.startNumber; n <= fs.endNumber; n++) allPlants.push(n);
     });
 
     for (let r = 0; r < customRows.length && plantIdx < allPlants.length; r++) {
-      for (let p = 0; p < customRows[r].positions && plantIdx < allPlants.length; p++) {
+      const total = getRowPositions(customRows[r]);
+      for (let p = 0; p < total && plantIdx < allPlants.length; p++) {
         newPositions.push({ row: r, position: p, plantNumber: allPlants[plantIdx] });
         plantIdx++;
       }
@@ -130,19 +119,16 @@ export default function RoomMap({ room, onSave, saving }) {
     setPlantPositions(newPositions);
   };
 
-  // Очистить все позиции
   const handleClearAll = () => {
     setPlantPositions([]);
     setAssignRowIdx(null);
     setAssignCell(null);
   };
 
-  // Очистить один ряд
   const handleClearRow = (rowIdx) => {
     setPlantPositions(prev => prev.filter(p => p.row !== rowIdx));
   };
 
-  // Назначить ряд целиком одним сортом
   const handleAssignRow = (rowIdx, strainIdx) => {
     const fs = flowerStrains[strainIdx];
     if (!fs || !fs.startNumber) return;
@@ -154,9 +140,9 @@ export default function RoomMap({ room, onSave, saving }) {
       if (!usedInOtherRows.has(n)) available.push(n);
     }
 
-    const rowPositions = customRows[rowIdx]?.positions || 0;
+    const total = getRowPositions(customRows[rowIdx]);
     const newPositions = [...cleaned];
-    for (let p = 0; p < rowPositions && p < available.length; p++) {
+    for (let p = 0; p < total && p < available.length; p++) {
       newPositions.push({ row: rowIdx, position: p, plantNumber: available[p] });
     }
 
@@ -164,7 +150,6 @@ export default function RoomMap({ room, onSave, saving }) {
     setAssignRowIdx(null);
   };
 
-  // Назначить отдельную ячейку конкретным кустом
   const handleAssignCell = (row, position, plantNumber) => {
     let cleaned = plantPositions.filter(p => !(p.row === row && p.position === position));
     cleaned = cleaned.filter(p => p.plantNumber !== plantNumber);
@@ -173,7 +158,6 @@ export default function RoomMap({ room, onSave, saving }) {
     setAssignCell(null);
   };
 
-  // Клик по ячейке
   const handleCellClick = (row, position) => {
     if (!editMode) return;
     const existing = positionMap[`${row}:${position}`];
@@ -185,18 +169,13 @@ export default function RoomMap({ room, onSave, saving }) {
     }
   };
 
-  // Сохранить
   const handleSave = () => {
-    onSave({
-      customRows,
-      plantPositions
-    });
+    onSave({ customRows, plantPositions });
     setEditMode(false);
   };
 
   const hasGrid = customRows.length > 0;
 
-  // Настройка сетки
   if (showSetup || !hasGrid) {
     return (
       <div className="space-y-4">
@@ -215,46 +194,22 @@ export default function RoomMap({ room, onSave, saving }) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h4 className="text-sm font-medium text-white">
           Карта комнаты
-          <span className="text-dark-400 font-normal ml-2">
-            {customRows.length} рядов
-          </span>
+          <span className="text-dark-400 font-normal ml-2">{customRows.length} рядов</span>
         </h4>
         <div className="flex gap-2 flex-wrap">
           {editMode ? (
             <>
-              <button
-                type="button"
-                onClick={handleAutoFill}
+              <button type="button" onClick={handleAutoFill}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition"
-                title="Разместить всех кустов автоматически"
-              >
-                Авто
-              </button>
-              <button
-                type="button"
-                onClick={handleClearAll}
-                className="px-2 py-1 text-xs bg-dark-700 text-red-400 rounded hover:bg-dark-600 transition"
-              >
-                Очистить
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSetup(true)}
-                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition"
-              >
-                Ряды
-              </button>
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="px-3 py-1 text-xs bg-primary-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 transition"
-              >
-                {saving ? '...' : 'Сохранить'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
+                title="Разместить всех кустов автоматически">Авто</button>
+              <button type="button" onClick={handleClearAll}
+                className="px-2 py-1 text-xs bg-dark-700 text-red-400 rounded hover:bg-dark-600 transition">Очистить</button>
+              <button type="button" onClick={() => setShowSetup(true)}
+                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
+              <button type="button" onClick={handleSave} disabled={saving}
+                className="px-3 py-1 text-xs bg-primary-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 transition">
+                {saving ? '...' : 'Сохранить'}</button>
+              <button type="button" onClick={() => {
                   setEditMode(false);
                   const restored = migrateLayout(room.roomLayout);
                   setCustomRows(restored.customRows || []);
@@ -262,90 +217,86 @@ export default function RoomMap({ room, onSave, saving }) {
                   setAssignRowIdx(null);
                   setAssignCell(null);
                 }}
-                className="px-3 py-1 text-xs text-dark-400 hover:bg-dark-700 rounded transition"
-              >
-                Отмена
-              </button>
+                className="px-3 py-1 text-xs text-dark-400 hover:bg-dark-700 rounded transition">Отмена</button>
             </>
           ) : (
             <>
-              <button
-                type="button"
-                onClick={() => setEditMode(true)}
-                className="px-3 py-1 text-xs bg-dark-700 text-white rounded hover:bg-dark-600 transition"
-              >
-                Редактировать
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowSetup(true)}
-                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition"
-              >
-                Ряды
-              </button>
+              <button type="button" onClick={() => setEditMode(true)}
+                className="px-3 py-1 text-xs bg-dark-700 text-white rounded hover:bg-dark-600 transition">Редактировать</button>
+              <button type="button" onClick={() => setShowSetup(true)}
+                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
             </>
           )}
         </div>
       </div>
 
-      {/* Вертикальная карта: ряды как столбцы */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {customRows.map((row, rowIdx) => (
-          <div key={rowIdx} className="flex flex-col items-center gap-1 shrink-0">
-            {/* Заголовок ряда */}
-            <div className="flex items-center gap-1 mb-1">
-              <span className="text-xs text-dark-400 font-medium whitespace-nowrap">
-                {row.name || `Ряд ${rowIdx + 1}`}
-              </span>
-              {editMode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssignRowIdx(assignRowIdx === rowIdx ? null : rowIdx);
-                    setAssignCell(null);
-                  }}
-                  className={`text-[10px] px-1.5 py-0.5 rounded transition ${
-                    assignRowIdx === rowIdx
-                      ? 'bg-primary-600 text-white'
-                      : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
-                  }`}
-                  title="Назначить ряд сортом"
-                >
-                  &#9998;
-                </button>
+      {/* Карта: каждый ряд — столбец, внутри cols × rows сетка */}
+      <div className="flex gap-3 overflow-x-auto pb-2">
+        {customRows.map((row, rowIdx) => {
+          const cols = row.cols || 1;
+          const rowsCount = row.rows || 1;
+          return (
+            <div key={rowIdx} className="flex flex-col items-center shrink-0">
+              {/* Заголовок ряда */}
+              <div className="flex items-center gap-1 mb-1.5">
+                <span className="text-xs text-dark-400 font-medium whitespace-nowrap">
+                  {row.name || `Ряд ${rowIdx + 1}`}
+                </span>
+                {editMode && (
+                  <button type="button"
+                    onClick={() => {
+                      setAssignRowIdx(assignRowIdx === rowIdx ? null : rowIdx);
+                      setAssignCell(null);
+                    }}
+                    className={`text-[10px] px-1.5 py-0.5 rounded transition ${
+                      assignRowIdx === rowIdx
+                        ? 'bg-primary-600 text-white'
+                        : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
+                    }`}
+                    title="Назначить ряд сортом">&#9998;</button>
+                )}
+              </div>
+
+              {/* Размер ряда */}
+              <div className="text-[10px] text-dark-600 mb-1">{cols}×{rowsCount}</div>
+
+              {/* Мини-сетка cols × rows */}
+              <div
+                className="grid gap-1"
+                style={{
+                  gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`
+                }}
+              >
+                {Array.from({ length: rowsCount }, (_, rIdx) =>
+                  Array.from({ length: cols }, (_, cIdx) => {
+                    const posIdx = rIdx * cols + cIdx;
+                    const plantNumber = positionMap[`${rowIdx}:${posIdx}`];
+                    const strain = plantNumber ? getStrainForPlant(plantNumber, flowerStrains) : null;
+                    return (
+                      <PlantCell
+                        key={posIdx}
+                        plantNumber={plantNumber}
+                        strainIndex={strain?.strainIndex}
+                        strainName={strain?.strain}
+                        isEmpty={!plantNumber}
+                        isSelected={assignCell?.row === rowIdx && assignCell?.position === posIdx}
+                        onClick={() => handleCellClick(rowIdx, posIdx)}
+                        compact={cols > 6}
+                      />
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Счётчик */}
+              {!editMode && rowSummaries[rowIdx]?.count > 0 && (
+                <span className="text-[10px] text-dark-500 mt-1">
+                  {rowSummaries[rowIdx].count}/{cols * rowsCount}
+                </span>
               )}
             </div>
-
-            {/* Ячейки вертикально */}
-            <div className="flex flex-col gap-1">
-              {Array.from({ length: row.positions }, (_, posIdx) => {
-                const plantNumber = positionMap[`${rowIdx}:${posIdx}`];
-                const strain = plantNumber ? getStrainForPlant(plantNumber, flowerStrains) : null;
-                return (
-                  <PlantCell
-                    key={posIdx}
-                    plantNumber={plantNumber}
-                    strainIndex={strain?.strainIndex}
-                    strainName={strain?.strain}
-                    isEmpty={!plantNumber}
-                    isSelected={
-                      assignCell?.row === rowIdx && assignCell?.position === posIdx
-                    }
-                    onClick={() => handleCellClick(rowIdx, posIdx)}
-                    compact={customRows.length > 8}
-                  />
-                );
-              })}
-            </div>
-
-            {/* Счётчик под рядом */}
-            {!editMode && rowSummaries[rowIdx]?.count > 0 && (
-              <span className="text-[10px] text-dark-500 mt-1">
-                {rowSummaries[rowIdx].count}шт
-              </span>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Панель назначения ряда */}
@@ -355,24 +306,16 @@ export default function RoomMap({ room, onSave, saving }) {
             <span className="text-xs text-dark-300">
               Назначить «{customRows[assignRowIdx]?.name || `Ряд ${assignRowIdx + 1}`}» сортом:
             </span>
-            <button
-              type="button"
-              onClick={() => handleClearRow(assignRowIdx)}
-              className="text-xs text-red-400 hover:text-red-300"
-            >
-              Очистить ряд
-            </button>
+            <button type="button" onClick={() => handleClearRow(assignRowIdx)}
+              className="text-xs text-red-400 hover:text-red-300">Очистить ряд</button>
           </div>
           <div className="flex flex-wrap gap-2">
             {flowerStrains.map((fs, idx) => {
               const color = STRAIN_COLORS[idx % STRAIN_COLORS.length];
               return (
-                <button
-                  key={idx}
-                  type="button"
+                <button key={idx} type="button"
                   onClick={() => handleAssignRow(assignRowIdx, idx)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition hover:brightness-125 ${color.bg} ${color.border} ${color.text}`}
-                >
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition hover:brightness-125 ${color.bg} ${color.border} ${color.text}`}>
                   {fs.strain || `Сорт ${idx + 1}`} ({fs.quantity})
                 </button>
               );
@@ -388,13 +331,8 @@ export default function RoomMap({ room, onSave, saving }) {
             <span className="text-xs text-dark-300">
               {customRows[assignCell.row]?.name || `Ряд ${assignCell.row + 1}`}, позиция {assignCell.position + 1}
             </span>
-            <button
-              type="button"
-              onClick={() => setAssignCell(null)}
-              className="text-xs text-dark-500 hover:text-dark-300"
-            >
-              Закрыть
-            </button>
+            <button type="button" onClick={() => setAssignCell(null)}
+              className="text-xs text-dark-500 hover:text-dark-300">Закрыть</button>
           </div>
           <div className="space-y-2 max-h-40 overflow-y-auto">
             {flowerStrains.map((fs, strIdx) => {
@@ -411,12 +349,9 @@ export default function RoomMap({ room, onSave, saving }) {
                   <div className={`text-xs font-medium mb-1 ${color.text}`}>{fs.strain || `Сорт ${strIdx + 1}`}</div>
                   <div className="flex flex-wrap gap-1">
                     {unplaced.map(n => (
-                      <button
-                        key={n}
-                        type="button"
+                      <button key={n} type="button"
                         onClick={() => handleAssignCell(assignCell.row, assignCell.position, n)}
-                        className={`w-8 h-8 text-xs rounded border ${color.bg} ${color.border} ${color.text} hover:brightness-125 transition`}
-                      >
+                        className={`w-8 h-8 text-xs rounded border ${color.bg} ${color.border} ${color.text} hover:brightness-125 transition`}>
                         {n}
                       </button>
                     ))}
@@ -455,7 +390,7 @@ export default function RoomMap({ room, onSave, saving }) {
         </div>
       )}
 
-      {/* Сводка по рядам (режим просмотра) */}
+      {/* Сводка по рядам */}
       {!editMode && plantPositions.length > 0 && (
         <div className="space-y-1">
           <div className="text-xs text-dark-500 mb-1">По рядам:</div>
