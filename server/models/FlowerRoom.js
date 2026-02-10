@@ -111,11 +111,12 @@ const flowerRoomSchema = new mongoose.Schema({
     exhaustType: { type: String, default: '' },
     co2: { type: Boolean, default: false }
   },
-  // Карта комнаты (кастомные ряды с разным кол-вом позиций)
+  // Карта комнаты (кастомные ряды, каждый с cols × rows сеткой)
   roomLayout: {
     customRows: [{
       name: { type: String, default: '' },
-      positions: { type: Number, default: 10, min: 1 }
+      cols: { type: Number, default: 4, min: 1 },
+      rows: { type: Number, default: 1, min: 1 }
     }],
     plantPositions: [{
       row: { type: Number, required: true },

@@ -3,11 +3,15 @@ import { useState } from 'react';
 export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
   const [customRows, setCustomRows] = useState(
     currentRows && currentRows.length > 0
-      ? currentRows.map(r => ({ name: r.name || '', positions: r.positions || 10 }))
-      : [{ name: 'Ряд 1', positions: 10 }]
+      ? currentRows.map(r => ({
+          name: r.name || '',
+          cols: r.cols || r.positions || 4,
+          rows: r.rows || 1
+        }))
+      : [{ name: 'Ряд 1', cols: 4, rows: 1 }]
   );
 
-  const totalPositions = customRows.reduce((sum, r) => sum + (r.positions || 0), 0);
+  const totalPositions = customRows.reduce((sum, r) => sum + (r.cols || 1) * (r.rows || 1), 0);
   const diff = totalPositions - (plantsCount || 0);
 
   const updateRow = (idx, field, value) => {
@@ -19,7 +23,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
   };
 
   const addRow = () => {
-    setCustomRows(prev => [...prev, { name: `Ряд ${prev.length + 1}`, positions: 10 }]);
+    setCustomRows(prev => [...prev, { name: `Ряд ${prev.length + 1}`, cols: 4, rows: 1 }]);
   };
 
   const removeRow = (idx) => {
@@ -32,38 +36,58 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
       <h3 className="text-white font-semibold text-sm mb-3">Настройка рядов комнаты</h3>
 
       <div className="space-y-2 mb-3">
-        {customRows.map((row, idx) => (
-          <div key={idx} className="flex items-center gap-2">
-            <input
-              type="text"
-              value={row.name}
-              onChange={(e) => updateRow(idx, 'name', e.target.value)}
-              placeholder={`Ряд ${idx + 1}`}
-              className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-white text-sm"
-            />
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                min={1}
-                max={50}
-                value={row.positions}
-                onChange={(e) => updateRow(idx, 'positions', Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
-                className="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-white text-sm text-center"
-              />
-              <span className="text-dark-500 text-xs">мест</span>
+        {customRows.map((row, idx) => {
+          const positions = (row.cols || 1) * (row.rows || 1);
+          return (
+            <div key={idx} className="bg-dark-700/30 rounded-lg p-2.5 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={row.name}
+                  onChange={(e) => updateRow(idx, 'name', e.target.value)}
+                  placeholder={`Ряд ${idx + 1}`}
+                  className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-white text-sm"
+                />
+                {customRows.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => removeRow(idx)}
+                    className="text-dark-500 hover:text-red-400 text-lg leading-none px-1 shrink-0"
+                    title="Удалить ряд"
+                  >
+                    &#10005;
+                  </button>
+                )}
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={row.cols}
+                    onChange={(e) => updateRow(idx, 'cols', Math.max(1, Math.min(30, parseInt(e.target.value) || 1)))}
+                    className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
+                  />
+                  <span className="text-dark-500">по горизонтали</span>
+                </div>
+                <span className="text-dark-600">×</span>
+                <div className="flex items-center gap-1">
+                  <input
+                    type="number"
+                    min={1}
+                    max={20}
+                    value={row.rows}
+                    onChange={(e) => updateRow(idx, 'rows', Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                    className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
+                  />
+                  <span className="text-dark-500">по вертикали</span>
+                </div>
+                <span className="text-dark-400 ml-auto">= <span className="text-white font-medium">{positions}</span> мест</span>
+              </div>
             </div>
-            {customRows.length > 1 && (
-              <button
-                type="button"
-                onClick={() => removeRow(idx)}
-                className="text-dark-500 hover:text-red-400 text-lg leading-none px-1 shrink-0"
-                title="Удалить ряд"
-              >
-                &#10005;
-              </button>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <button
