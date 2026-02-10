@@ -39,53 +39,87 @@ function migrateLayout(layout) {
   return { customRows: [], plantPositions: [], fillDirection: 'topDown' };
 }
 
-// PDF export
+// PDF export — Cyrillic font, auto-fit to one page
 async function exportToPDF(room, customRows, plantPositions, flowerStrains) {
-  const { jsPDF } = await import('jspdf');
+  const [{ jsPDF }, { RobotoRegular }, { RobotoBold }] = await Promise.all([
+    import('jspdf'),
+    import('../../fonts/Roboto-Regular'),
+    import('../../fonts/Roboto-Bold')
+  ]);
+
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
 
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
-  const margin = 10;
+  // Регистрация Cyrillic шрифтов
+  doc.addFileToVFS('Roboto-Regular.ttf', RobotoRegular);
+  doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+  doc.addFileToVFS('Roboto-Bold.ttf', RobotoBold);
+  doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
+  doc.setFont('Roboto', 'normal');
 
-  // Заголовок
-  doc.setFontSize(16);
-  doc.setTextColor(30, 30, 30);
-  doc.text(`${room.name || 'Комната'} — Карта`, margin, margin + 6);
+  const pageW = doc.internal.pageSize.getWidth();   // 297
+  const pageH = doc.internal.pageSize.getHeight();   // 210
+  const margin = 8;
 
-  // Подзаголовок: цикл
-  doc.setFontSize(9);
-  doc.setTextColor(120, 120, 120);
-  const cycleName = room.cycleName || '';
   const dateStr = new Date().toLocaleDateString('ru-RU');
-  doc.text(`${cycleName ? cycleName + ' | ' : ''}${dateStr}`, margin, margin + 12);
+  const cycleName = room.cycleName || '';
 
-  // Легенда сортов
-  let legendY = margin + 18;
+  // === Шапка ===
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(14);
+  doc.setTextColor(30, 30, 30);
+  doc.text(`${room.name || 'Room'} - Карта`, margin, margin + 5);
+
+  doc.setFont('Roboto', 'normal');
   doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.text(`${cycleName ? cycleName + ' | ' : ''}${dateStr}`, margin, margin + 10);
+
+  // === Легенда сортов (горизонтально) ===
+  let legendX = margin;
+  const legendY = margin + 15;
+  doc.setFontSize(7);
   flowerStrains.forEach((fs, idx) => {
     const color = STRAIN_COLORS[idx % STRAIN_COLORS.length];
     const [r, g, b] = hexToRgb(color.hex);
     doc.setFillColor(r, g, b);
-    doc.circle(margin + 2, legendY + 1.5, 1.5, 'F');
+    doc.circle(legendX + 1.5, legendY, 1.5, 'F');
     doc.setTextColor(60, 60, 60);
+    doc.setFont('Roboto', 'normal');
     const placed = plantPositions.filter(p => {
       const s = getStrainForPlant(p.plantNumber, flowerStrains);
       return s?.strainIndex === idx;
     }).length;
-    doc.text(`${fs.strain || 'Сорт ' + (idx + 1)} (${placed}/${fs.quantity})`, margin + 6, legendY + 2.5);
-    legendY += 5;
+    const label = `${fs.strain || 'S' + (idx + 1)} (${placed}/${fs.quantity})`;
+    doc.text(label, legendX + 4, legendY + 1);
+    legendX += doc.getTextWidth(label) + 8;
   });
 
-  // Построить карту позиций
+  // === Рассчитываем размер ячеек чтобы влезло на страницу ===
+  const gridStartY = legendY + 8;
+  const footerH = 8;
+  const availW = pageW - margin * 2;
+  const availH = pageH - gridStartY - footerH;
+
+  // Максимальное кол-во столбцов (суммарно по всем рядам + промежутки)
+  const maxRowHeight = Math.max(...customRows.map(r => r.rows || 1));
+  const totalCols = customRows.reduce((s, r) => s + (r.cols || 1), 0);
+  const gaps = customRows.length - 1;
+
+  // Подобрать размер ячейки
+  const gapSize = 3;
+  const cellGap = 1;
+  const maxCellW = (availW - gaps * gapSize) / (totalCols + gaps * 0.3);
+  const maxCellH = (availH - 6) / (maxRowHeight + 0.5); // +0.5 для заголовка ряда
+  let cellSize = Math.min(maxCellW, maxCellH, 12); // макс 12мм
+  cellSize = Math.max(cellSize, 4); // мин 4мм
+
+  const showStrainName = cellSize >= 8;
+  const numFontSize = Math.max(Math.min(cellSize * 0.55, 8), 3.5);
+  const nameFontSize = Math.max(cellSize * 0.3, 2.5);
+
+  // === Карта позиций ===
   const posMap = {};
   plantPositions.forEach(p => { posMap[`${p.row}:${p.position}`] = p.plantNumber; });
-
-  // Размеры ячеек
-  const cellSize = 10;
-  const cellGap = 1.5;
-  const rowGap = 6;
-  const startY = legendY + 6;
 
   let curX = margin;
 
@@ -94,24 +128,21 @@ async function exportToPDF(room, customRows, plantPositions, flowerStrains) {
     const rowsCount = row.rows || 1;
     const blockW = cols * (cellSize + cellGap) - cellGap;
 
-    // Проверяем место, делаем новую страницу если нужно
-    if (curX + blockW + margin > pageW) {
-      doc.addPage();
-      curX = margin;
-    }
-
     // Имя ряда
-    doc.setFontSize(8);
+    doc.setFont('Roboto', 'bold');
+    doc.setFontSize(Math.min(numFontSize, 7));
     doc.setTextColor(80, 80, 80);
-    doc.text(row.name || `Ряд ${rowIdx + 1}`, curX, startY - 2);
+    const rowLabel = row.name || `R${rowIdx + 1}`;
+    doc.text(rowLabel, curX + blockW / 2, gridStartY - 1, { align: 'center' });
 
     // Ячейки
+    doc.setFont('Roboto', 'normal');
     for (let rIdx = 0; rIdx < rowsCount; rIdx++) {
       for (let cIdx = 0; cIdx < cols; cIdx++) {
         const posIdx = rIdx * cols + cIdx;
         const plantNumber = posMap[`${rowIdx}:${posIdx}`];
         const x = curX + cIdx * (cellSize + cellGap);
-        const y = startY + rIdx * (cellSize + cellGap);
+        const y = gridStartY + rIdx * (cellSize + cellGap);
 
         if (plantNumber) {
           const strain = getStrainForPlant(plantNumber, flowerStrains);
@@ -119,47 +150,53 @@ async function exportToPDF(room, customRows, plantPositions, flowerStrains) {
           const color = STRAIN_COLORS[colorIdx % STRAIN_COLORS.length];
           const [r, g, b] = hexToRgb(color.hex);
 
-          // Цветной фон
-          doc.setFillColor(r, g, b, 0.25);
+          // Фон с лёгкой прозрачностью
+          doc.setFillColor(
+            Math.min(r + 180, 255),
+            Math.min(g + 180, 255),
+            Math.min(b + 180, 255)
+          );
           doc.setDrawColor(r, g, b);
-          doc.setLineWidth(0.4);
-          doc.roundedRect(x, y, cellSize, cellSize, 1, 1, 'FD');
+          doc.setLineWidth(0.3);
+          doc.roundedRect(x, y, cellSize, cellSize, 0.8, 0.8, 'FD');
 
-          // Номер куста
-          doc.setFontSize(7);
+          // Номер
+          doc.setFontSize(numFontSize);
+          doc.setFont('Roboto', 'bold');
           doc.setTextColor(r, g, b);
-          doc.text(String(plantNumber), x + cellSize / 2, y + cellSize / 2 + 1, { align: 'center' });
+          doc.text(String(plantNumber), x + cellSize / 2, y + cellSize / 2 + numFontSize * 0.12, { align: 'center' });
 
-          // Имя сорта маленькое
-          if (strain?.strain) {
-            doc.setFontSize(4);
-            doc.setTextColor(130, 130, 130);
-            const shortName = strain.strain.length > 6 ? strain.strain.slice(0, 6) : strain.strain;
-            doc.text(shortName, x + cellSize / 2, y + cellSize - 1.5, { align: 'center' });
+          // Имя сорта
+          if (showStrainName && strain?.strain) {
+            doc.setFont('Roboto', 'normal');
+            doc.setFontSize(nameFontSize);
+            doc.setTextColor(100, 100, 100);
+            const short = strain.strain.length > 6 ? strain.strain.slice(0, 6) : strain.strain;
+            doc.text(short, x + cellSize / 2, y + cellSize - nameFontSize * 0.3, { align: 'center' });
           }
         } else {
-          // Пустая ячейка
-          doc.setFillColor(245, 245, 245);
-          doc.setDrawColor(200, 200, 200);
-          doc.setLineWidth(0.2);
-          doc.roundedRect(x, y, cellSize, cellSize, 1, 1, 'FD');
-          doc.setFontSize(6);
-          doc.setTextColor(180, 180, 180);
-          doc.text('—', x + cellSize / 2, y + cellSize / 2 + 1, { align: 'center' });
+          // Пустая
+          doc.setFillColor(248, 248, 248);
+          doc.setDrawColor(210, 210, 210);
+          doc.setLineWidth(0.15);
+          doc.roundedRect(x, y, cellSize, cellSize, 0.8, 0.8, 'FD');
         }
       }
     }
 
-    curX += blockW + rowGap;
+    curX += blockW + gapSize;
   });
 
-  // Итого
+  // === Футер ===
   const totalPlaced = plantPositions.length;
   const totalSpots = customRows.reduce((s, r) => s + getRowPositions(r), 0);
-  doc.setFontSize(8);
-  doc.setTextColor(100, 100, 100);
-  const footY = pageH - margin;
-  doc.text(`Размещено: ${totalPlaced} из ${getTotalPlants(flowerStrains)} кустов | Всего мест: ${totalSpots}`, margin, footY);
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(140, 140, 140);
+  doc.text(
+    `Размещено: ${totalPlaced} из ${getTotalPlants(flowerStrains)} | Мест: ${totalSpots} | ${dateStr}`,
+    margin, pageH - margin + 2
+  );
 
   doc.save(`${room.name || 'room'}-map-${dateStr}.pdf`);
 }
