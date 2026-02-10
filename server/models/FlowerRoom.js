@@ -116,7 +116,8 @@ const flowerRoomSchema = new mongoose.Schema({
     customRows: [{
       name: { type: String, default: '' },
       cols: { type: Number, default: 4, min: 1 },
-      rows: { type: Number, default: 1, min: 1 }
+      rows: { type: Number, default: 1, min: 1 },
+      fillDirection: { type: String, enum: ['topDown', 'bottomUp'], default: 'topDown' }
     }],
     plantPositions: [{
       row: { type: Number, required: true },
