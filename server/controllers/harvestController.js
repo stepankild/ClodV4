@@ -369,6 +369,10 @@ export const completeSession = async (req, res) => {
       room.isActive = false;
       room.currentCycleId = null;
       room.totalCycles = (room.totalCycles || 0) + 1;
+      // Очистить позиции кустов (сетка остаётся)
+      if (room.roomLayout) {
+        room.roomLayout.plantPositions = [];
+      }
       await room.save();
 
       await createAuditLog(req, {

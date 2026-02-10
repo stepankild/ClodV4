@@ -387,6 +387,10 @@ export const harvestAndArchive = async (req, res) => {
     room.isActive = false;
     room.currentCycleId = null;
     room.totalCycles += 1;
+    // Очистить позиции кустов (сетка остаётся)
+    if (room.roomLayout) {
+      room.roomLayout.plantPositions = [];
+    }
 
     await room.save();
 

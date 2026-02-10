@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
+import RoomMap from '../../components/RoomMap/RoomMap';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -23,6 +24,7 @@ export default function ActiveRooms() {
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [startMode, setStartMode] = useState(false);
+  const [mapMode, setMapMode] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const [editForm, setEditForm] = useState({
@@ -126,6 +128,7 @@ export default function ActiveRooms() {
     setSelectedRoom(room);
     setEditMode(false);
     setStartMode(false);
+    setMapMode(false);
     setSettingsMode(false);
     setSprayFormOpen(false);
     setSprayProduct('');
@@ -141,6 +144,7 @@ export default function ActiveRooms() {
     setSelectedRoom(null);
     setEditMode(false);
     setStartMode(false);
+    setMapMode(false);
     setSettingsMode(false);
     setRoomTasks([]);
   };
@@ -189,6 +193,21 @@ export default function ActiveRooms() {
       await refreshSelectedRoom();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка сохранения настроек');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleMapSave = async (layoutData) => {
+    if (!selectedRoom) return;
+    setSaving(true);
+    try {
+      await roomService.updateRoom(selectedRoom._id, {
+        roomLayout: layoutData
+      });
+      await refreshSelectedRoom();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка сохранения карты');
     } finally {
       setSaving(false);
     }
@@ -624,7 +643,7 @@ export default function ActiveRooms() {
       {selectedRoom && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={closeRoom}>
           <div
-            className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
+            className={`bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-h-[90vh] overflow-y-auto ${mapMode ? 'max-w-3xl' : 'max-w-lg'}`}
             onClick={e => e.stopPropagation()}
           >
             <div className="p-6">
@@ -917,8 +936,28 @@ export default function ActiveRooms() {
                 </div>
               )}
 
+              {/* Карта комнаты */}
+              {mapMode && selectedRoom.isActive && (
+                <div className="space-y-3">
+                  <RoomMap
+                    room={selectedRoom}
+                    onSave={handleMapSave}
+                    saving={saving}
+                  />
+                  <div className="pt-2 border-t border-dark-700">
+                    <button
+                      type="button"
+                      onClick={() => setMapMode(false)}
+                      className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg transition text-sm"
+                    >
+                      Назад
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Просмотр информации */}
-              {!editMode && !startMode && !settingsMode && (
+              {!editMode && !startMode && !settingsMode && !mapMode && (
                 <>
                   {selectedRoom.isActive ? (
                     <div className="space-y-4">
@@ -1315,6 +1354,12 @@ export default function ActiveRooms() {
                           className="px-4 py-2 bg-dark-700 text-white rounded-lg hover:bg-dark-600 transition"
                         >
                           Редактировать
+                        </button>
+                        <button
+                          onClick={() => { setMapMode(true); setEditMode(false); setSettingsMode(false); }}
+                          className="px-4 py-2 bg-dark-700 text-white rounded-lg hover:bg-dark-600 transition"
+                        >
+                          Карта
                         </button>
                       </div>
                     </div>
