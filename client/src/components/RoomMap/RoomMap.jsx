@@ -20,6 +20,13 @@ function getRowPositions(row) {
   return (row.cols || 1) * (row.rows || 1);
 }
 
+// Пересчёт позиции для bottomUp: зеркалит по вертикали (нижняя строка первая), горизонталь не трогает
+function flipPositionVertically(pos, cols, rowsCount) {
+  const rIdx = Math.floor(pos / cols);
+  const cIdx = pos % cols;
+  return (rowsCount - 1 - rIdx) * cols + cIdx;
+}
+
 function migrateLayout(layout) {
   if (!layout) return { customRows: [], plantPositions: [], fillDirection: 'topDown' };
   const globalDir = layout.fillDirection || 'topDown';
@@ -286,9 +293,11 @@ export default function RoomMap({ room, onSave, saving }) {
     for (let r = 0; r < customRows.length; r++) {
       if (plantIdx >= allPlants.length) break;
       const total = getRowPositions(customRows[r]);
+      const cols = customRows[r].cols || 1;
+      const rowsCount = customRows[r].rows || 1;
       const isBottomUp = customRows[r].fillDirection === 'bottomUp';
       for (let p = 0; p < total && plantIdx < allPlants.length; p++) {
-        const pos = isBottomUp ? (total - 1 - p) : p;
+        const pos = isBottomUp ? flipPositionVertically(p, cols, rowsCount) : p;
         newPositions.push({ row: r, position: pos, plantNumber: allPlants[plantIdx] });
         plantIdx++;
       }
@@ -306,14 +315,15 @@ export default function RoomMap({ room, onSave, saving }) {
     setPlantPositions(prev => prev.filter(p => p.row !== rowIdx));
   };
 
-  // Переключить направление ряда + зеркально переставить кусты в нём
+  // Переключить направление ряда + зеркально переставить кусты по вертикали
   const handleToggleRowDirection = (rowIdx) => {
-    const total = getRowPositions(customRows[rowIdx]);
+    const cols = customRows[rowIdx].cols || 1;
+    const rowsCount = customRows[rowIdx].rows || 1;
     setCustomRows(prev => prev.map((r, i) =>
       i === rowIdx ? { ...r, fillDirection: r.fillDirection === 'bottomUp' ? 'topDown' : 'bottomUp' } : r
     ));
     setPlantPositions(prev => prev.map(p =>
-      p.row === rowIdx ? { ...p, position: total - 1 - p.position } : p
+      p.row === rowIdx ? { ...p, position: flipPositionVertically(p.position, cols, rowsCount) } : p
     ));
   };
 
@@ -329,10 +339,12 @@ export default function RoomMap({ room, onSave, saving }) {
     }
 
     const total = getRowPositions(customRows[rowIdx]);
+    const cols = customRows[rowIdx].cols || 1;
+    const rowsCount = customRows[rowIdx].rows || 1;
     const isBottomUp = customRows[rowIdx].fillDirection === 'bottomUp';
     const newPositions = [...cleaned];
     for (let p = 0; p < total && p < available.length; p++) {
-      const pos = isBottomUp ? (total - 1 - p) : p;
+      const pos = isBottomUp ? flipPositionVertically(p, cols, rowsCount) : p;
       newPositions.push({ row: rowIdx, position: pos, plantNumber: available[p] });
     }
 
