@@ -347,12 +347,16 @@ export default function RoomMap({ room, onSave, saving }) {
     setEditMode(false);
   };
 
+  const [pdfError, setPdfError] = useState('');
+
   const handleExportPDF = async () => {
     setExporting(true);
+    setPdfError('');
     try {
       await exportToPDF(room, customRows, plantPositions, flowerStrains);
     } catch (e) {
       console.error('PDF export error:', e);
+      setPdfError(e.message || 'Ошибка экспорта PDF');
     } finally {
       setExporting(false);
     }
@@ -433,6 +437,14 @@ export default function RoomMap({ room, onSave, saving }) {
           )}
         </div>
       </div>
+
+      {/* Ошибка PDF */}
+      {pdfError && (
+        <div className="bg-red-900/30 border border-red-800 text-red-400 px-3 py-2 rounded-lg text-xs flex items-center justify-between">
+          <span>{pdfError}</span>
+          <button type="button" onClick={() => setPdfError('')} className="text-red-500 hover:text-red-300 ml-2">✕</button>
+        </div>
+      )}
 
       {/* Направление заполнения (инфо) */}
       {editMode && (
