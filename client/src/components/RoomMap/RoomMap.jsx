@@ -22,17 +22,18 @@ function getRowPositions(row) {
 
 function migrateLayout(layout) {
   if (!layout) return { customRows: [], plantPositions: [], fillDirection: 'topDown' };
+  const globalDir = layout.fillDirection || 'topDown';
   if (layout.customRows && layout.customRows.length > 0) {
     const migrated = layout.customRows.map(r => {
-      if (r.cols) return r;
-      return { name: r.name || '', cols: r.positions || 4, rows: 1 };
+      if (r.cols) return { ...r, fillDirection: r.fillDirection || globalDir };
+      return { name: r.name || '', cols: r.positions || 4, rows: 1, fillDirection: globalDir };
     });
-    return { customRows: migrated, plantPositions: layout.plantPositions || [], fillDirection: layout.fillDirection || 'topDown' };
+    return { customRows: migrated, plantPositions: layout.plantPositions || [], fillDirection: globalDir };
   }
   if (layout.rows > 0 && layout.positionsPerRow > 0) {
     const customRows = [];
     for (let i = 0; i < layout.rows; i++) {
-      customRows.push({ name: `Ряд ${i + 1}`, cols: layout.positionsPerRow, rows: 1 });
+      customRows.push({ name: `Ряд ${i + 1}`, cols: layout.positionsPerRow, rows: 1, fillDirection: 'topDown' });
     }
     return { customRows, plantPositions: layout.plantPositions || [], fillDirection: 'topDown' };
   }
@@ -213,14 +214,19 @@ export default function RoomMap({ room, onSave, saving }) {
   const flowerStrains = room.flowerStrains || [];
   const totalPlants = getTotalPlants(flowerStrains);
 
-  const [customRows, setCustomRows] = useState(layout.customRows || []);
+  const [customRows, setCustomRows] = useState(
+    (layout.customRows || []).map(r => ({
+      ...r,
+      fillDirection: r.fillDirection || layout.fillDirection || 'topDown'
+    }))
+  );
   const [plantPositions, setPlantPositions] = useState(layout.plantPositions || []);
-  const [fillDirection, setFillDirection] = useState(layout.fillDirection || 'topDown');
   const [editMode, setEditMode] = useState(false);
   const [showSetup, setShowSetup] = useState(customRows.length === 0);
   const [assignRowIdx, setAssignRowIdx] = useState(null);
   const [assignCell, setAssignCell] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const positionMap = useMemo(() => {
     const m = {};
@@ -267,7 +273,7 @@ export default function RoomMap({ room, onSave, saving }) {
     setShowSetup(false);
   };
 
-  // Авто-заполнение с учётом направления
+  // Авто-заполнение с учётом направления каждого ряда
   const handleAutoFill = () => {
     const newPositions = [];
     let plantIdx = 0;
@@ -277,15 +283,13 @@ export default function RoomMap({ room, onSave, saving }) {
       for (let n = fs.startNumber; n <= fs.endNumber; n++) allPlants.push(n);
     });
 
-    const rowOrder = fillDirection === 'bottomUp'
-      ? [...Array(customRows.length).keys()].reverse()
-      : [...Array(customRows.length).keys()];
-
-    for (const r of rowOrder) {
+    for (let r = 0; r < customRows.length; r++) {
       if (plantIdx >= allPlants.length) break;
       const total = getRowPositions(customRows[r]);
+      const isBottomUp = customRows[r].fillDirection === 'bottomUp';
       for (let p = 0; p < total && plantIdx < allPlants.length; p++) {
-        newPositions.push({ row: r, position: p, plantNumber: allPlants[plantIdx] });
+        const pos = isBottomUp ? (total - 1 - p) : p;
+        newPositions.push({ row: r, position: pos, plantNumber: allPlants[plantIdx] });
         plantIdx++;
       }
     }
@@ -342,9 +346,11 @@ export default function RoomMap({ room, onSave, saving }) {
     }
   };
 
-  const handleSave = () => {
-    onSave({ customRows, plantPositions, fillDirection });
+  const handleSave = async () => {
+    await onSave({ customRows, plantPositions });
     setEditMode(false);
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
   };
 
   const [pdfError, setPdfError] = useState('');
@@ -376,11 +382,6 @@ export default function RoomMap({ room, onSave, saving }) {
     );
   }
 
-  // Порядок рядов для отрисовки (визуально)
-  const displayRowOrder = fillDirection === 'bottomUp'
-    ? [...Array(customRows.length).keys()].reverse()
-    : [...Array(customRows.length).keys()];
-
   return (
     <div className="space-y-4">
       {/* Заголовок + кнопки */}
@@ -400,23 +401,17 @@ export default function RoomMap({ room, onSave, saving }) {
               <button type="button" onClick={() => setShowSetup(true)}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
 
-              {/* Направление нумерации */}
-              <button type="button"
-                onClick={() => setFillDirection(d => d === 'topDown' ? 'bottomUp' : 'topDown')}
-                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition"
-                title={fillDirection === 'topDown' ? 'Сверху вниз' : 'Снизу вверх'}>
-                {fillDirection === 'topDown' ? '↓' : '↑'}
-              </button>
-
               <button type="button" onClick={handleSave} disabled={saving}
                 className="px-3 py-1 text-xs bg-primary-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 transition">
                 {saving ? '...' : 'Сохранить'}</button>
               <button type="button" onClick={() => {
                   setEditMode(false);
                   const restored = migrateLayout(room.roomLayout);
-                  setCustomRows(restored.customRows || []);
+                  setCustomRows((restored.customRows || []).map(r => ({
+                    ...r,
+                    fillDirection: r.fillDirection || restored.fillDirection || 'topDown'
+                  })));
                   setPlantPositions(restored.plantPositions || []);
-                  setFillDirection(restored.fillDirection || 'topDown');
                   setAssignRowIdx(null);
                   setAssignCell(null);
                 }}
@@ -438,6 +433,14 @@ export default function RoomMap({ room, onSave, saving }) {
         </div>
       </div>
 
+      {/* Успешное сохранение */}
+      {saveSuccess && (
+        <div className="bg-green-900/30 border border-green-800 text-green-400 px-3 py-2 rounded-lg text-xs flex items-center justify-between">
+          <span>Карта сохранена!</span>
+          <button type="button" onClick={() => setSaveSuccess(false)} className="text-green-500 hover:text-green-300 ml-2">✕</button>
+        </div>
+      )}
+
       {/* Ошибка PDF */}
       {pdfError && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-3 py-2 rounded-lg text-xs flex items-center justify-between">
@@ -446,19 +449,18 @@ export default function RoomMap({ room, onSave, saving }) {
         </div>
       )}
 
-      {/* Направление заполнения (инфо) */}
-      {editMode && (
-        <div className="text-[10px] text-dark-500">
-          Нумерация: {fillDirection === 'topDown' ? 'сверху вниз ↓' : 'снизу вверх ↑'}
-        </div>
-      )}
-
       {/* Карта: каждый ряд — столбец, внутри cols × rows сетка */}
       <div className="flex gap-3 overflow-x-auto pb-2">
-        {displayRowOrder.map(rowIdx => {
-          const row = customRows[rowIdx];
+        {customRows.map((row, rowIdx) => {
           const cols = row.cols || 1;
           const rowsCount = row.rows || 1;
+          const isBottomUp = row.fillDirection === 'bottomUp';
+
+          // Порядок строк внутри ряда: при bottomUp визуально переворачиваем
+          const verticalOrder = isBottomUp
+            ? [...Array(rowsCount).keys()].reverse()
+            : [...Array(rowsCount).keys()];
+
           return (
             <div key={rowIdx} className="flex flex-col items-center shrink-0">
               {/* Заголовок ряда */}
@@ -467,26 +469,45 @@ export default function RoomMap({ room, onSave, saving }) {
                   {row.name || `Ряд ${rowIdx + 1}`}
                 </span>
                 {editMode && (
-                  <button type="button"
-                    onClick={() => {
-                      setAssignRowIdx(assignRowIdx === rowIdx ? null : rowIdx);
-                      setAssignCell(null);
-                    }}
-                    className={`text-[10px] px-1.5 py-0.5 rounded transition ${
-                      assignRowIdx === rowIdx
-                        ? 'bg-primary-600 text-white'
-                        : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
-                    }`}
-                    title="Назначить ряд сортом">&#9998;</button>
+                  <>
+                    <button type="button"
+                      onClick={() => {
+                        setAssignRowIdx(assignRowIdx === rowIdx ? null : rowIdx);
+                        setAssignCell(null);
+                      }}
+                      className={`text-[10px] px-1.5 py-0.5 rounded transition ${
+                        assignRowIdx === rowIdx
+                          ? 'bg-primary-600 text-white'
+                          : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
+                      }`}
+                      title="Назначить ряд сортом">&#9998;</button>
+                    <button type="button"
+                      onClick={() => {
+                        setCustomRows(prev => prev.map((r, i) =>
+                          i === rowIdx ? { ...r, fillDirection: r.fillDirection === 'bottomUp' ? 'topDown' : 'bottomUp' } : r
+                        ));
+                      }}
+                      className={`text-[10px] px-1 py-0.5 rounded transition ${
+                        isBottomUp
+                          ? 'bg-primary-600/30 text-primary-400'
+                          : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
+                      }`}
+                      title={isBottomUp ? 'Снизу вверх' : 'Сверху вниз'}>
+                      {isBottomUp ? '↑' : '↓'}
+                    </button>
+                  </>
                 )}
               </div>
 
-              {/* Размер */}
-              <div className="text-[10px] text-dark-600 mb-1">{cols}×{rowsCount}</div>
+              {/* Размер + направление */}
+              <div className="text-[10px] text-dark-600 mb-1">
+                {cols}×{rowsCount}
+                {isBottomUp && <span className="text-primary-500 ml-1">↑</span>}
+              </div>
 
               {/* Мини-сетка */}
               <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                {Array.from({ length: rowsCount }, (_, rIdx) =>
+                {verticalOrder.map(rIdx =>
                   Array.from({ length: cols }, (_, cIdx) => {
                     const posIdx = rIdx * cols + cIdx;
                     const plantNumber = positionMap[`${rowIdx}:${posIdx}`];

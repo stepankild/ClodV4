@@ -6,9 +6,10 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
       ? currentRows.map(r => ({
           name: r.name || '',
           cols: r.cols || r.positions || 4,
-          rows: r.rows || 1
+          rows: r.rows || 1,
+          fillDirection: r.fillDirection || 'topDown'
         }))
-      : [{ name: 'Ряд 1', cols: 4, rows: 1 }]
+      : [{ name: 'Ряд 1', cols: 4, rows: 1, fillDirection: 'topDown' }]
   );
 
   const totalPositions = customRows.reduce((sum, r) => sum + (r.cols || 1) * (r.rows || 1), 0);
@@ -23,7 +24,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
   };
 
   const addRow = () => {
-    setCustomRows(prev => [...prev, { name: `Ряд ${prev.length + 1}`, cols: 4, rows: 1 }]);
+    setCustomRows(prev => [...prev, { name: `Ряд ${prev.length + 1}`, cols: 4, rows: 1, fillDirection: 'topDown' }]);
   };
 
   const removeRow = (idx) => {
@@ -84,6 +85,20 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
                   <span className="text-dark-500">по вертикали</span>
                 </div>
                 <span className="text-dark-400 ml-auto">= <span className="text-white font-medium">{positions}</span> мест</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="text-dark-500">Нумерация:</span>
+                <button
+                  type="button"
+                  onClick={() => updateRow(idx, 'fillDirection', row.fillDirection === 'bottomUp' ? 'topDown' : 'bottomUp')}
+                  className={`px-2 py-0.5 rounded text-xs transition ${
+                    row.fillDirection === 'bottomUp'
+                      ? 'bg-primary-600/30 text-primary-400 border border-primary-600/50'
+                      : 'bg-dark-700 text-dark-400 border border-dark-600'
+                  }`}
+                >
+                  {row.fillDirection === 'bottomUp' ? '↑ снизу вверх' : '↓ сверху вниз'}
+                </button>
               </div>
             </div>
           );
