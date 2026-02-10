@@ -306,6 +306,17 @@ export default function RoomMap({ room, onSave, saving }) {
     setPlantPositions(prev => prev.filter(p => p.row !== rowIdx));
   };
 
+  // Переключить направление ряда + зеркально переставить кусты в нём
+  const handleToggleRowDirection = (rowIdx) => {
+    const total = getRowPositions(customRows[rowIdx]);
+    setCustomRows(prev => prev.map((r, i) =>
+      i === rowIdx ? { ...r, fillDirection: r.fillDirection === 'bottomUp' ? 'topDown' : 'bottomUp' } : r
+    ));
+    setPlantPositions(prev => prev.map(p =>
+      p.row === rowIdx ? { ...p, position: total - 1 - p.position } : p
+    ));
+  };
+
   const handleAssignRow = (rowIdx, strainIdx) => {
     const fs = flowerStrains[strainIdx];
     if (!fs || !fs.startNumber) return;
@@ -479,11 +490,7 @@ export default function RoomMap({ room, onSave, saving }) {
                       }`}
                       title="Назначить ряд сортом">&#9998;</button>
                     <button type="button"
-                      onClick={() => {
-                        setCustomRows(prev => prev.map((r, i) =>
-                          i === rowIdx ? { ...r, fillDirection: r.fillDirection === 'bottomUp' ? 'topDown' : 'bottomUp' } : r
-                        ));
-                      }}
+                      onClick={() => handleToggleRowDirection(rowIdx)}
                       className={`text-[10px] px-1 py-0.5 rounded transition ${
                         isBottomUp
                           ? 'bg-primary-600/30 text-primary-400'
