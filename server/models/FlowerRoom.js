@@ -122,7 +122,8 @@ const flowerRoomSchema = new mongoose.Schema({
       row: { type: Number, required: true },
       position: { type: Number, required: true },
       plantNumber: { type: Number, required: true }
-    }]
+    }],
+    fillDirection: { type: String, enum: ['topDown', 'bottomUp'], default: 'topDown' }
   }
 }, {
   timestamps: true

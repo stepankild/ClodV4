@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import PlantCell, { STRAIN_COLORS } from './PlantCell';
 import RoomMapSetup from './RoomMapSetup';
 
@@ -16,31 +16,159 @@ function getTotalPlants(flowerStrains) {
   return flowerStrains.reduce((sum, fs) => sum + (fs.quantity || 0), 0);
 }
 
-// Количество мест в ряду
 function getRowPositions(row) {
   return (row.cols || 1) * (row.rows || 1);
 }
 
-// Миграция старых форматов
 function migrateLayout(layout) {
-  if (!layout) return { customRows: [], plantPositions: [] };
+  if (!layout) return { customRows: [], plantPositions: [], fillDirection: 'topDown' };
   if (layout.customRows && layout.customRows.length > 0) {
-    // Миграция positions → cols/rows если нужно
     const migrated = layout.customRows.map(r => {
       if (r.cols) return r;
-      // Старый формат с positions
       return { name: r.name || '', cols: r.positions || 4, rows: 1 };
     });
-    return { customRows: migrated, plantPositions: layout.plantPositions || [] };
+    return { customRows: migrated, plantPositions: layout.plantPositions || [], fillDirection: layout.fillDirection || 'topDown' };
   }
   if (layout.rows > 0 && layout.positionsPerRow > 0) {
     const customRows = [];
     for (let i = 0; i < layout.rows; i++) {
       customRows.push({ name: `Ряд ${i + 1}`, cols: layout.positionsPerRow, rows: 1 });
     }
-    return { customRows, plantPositions: layout.plantPositions || [] };
+    return { customRows, plantPositions: layout.plantPositions || [], fillDirection: 'topDown' };
   }
-  return { customRows: [], plantPositions: [] };
+  return { customRows: [], plantPositions: [], fillDirection: 'topDown' };
+}
+
+// PDF export
+async function exportToPDF(room, customRows, plantPositions, flowerStrains) {
+  const { jsPDF } = await import('jspdf');
+  const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const margin = 10;
+
+  // Заголовок
+  doc.setFontSize(16);
+  doc.setTextColor(30, 30, 30);
+  doc.text(`${room.name || 'Комната'} — Карта`, margin, margin + 6);
+
+  // Подзаголовок: цикл
+  doc.setFontSize(9);
+  doc.setTextColor(120, 120, 120);
+  const cycleName = room.cycleName || '';
+  const dateStr = new Date().toLocaleDateString('ru-RU');
+  doc.text(`${cycleName ? cycleName + ' | ' : ''}${dateStr}`, margin, margin + 12);
+
+  // Легенда сортов
+  let legendY = margin + 18;
+  doc.setFontSize(8);
+  flowerStrains.forEach((fs, idx) => {
+    const color = STRAIN_COLORS[idx % STRAIN_COLORS.length];
+    const [r, g, b] = hexToRgb(color.hex);
+    doc.setFillColor(r, g, b);
+    doc.circle(margin + 2, legendY + 1.5, 1.5, 'F');
+    doc.setTextColor(60, 60, 60);
+    const placed = plantPositions.filter(p => {
+      const s = getStrainForPlant(p.plantNumber, flowerStrains);
+      return s?.strainIndex === idx;
+    }).length;
+    doc.text(`${fs.strain || 'Сорт ' + (idx + 1)} (${placed}/${fs.quantity})`, margin + 6, legendY + 2.5);
+    legendY += 5;
+  });
+
+  // Построить карту позиций
+  const posMap = {};
+  plantPositions.forEach(p => { posMap[`${p.row}:${p.position}`] = p.plantNumber; });
+
+  // Размеры ячеек
+  const cellSize = 10;
+  const cellGap = 1.5;
+  const rowGap = 6;
+  const startY = legendY + 6;
+
+  let curX = margin;
+
+  customRows.forEach((row, rowIdx) => {
+    const cols = row.cols || 1;
+    const rowsCount = row.rows || 1;
+    const blockW = cols * (cellSize + cellGap) - cellGap;
+
+    // Проверяем место, делаем новую страницу если нужно
+    if (curX + blockW + margin > pageW) {
+      doc.addPage();
+      curX = margin;
+    }
+
+    // Имя ряда
+    doc.setFontSize(8);
+    doc.setTextColor(80, 80, 80);
+    doc.text(row.name || `Ряд ${rowIdx + 1}`, curX, startY - 2);
+
+    // Ячейки
+    for (let rIdx = 0; rIdx < rowsCount; rIdx++) {
+      for (let cIdx = 0; cIdx < cols; cIdx++) {
+        const posIdx = rIdx * cols + cIdx;
+        const plantNumber = posMap[`${rowIdx}:${posIdx}`];
+        const x = curX + cIdx * (cellSize + cellGap);
+        const y = startY + rIdx * (cellSize + cellGap);
+
+        if (plantNumber) {
+          const strain = getStrainForPlant(plantNumber, flowerStrains);
+          const colorIdx = strain?.strainIndex || 0;
+          const color = STRAIN_COLORS[colorIdx % STRAIN_COLORS.length];
+          const [r, g, b] = hexToRgb(color.hex);
+
+          // Цветной фон
+          doc.setFillColor(r, g, b, 0.25);
+          doc.setDrawColor(r, g, b);
+          doc.setLineWidth(0.4);
+          doc.roundedRect(x, y, cellSize, cellSize, 1, 1, 'FD');
+
+          // Номер куста
+          doc.setFontSize(7);
+          doc.setTextColor(r, g, b);
+          doc.text(String(plantNumber), x + cellSize / 2, y + cellSize / 2 + 1, { align: 'center' });
+
+          // Имя сорта маленькое
+          if (strain?.strain) {
+            doc.setFontSize(4);
+            doc.setTextColor(130, 130, 130);
+            const shortName = strain.strain.length > 6 ? strain.strain.slice(0, 6) : strain.strain;
+            doc.text(shortName, x + cellSize / 2, y + cellSize - 1.5, { align: 'center' });
+          }
+        } else {
+          // Пустая ячейка
+          doc.setFillColor(245, 245, 245);
+          doc.setDrawColor(200, 200, 200);
+          doc.setLineWidth(0.2);
+          doc.roundedRect(x, y, cellSize, cellSize, 1, 1, 'FD');
+          doc.setFontSize(6);
+          doc.setTextColor(180, 180, 180);
+          doc.text('—', x + cellSize / 2, y + cellSize / 2 + 1, { align: 'center' });
+        }
+      }
+    }
+
+    curX += blockW + rowGap;
+  });
+
+  // Итого
+  const totalPlaced = plantPositions.length;
+  const totalSpots = customRows.reduce((s, r) => s + getRowPositions(r), 0);
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  const footY = pageH - margin;
+  doc.text(`Размещено: ${totalPlaced} из ${getTotalPlants(flowerStrains)} кустов | Всего мест: ${totalSpots}`, margin, footY);
+
+  doc.save(`${room.name || 'room'}-map-${dateStr}.pdf`);
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return [r, g, b];
 }
 
 export default function RoomMap({ room, onSave, saving }) {
@@ -50,10 +178,12 @@ export default function RoomMap({ room, onSave, saving }) {
 
   const [customRows, setCustomRows] = useState(layout.customRows || []);
   const [plantPositions, setPlantPositions] = useState(layout.plantPositions || []);
+  const [fillDirection, setFillDirection] = useState(layout.fillDirection || 'topDown');
   const [editMode, setEditMode] = useState(false);
   const [showSetup, setShowSetup] = useState(customRows.length === 0);
   const [assignRowIdx, setAssignRowIdx] = useState(null);
   const [assignCell, setAssignCell] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   const positionMap = useMemo(() => {
     const m = {};
@@ -100,6 +230,7 @@ export default function RoomMap({ room, onSave, saving }) {
     setShowSetup(false);
   };
 
+  // Авто-заполнение с учётом направления
   const handleAutoFill = () => {
     const newPositions = [];
     let plantIdx = 0;
@@ -109,7 +240,12 @@ export default function RoomMap({ room, onSave, saving }) {
       for (let n = fs.startNumber; n <= fs.endNumber; n++) allPlants.push(n);
     });
 
-    for (let r = 0; r < customRows.length && plantIdx < allPlants.length; r++) {
+    const rowOrder = fillDirection === 'bottomUp'
+      ? [...Array(customRows.length).keys()].reverse()
+      : [...Array(customRows.length).keys()];
+
+    for (const r of rowOrder) {
+      if (plantIdx >= allPlants.length) break;
       const total = getRowPositions(customRows[r]);
       for (let p = 0; p < total && plantIdx < allPlants.length; p++) {
         newPositions.push({ row: r, position: p, plantNumber: allPlants[plantIdx] });
@@ -170,8 +306,19 @@ export default function RoomMap({ room, onSave, saving }) {
   };
 
   const handleSave = () => {
-    onSave({ customRows, plantPositions });
+    onSave({ customRows, plantPositions, fillDirection });
     setEditMode(false);
+  };
+
+  const handleExportPDF = async () => {
+    setExporting(true);
+    try {
+      await exportToPDF(room, customRows, plantPositions, flowerStrains);
+    } catch (e) {
+      console.error('PDF export error:', e);
+    } finally {
+      setExporting(false);
+    }
   };
 
   const hasGrid = customRows.length > 0;
@@ -187,6 +334,11 @@ export default function RoomMap({ room, onSave, saving }) {
       </div>
     );
   }
+
+  // Порядок рядов для отрисовки (визуально)
+  const displayRowOrder = fillDirection === 'bottomUp'
+    ? [...Array(customRows.length).keys()].reverse()
+    : [...Array(customRows.length).keys()];
 
   return (
     <div className="space-y-4">
@@ -206,6 +358,15 @@ export default function RoomMap({ room, onSave, saving }) {
                 className="px-2 py-1 text-xs bg-dark-700 text-red-400 rounded hover:bg-dark-600 transition">Очистить</button>
               <button type="button" onClick={() => setShowSetup(true)}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
+
+              {/* Направление нумерации */}
+              <button type="button"
+                onClick={() => setFillDirection(d => d === 'topDown' ? 'bottomUp' : 'topDown')}
+                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition"
+                title={fillDirection === 'topDown' ? 'Сверху вниз' : 'Снизу вверх'}>
+                {fillDirection === 'topDown' ? '↓' : '↑'}
+              </button>
+
               <button type="button" onClick={handleSave} disabled={saving}
                 className="px-3 py-1 text-xs bg-primary-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 transition">
                 {saving ? '...' : 'Сохранить'}</button>
@@ -214,6 +375,7 @@ export default function RoomMap({ room, onSave, saving }) {
                   const restored = migrateLayout(room.roomLayout);
                   setCustomRows(restored.customRows || []);
                   setPlantPositions(restored.plantPositions || []);
+                  setFillDirection(restored.fillDirection || 'topDown');
                   setAssignRowIdx(null);
                   setAssignCell(null);
                 }}
@@ -225,14 +387,27 @@ export default function RoomMap({ room, onSave, saving }) {
                 className="px-3 py-1 text-xs bg-dark-700 text-white rounded hover:bg-dark-600 transition">Редактировать</button>
               <button type="button" onClick={() => setShowSetup(true)}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
+              <button type="button" onClick={handleExportPDF} disabled={exporting}
+                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition disabled:opacity-50"
+                title="Скачать PDF для печати">
+                {exporting ? '...' : 'PDF'}
+              </button>
             </>
           )}
         </div>
       </div>
 
+      {/* Направление заполнения (инфо) */}
+      {editMode && (
+        <div className="text-[10px] text-dark-500">
+          Нумерация: {fillDirection === 'topDown' ? 'сверху вниз ↓' : 'снизу вверх ↑'}
+        </div>
+      )}
+
       {/* Карта: каждый ряд — столбец, внутри cols × rows сетка */}
       <div className="flex gap-3 overflow-x-auto pb-2">
-        {customRows.map((row, rowIdx) => {
+        {displayRowOrder.map(rowIdx => {
+          const row = customRows[rowIdx];
           const cols = row.cols || 1;
           const rowsCount = row.rows || 1;
           return (
@@ -257,16 +432,11 @@ export default function RoomMap({ room, onSave, saving }) {
                 )}
               </div>
 
-              {/* Размер ряда */}
+              {/* Размер */}
               <div className="text-[10px] text-dark-600 mb-1">{cols}×{rowsCount}</div>
 
-              {/* Мини-сетка cols × rows */}
-              <div
-                className="grid gap-1"
-                style={{
-                  gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`
-                }}
-              >
+              {/* Мини-сетка */}
+              <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
                 {Array.from({ length: rowsCount }, (_, rIdx) =>
                   Array.from({ length: cols }, (_, cIdx) => {
                     const posIdx = rIdx * cols + cIdx;
@@ -289,9 +459,9 @@ export default function RoomMap({ room, onSave, saving }) {
               </div>
 
               {/* Счётчик */}
-              {!editMode && rowSummaries[rowIdx]?.count > 0 && (
+              {!editMode && (
                 <span className="text-[10px] text-dark-500 mt-1">
-                  {rowSummaries[rowIdx].count}/{cols * rowsCount}
+                  {rowSummaries[rowIdx]?.count || 0}/{cols * rowsCount}
                 </span>
               )}
             </div>
