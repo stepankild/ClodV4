@@ -165,7 +165,7 @@ export const getRoom = async (req, res) => {
 // @route   PUT /api/rooms/:id
 export const updateRoom = async (req, res) => {
   try {
-    const { cycleName, strain, plantsCount, startDate, floweringDays, notes, isActive, name, environment, squareMeters, lighting, roomDimensions, potSize, ventilation } = req.body;
+    const { cycleName, strain, plantsCount, startDate, floweringDays, notes, isActive, name, environment, squareMeters, lighting, roomDimensions, potSize, ventilation, roomLayout } = req.body;
 
     const room = await FlowerRoom.findById(req.params.id);
 
@@ -193,6 +193,7 @@ export const updateRoom = async (req, res) => {
     if (roomDimensions !== undefined) room.roomDimensions = { ...(room.roomDimensions?.toObject?.() || {}), ...roomDimensions };
     if (potSize !== undefined) room.potSize = potSize;
     if (ventilation !== undefined) room.ventilation = { ...(room.ventilation?.toObject?.() || {}), ...ventilation };
+    if (roomLayout !== undefined) room.roomLayout = roomLayout;
 
     await room.save();
 
@@ -343,6 +344,10 @@ export const harvestRoom = async (req, res) => {
     room.notes = '';
     room.isActive = false;
     room.currentCycleId = null;
+    // Очистить позиции кустов (сетка остаётся)
+    if (room.roomLayout) {
+      room.roomLayout.plantPositions = [];
+    }
 
     await room.save();
 

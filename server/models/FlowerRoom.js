@@ -110,6 +110,16 @@ const flowerRoomSchema = new mongoose.Schema({
     intakeType: { type: String, default: '' },
     exhaustType: { type: String, default: '' },
     co2: { type: Boolean, default: false }
+  },
+  // Карта комнаты (ряды и позиции кустов)
+  roomLayout: {
+    rows: { type: Number, default: 0, min: 0 },
+    positionsPerRow: { type: Number, default: 0, min: 0 },
+    plantPositions: [{
+      row: { type: Number, required: true },
+      position: { type: Number, required: true },
+      plantNumber: { type: Number, required: true }
+    }]
   }
 }, {
   timestamps: true
