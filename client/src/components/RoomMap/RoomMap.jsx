@@ -318,9 +318,11 @@ export default function RoomMap({ room, onSave, saving }) {
     }
 
     const total = getRowPositions(customRows[rowIdx]);
+    const isBottomUp = customRows[rowIdx].fillDirection === 'bottomUp';
     const newPositions = [...cleaned];
     for (let p = 0; p < total && p < available.length; p++) {
-      newPositions.push({ row: rowIdx, position: p, plantNumber: available[p] });
+      const pos = isBottomUp ? (total - 1 - p) : p;
+      newPositions.push({ row: rowIdx, position: pos, plantNumber: available[p] });
     }
 
     setPlantPositions(newPositions);
@@ -456,11 +458,6 @@ export default function RoomMap({ room, onSave, saving }) {
           const rowsCount = row.rows || 1;
           const isBottomUp = row.fillDirection === 'bottomUp';
 
-          // Порядок строк внутри ряда: при bottomUp визуально переворачиваем
-          const verticalOrder = isBottomUp
-            ? [...Array(rowsCount).keys()].reverse()
-            : [...Array(rowsCount).keys()];
-
           return (
             <div key={rowIdx} className="flex flex-col items-center shrink-0">
               {/* Заголовок ряда */}
@@ -507,7 +504,7 @@ export default function RoomMap({ room, onSave, saving }) {
 
               {/* Мини-сетка */}
               <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-                {verticalOrder.map(rIdx =>
+                {Array.from({ length: rowsCount }, (_, rIdx) =>
                   Array.from({ length: cols }, (_, cIdx) => {
                     const posIdx = rIdx * cols + cIdx;
                     const plantNumber = positionMap[`${rowIdx}:${posIdx}`];
