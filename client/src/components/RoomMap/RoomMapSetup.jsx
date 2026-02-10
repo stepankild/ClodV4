@@ -1,43 +1,81 @@
 import { useState } from 'react';
 
-export default function RoomMapSetup({ currentRows, currentPositions, plantsCount, onApply }) {
-  const [rows, setRows] = useState(currentRows || 4);
-  const [positionsPerRow, setPositionsPerRow] = useState(currentPositions || 10);
+export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
+  const [customRows, setCustomRows] = useState(
+    currentRows && currentRows.length > 0
+      ? currentRows.map(r => ({ name: r.name || '', positions: r.positions || 10 }))
+      : [{ name: 'Ряд 1', positions: 10 }]
+  );
 
-  const totalPositions = rows * positionsPerRow;
+  const totalPositions = customRows.reduce((sum, r) => sum + (r.positions || 0), 0);
   const diff = totalPositions - (plantsCount || 0);
+
+  const updateRow = (idx, field, value) => {
+    setCustomRows(prev => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], [field]: value };
+      return updated;
+    });
+  };
+
+  const addRow = () => {
+    setCustomRows(prev => [...prev, { name: `Ряд ${prev.length + 1}`, positions: 10 }]);
+  };
+
+  const removeRow = (idx) => {
+    if (customRows.length <= 1) return;
+    setCustomRows(prev => prev.filter((_, i) => i !== idx));
+  };
 
   return (
     <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
-      <h3 className="text-white font-semibold text-sm mb-3">Настройка сетки комнаты</h3>
+      <h3 className="text-white font-semibold text-sm mb-3">Настройка рядов комнаты</h3>
 
-      <div className="grid grid-cols-2 gap-3 mb-3">
-        <div>
-          <label className="block text-dark-400 text-xs mb-1">Рядов</label>
-          <input
-            type="number"
-            min={1}
-            max={20}
-            value={rows}
-            onChange={(e) => setRows(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
-            className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm"
-          />
-        </div>
-        <div>
-          <label className="block text-dark-400 text-xs mb-1">Позиций в ряду</label>
-          <input
-            type="number"
-            min={1}
-            max={30}
-            value={positionsPerRow}
-            onChange={(e) => setPositionsPerRow(Math.max(1, Math.min(30, parseInt(e.target.value) || 1)))}
-            className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm"
-          />
-        </div>
+      <div className="space-y-2 mb-3">
+        {customRows.map((row, idx) => (
+          <div key={idx} className="flex items-center gap-2">
+            <input
+              type="text"
+              value={row.name}
+              onChange={(e) => updateRow(idx, 'name', e.target.value)}
+              placeholder={`Ряд ${idx + 1}`}
+              className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-white text-sm"
+            />
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={1}
+                max={50}
+                value={row.positions}
+                onChange={(e) => updateRow(idx, 'positions', Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                className="w-16 bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-white text-sm text-center"
+              />
+              <span className="text-dark-500 text-xs">мест</span>
+            </div>
+            {customRows.length > 1 && (
+              <button
+                type="button"
+                onClick={() => removeRow(idx)}
+                className="text-dark-500 hover:text-red-400 text-lg leading-none px-1 shrink-0"
+                title="Удалить ряд"
+              >
+                &#10005;
+              </button>
+            )}
+          </div>
+        ))}
       </div>
 
+      <button
+        type="button"
+        onClick={addRow}
+        className="text-sm text-primary-400 hover:text-primary-300 mb-3 block"
+      >
+        + Добавить ряд
+      </button>
+
       <div className="text-dark-400 text-xs mb-3">
-        <span className="text-white font-medium">{rows}</span> рядов × <span className="text-white font-medium">{positionsPerRow}</span> позиций = <span className="text-white font-medium">{totalPositions}</span> мест
+        <span className="text-white font-medium">{customRows.length}</span> рядов, <span className="text-white font-medium">{totalPositions}</span> мест всего
         {plantsCount > 0 && (
           <>
             {' '}для <span className="text-primary-400 font-medium">{plantsCount}</span> кустов
@@ -49,7 +87,7 @@ export default function RoomMapSetup({ currentRows, currentPositions, plantsCoun
 
       <button
         type="button"
-        onClick={() => onApply(rows, positionsPerRow)}
+        onClick={() => onApply(customRows)}
         className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500 transition"
       >
         Применить

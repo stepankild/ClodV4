@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
 import PlantCell, { STRAIN_COLORS } from './PlantCell';
 import RoomMapSetup from './RoomMapSetup';
 
@@ -18,16 +18,33 @@ function getTotalPlants(flowerStrains) {
   return flowerStrains.reduce((sum, fs) => sum + (fs.quantity || 0), 0);
 }
 
+// Миграция: старый формат (rows + positionsPerRow) → новый (customRows)
+function migrateLayout(layout) {
+  if (!layout) return { customRows: [], plantPositions: [] };
+  // Новый формат уже
+  if (layout.customRows && layout.customRows.length > 0) {
+    return layout;
+  }
+  // Старый формат — конвертируем
+  if (layout.rows > 0 && layout.positionsPerRow > 0) {
+    const customRows = [];
+    for (let i = 0; i < layout.rows; i++) {
+      customRows.push({ name: `Ряд ${i + 1}`, positions: layout.positionsPerRow });
+    }
+    return { customRows, plantPositions: layout.plantPositions || [] };
+  }
+  return { customRows: [], plantPositions: [] };
+}
+
 export default function RoomMap({ room, onSave, saving }) {
-  const layout = room.roomLayout || {};
+  const layout = migrateLayout(room.roomLayout);
   const flowerStrains = room.flowerStrains || [];
   const totalPlants = getTotalPlants(flowerStrains);
 
-  const [rows, setRows] = useState(layout.rows || 0);
-  const [positionsPerRow, setPositionsPerRow] = useState(layout.positionsPerRow || 0);
+  const [customRows, setCustomRows] = useState(layout.customRows || []);
   const [plantPositions, setPlantPositions] = useState(layout.plantPositions || []);
   const [editMode, setEditMode] = useState(false);
-  const [showSetup, setShowSetup] = useState(rows === 0);
+  const [showSetup, setShowSetup] = useState(customRows.length === 0);
 
   // Для назначения ряда целиком
   const [assignRowIdx, setAssignRowIdx] = useState(null);
@@ -61,29 +78,38 @@ export default function RoomMap({ room, onSave, saving }) {
     return result;
   }, [flowerStrains, placedPlants]);
 
+  // Макс кол-во позиций (для выравнивания столбцов по высоте)
+  const maxPositions = useMemo(() => {
+    return Math.max(...customRows.map(r => r.positions || 0), 0);
+  }, [customRows]);
+
   // Сводка по рядам
   const rowSummaries = useMemo(() => {
-    const summaries = [];
-    for (let r = 0; r < rows; r++) {
-      const plantsInRow = plantPositions.filter(p => p.row === r);
+    return customRows.map((_, rowIdx) => {
+      const plantsInRow = plantPositions.filter(p => p.row === rowIdx);
       const byStrain = {};
       plantsInRow.forEach(p => {
         const s = getStrainForPlant(p.plantNumber, flowerStrains);
         const name = s ? s.strain : '?';
         byStrain[name] = (byStrain[name] || 0) + 1;
       });
-      summaries.push({ count: plantsInRow.length, byStrain });
-    }
-    return summaries;
-  }, [rows, plantPositions, flowerStrains]);
+      return { count: plantsInRow.length, byStrain };
+    });
+  }, [customRows, plantPositions, flowerStrains]);
 
-  const handleApplySetup = (newRows, newPositions) => {
-    setRows(newRows);
-    setPositionsPerRow(newPositions);
+  const handleApplySetup = (newCustomRows) => {
+    // Очистить позиции которые выходят за пределы новых рядов
+    const cleaned = plantPositions.filter(p => {
+      if (p.row >= newCustomRows.length) return false;
+      if (p.position >= newCustomRows[p.row].positions) return false;
+      return true;
+    });
+    setCustomRows(newCustomRows);
+    setPlantPositions(cleaned);
     setShowSetup(false);
   };
 
-  // Авто-заполнение: слева направо, сверху вниз
+  // Авто-заполнение: сверху вниз, слева направо (т.к. вертикальное отображение)
   const handleAutoFill = () => {
     const newPositions = [];
     let plantIdx = 0;
@@ -95,8 +121,8 @@ export default function RoomMap({ room, onSave, saving }) {
       }
     });
 
-    for (let r = 0; r < rows && plantIdx < allPlants.length; r++) {
-      for (let p = 0; p < positionsPerRow && plantIdx < allPlants.length; p++) {
+    for (let r = 0; r < customRows.length && plantIdx < allPlants.length; r++) {
+      for (let p = 0; p < customRows[r].positions && plantIdx < allPlants.length; p++) {
         newPositions.push({ row: r, position: p, plantNumber: allPlants[plantIdx] });
         plantIdx++;
       }
@@ -121,18 +147,16 @@ export default function RoomMap({ room, onSave, saving }) {
     const fs = flowerStrains[strainIdx];
     if (!fs || !fs.startNumber) return;
 
-    // Убираем старые позиции этого ряда
     const cleaned = plantPositions.filter(p => p.row !== rowIdx);
-
-    // Находим свободные кусты этого сорта
     const usedInOtherRows = new Set(cleaned.map(p => p.plantNumber));
     const available = [];
     for (let n = fs.startNumber; n <= fs.endNumber; n++) {
       if (!usedInOtherRows.has(n)) available.push(n);
     }
 
+    const rowPositions = customRows[rowIdx]?.positions || 0;
     const newPositions = [...cleaned];
-    for (let p = 0; p < positionsPerRow && p < available.length; p++) {
+    for (let p = 0; p < rowPositions && p < available.length; p++) {
       newPositions.push({ row: rowIdx, position: p, plantNumber: available[p] });
     }
 
@@ -142,7 +166,6 @@ export default function RoomMap({ room, onSave, saving }) {
 
   // Назначить отдельную ячейку конкретным кустом
   const handleAssignCell = (row, position, plantNumber) => {
-    // Убираем куст из другой позиции если был
     let cleaned = plantPositions.filter(p => !(p.row === row && p.position === position));
     cleaned = cleaned.filter(p => p.plantNumber !== plantNumber);
     cleaned.push({ row, position, plantNumber });
@@ -155,10 +178,8 @@ export default function RoomMap({ room, onSave, saving }) {
     if (!editMode) return;
     const existing = positionMap[`${row}:${position}`];
     if (existing) {
-      // Убрать куст из позиции
       setPlantPositions(prev => prev.filter(p => !(p.row === row && p.position === position)));
     } else {
-      // Открыть выбор куста для этой ячейки
       setAssignCell({ row, position });
       setAssignRowIdx(null);
     }
@@ -167,22 +188,20 @@ export default function RoomMap({ room, onSave, saving }) {
   // Сохранить
   const handleSave = () => {
     onSave({
-      rows,
-      positionsPerRow,
+      customRows,
       plantPositions
     });
     setEditMode(false);
   };
 
-  const hasGrid = rows > 0 && positionsPerRow > 0;
+  const hasGrid = customRows.length > 0;
 
   // Настройка сетки
   if (showSetup || !hasGrid) {
     return (
       <div className="space-y-4">
         <RoomMapSetup
-          currentRows={rows || 4}
-          currentPositions={positionsPerRow || 10}
+          currentRows={customRows.length > 0 ? customRows : null}
           plantsCount={totalPlants}
           onApply={handleApplySetup}
         />
@@ -196,7 +215,9 @@ export default function RoomMap({ room, onSave, saving }) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h4 className="text-sm font-medium text-white">
           Карта комнаты
-          <span className="text-dark-400 font-normal ml-2">{rows}×{positionsPerRow}</span>
+          <span className="text-dark-400 font-normal ml-2">
+            {customRows.length} рядов
+          </span>
         </h4>
         <div className="flex gap-2 flex-wrap">
           {editMode ? (
@@ -221,7 +242,7 @@ export default function RoomMap({ room, onSave, saving }) {
                 onClick={() => setShowSetup(true)}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition"
               >
-                Сетка
+                Ряды
               </button>
               <button
                 type="button"
@@ -235,9 +256,9 @@ export default function RoomMap({ room, onSave, saving }) {
                 type="button"
                 onClick={() => {
                   setEditMode(false);
-                  setPlantPositions(layout.plantPositions || []);
-                  setRows(layout.rows || 0);
-                  setPositionsPerRow(layout.positionsPerRow || 0);
+                  const restored = migrateLayout(room.roomLayout);
+                  setCustomRows(restored.customRows || []);
+                  setPlantPositions(restored.plantPositions || []);
                   setAssignRowIdx(null);
                   setAssignCell(null);
                 }}
@@ -260,23 +281,44 @@ export default function RoomMap({ room, onSave, saving }) {
                 onClick={() => setShowSetup(true)}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition"
               >
-                Сетка
+                Ряды
               </button>
             </>
           )}
         </div>
       </div>
 
-      {/* CSS Grid — карта рядов */}
-      <div className="space-y-2 overflow-x-auto">
-        {Array.from({ length: rows }, (_, rowIdx) => (
-          <div key={rowIdx} className="flex items-center gap-2">
-            {/* Метка ряда */}
-            <div className="w-6 text-xs text-dark-500 text-right shrink-0">{rowIdx + 1}</div>
+      {/* Вертикальная карта: ряды как столбцы */}
+      <div className="flex gap-2 overflow-x-auto pb-2">
+        {customRows.map((row, rowIdx) => (
+          <div key={rowIdx} className="flex flex-col items-center gap-1 shrink-0">
+            {/* Заголовок ряда */}
+            <div className="flex items-center gap-1 mb-1">
+              <span className="text-xs text-dark-400 font-medium whitespace-nowrap">
+                {row.name || `Ряд ${rowIdx + 1}`}
+              </span>
+              {editMode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignRowIdx(assignRowIdx === rowIdx ? null : rowIdx);
+                    setAssignCell(null);
+                  }}
+                  className={`text-[10px] px-1.5 py-0.5 rounded transition ${
+                    assignRowIdx === rowIdx
+                      ? 'bg-primary-600 text-white'
+                      : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
+                  }`}
+                  title="Назначить ряд сортом"
+                >
+                  &#9998;
+                </button>
+              )}
+            </div>
 
-            {/* Ячейки */}
-            <div className="flex gap-1 flex-wrap">
-              {Array.from({ length: positionsPerRow }, (_, posIdx) => {
+            {/* Ячейки вертикально */}
+            <div className="flex flex-col gap-1">
+              {Array.from({ length: row.positions }, (_, posIdx) => {
                 const plantNumber = positionMap[`${rowIdx}:${posIdx}`];
                 const strain = plantNumber ? getStrainForPlant(plantNumber, flowerStrains) : null;
                 return (
@@ -290,34 +332,15 @@ export default function RoomMap({ room, onSave, saving }) {
                       assignCell?.row === rowIdx && assignCell?.position === posIdx
                     }
                     onClick={() => handleCellClick(rowIdx, posIdx)}
-                    compact={positionsPerRow > 12}
+                    compact={customRows.length > 8}
                   />
                 );
               })}
             </div>
 
-            {/* Кнопка назначения ряда */}
-            {editMode && (
-              <button
-                type="button"
-                onClick={() => {
-                  setAssignRowIdx(assignRowIdx === rowIdx ? null : rowIdx);
-                  setAssignCell(null);
-                }}
-                className={`shrink-0 text-xs px-2 py-1 rounded transition ${
-                  assignRowIdx === rowIdx
-                    ? 'bg-primary-600 text-white'
-                    : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
-                }`}
-                title="Назначить ряд сортом"
-              >
-                &#9998;
-              </button>
-            )}
-
-            {/* Сводка по ряду */}
-            {rowSummaries[rowIdx]?.count > 0 && !editMode && (
-              <span className="text-[10px] text-dark-500 shrink-0 whitespace-nowrap">
+            {/* Счётчик под рядом */}
+            {!editMode && rowSummaries[rowIdx]?.count > 0 && (
+              <span className="text-[10px] text-dark-500 mt-1">
                 {rowSummaries[rowIdx].count}шт
               </span>
             )}
@@ -329,7 +352,9 @@ export default function RoomMap({ room, onSave, saving }) {
       {editMode && assignRowIdx !== null && (
         <div className="bg-dark-700/50 border border-dark-600 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-dark-300">Назначить ряд {assignRowIdx + 1} сортом:</span>
+            <span className="text-xs text-dark-300">
+              Назначить «{customRows[assignRowIdx]?.name || `Ряд ${assignRowIdx + 1}`}» сортом:
+            </span>
             <button
               type="button"
               onClick={() => handleClearRow(assignRowIdx)}
@@ -361,7 +386,7 @@ export default function RoomMap({ room, onSave, saving }) {
         <div className="bg-dark-700/50 border border-dark-600 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs text-dark-300">
-              Ячейка: ряд {assignCell.row + 1}, позиция {assignCell.position + 1}
+              {customRows[assignCell.row]?.name || `Ряд ${assignCell.row + 1}`}, позиция {assignCell.position + 1}
             </span>
             <button
               type="button"
@@ -371,11 +396,9 @@ export default function RoomMap({ room, onSave, saving }) {
               Закрыть
             </button>
           </div>
-          {/* Список по сортам */}
           <div className="space-y-2 max-h-40 overflow-y-auto">
             {flowerStrains.map((fs, strIdx) => {
               const color = STRAIN_COLORS[strIdx % STRAIN_COLORS.length];
-              // Собрать неразмещённые кусты этого сорта
               const unplaced = [];
               if (fs.startNumber && fs.endNumber) {
                 for (let n = fs.startNumber; n <= fs.endNumber; n++) {
@@ -438,12 +461,13 @@ export default function RoomMap({ room, onSave, saving }) {
           <div className="text-xs text-dark-500 mb-1">По рядам:</div>
           {rowSummaries.map((summary, idx) => {
             if (summary.count === 0) return null;
+            const rowName = customRows[idx]?.name || `Ряд ${idx + 1}`;
             const parts = Object.entries(summary.byStrain)
               .map(([name, count]) => `${name}: ${count}`)
               .join(', ');
             return (
               <div key={idx} className="text-xs text-dark-400">
-                <span className="text-dark-500">Ряд {idx + 1}:</span>{' '}
+                <span className="text-dark-500">{rowName}:</span>{' '}
                 <span className="text-dark-300">{summary.count} кустов</span>
                 {parts && <span className="text-dark-500 ml-1">({parts})</span>}
               </div>
