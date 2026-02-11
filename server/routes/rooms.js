@@ -9,6 +9,7 @@ import {
   addNote
 } from '../controllers/flowerRoomController.js';
 import { getPlans, createPlan, updatePlan, deletePlan, getDeletedPlans, restorePlan } from '../controllers/plannedController.js';
+import { getTemplates, createTemplate, deleteTemplate } from '../controllers/roomTemplateController.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -24,6 +25,9 @@ router.post('/plans', createPlan);
 router.put('/plans/:id', updatePlan);
 router.delete('/plans/:id', deletePlan);
 router.post('/plans/deleted/:id/restore', restorePlan);
+router.get('/templates', getTemplates);
+router.post('/templates', createTemplate);
+router.delete('/templates/:id', deleteTemplate);
 router.get('/:id', getRoom);
 router.put('/:id', updateRoom);
 router.post('/:id/start', startCycle);
