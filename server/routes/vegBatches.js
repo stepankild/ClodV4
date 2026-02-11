@@ -6,11 +6,14 @@ import { checkPermission } from '../middleware/rbac.js';
 const router = express.Router();
 router.use(protect);
 
+// Просмотр
 router.get('/', getVegBatches);
-router.get('/deleted', checkPermission('vegetation:create'), getDeletedVegBatches);
-router.post('/deleted/:id/restore', checkPermission('vegetation:create'), restoreVegBatch);
+
+// Действия
+router.get('/deleted', checkPermission('vegetation:delete'), getDeletedVegBatches);
+router.post('/deleted/:id/restore', checkPermission('vegetation:delete'), restoreVegBatch);
 router.post('/', checkPermission('vegetation:create'), createVegBatch);
-router.put('/:id', checkPermission('vegetation:create'), updateVegBatch);
-router.delete('/:id', checkPermission('vegetation:create'), deleteVegBatch);
+router.put('/:id', checkPermission('vegetation:edit'), updateVegBatch);
+router.delete('/:id', checkPermission('vegetation:delete'), deleteVegBatch);
 
 export default router;

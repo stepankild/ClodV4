@@ -17,7 +17,7 @@ const formatDate = (date) => {
 
 const Harvest = () => {
   const { hasPermission } = useAuth();
-  const canDoHarvest = hasPermission && hasPermission('harvest:do');
+  const canDoHarvest = hasPermission && hasPermission('harvest:record');
 
   const [searchParams] = useSearchParams();
   const roomIdFromUrl = searchParams.get('roomId') || '';

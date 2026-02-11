@@ -1,13 +1,17 @@
 import { useState, useEffect } from 'react';
 
 const MODULE_LABELS = {
-  users: 'Пользователи',
   view: 'Видимость разделов',
-  dashboard: 'Дашборд',
-  harvest: 'Урожай',
-  rooms: 'Комнаты / циклы',
+  rooms: 'Комнаты',
+  tasks: 'Задачи',
   clones: 'Клоны',
   vegetation: 'Вегетация',
+  harvest: 'Сбор урожая',
+  trim: 'Трим',
+  archive: 'Архив',
+  cycles: 'Циклы',
+  templates: 'Шаблоны',
+  users: 'Пользователи',
   system: 'Система'
 };
 
@@ -77,7 +81,7 @@ const RoleForm = ({ role, permissions, onSubmit, onClose }) => {
   }, {});
 
   const sortedModules = Object.keys(permsByModule).sort((a, b) => {
-    const order = ['view', 'users', 'dashboard', 'harvest', 'rooms', 'clones', 'vegetation', 'system', 'other'];
+    const order = ['view', 'rooms', 'tasks', 'clones', 'vegetation', 'harvest', 'trim', 'archive', 'cycles', 'templates', 'users', 'system', 'other'];
     return order.indexOf(a) - order.indexOf(b);
   });
 

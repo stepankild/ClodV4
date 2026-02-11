@@ -6,11 +6,14 @@ import { checkPermission } from '../middleware/rbac.js';
 const router = express.Router();
 router.use(protect);
 
+// Просмотр
 router.get('/', getCloneCuts);
-router.get('/deleted', checkPermission('clones:create'), getDeletedCloneCuts);
-router.post('/deleted/:id/restore', checkPermission('clones:create'), restoreCloneCut);
+
+// Действия
+router.get('/deleted', checkPermission('clones:delete'), getDeletedCloneCuts);
+router.post('/deleted/:id/restore', checkPermission('clones:delete'), restoreCloneCut);
 router.post('/', checkPermission('clones:create'), upsertCloneCut);
-router.put('/:id', checkPermission('clones:create'), updateCloneCut);
-router.delete('/:id', checkPermission('clones:create'), deleteCloneCut);
+router.put('/:id', checkPermission('clones:edit'), updateCloneCut);
+router.delete('/:id', checkPermission('clones:delete'), deleteCloneCut);
 
 export default router;

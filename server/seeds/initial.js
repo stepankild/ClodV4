@@ -7,14 +7,7 @@ import User from '../models/User.js';
 dotenv.config();
 
 const permissions = [
-  // Users module
-  { name: 'users:read', description: 'Просмотр пользователей и ролей', module: 'users' },
-  { name: 'users:create', description: 'Создание пользователей', module: 'users' },
-  { name: 'users:update', description: 'Редактирование пользователей и настройка ролей', module: 'users' },
-  { name: 'users:delete', description: 'Удаление пользователей', module: 'users' },
-  { name: 'audit:read', description: 'Просмотр лога действий пользователей', module: 'users' },
-
-  // View permissions (кто что видит в меню)
+  // ── View (видимость разделов в меню) ──
   { name: 'overview:view', description: 'Видеть раздел «Обзор фермы»', module: 'view' },
   { name: 'active:view', description: 'Видеть раздел «Активные комнаты»', module: 'view' },
   { name: 'harvest:view', description: 'Видеть раздел «Сбор урожая»', module: 'view' },
@@ -22,30 +15,60 @@ const permissions = [
   { name: 'vegetation:view', description: 'Видеть раздел «Вегетация»', module: 'view' },
   { name: 'archive:view', description: 'Видеть раздел «Архив циклов»', module: 'view' },
   { name: 'stats:view', description: 'Видеть раздел «Статистика»', module: 'view' },
-
-  // Dashboard module (legacy)
-  { name: 'dashboard:view', description: 'Просмотр дашборда', module: 'dashboard' },
-
-  // Harvest
-  { name: 'harvest:do', description: 'Может собирать урожай (завершать цикл, архивировать)', module: 'harvest' },
-  { name: 'harvest:edit_weights', description: 'Редактирование весов при сборе урожая', module: 'harvest' },
-
-  // Rooms / cycles
-  { name: 'cycles:edit_name', description: 'Редактирование названий циклов', module: 'rooms' },
-
-  // Clones (просмотр = clones:view, создание/редактирование = clones:create)
-  { name: 'clones:create', description: 'Создавать нарезки клонов и отправлять бэтчи в вегетацию', module: 'clones' },
-
-  // Vegetation (просмотр = vegetation:view, создание = vegetation:create)
-  { name: 'vegetation:create', description: 'Создавать бэтчи вегетации и отправлять в цветение', module: 'vegetation' },
-
-  // Trim
   { name: 'trim:view', description: 'Видеть раздел «Трим»', module: 'view' },
-  { name: 'trim:create', description: 'Добавлять записи трима (вес за день)', module: 'trim' },
-  { name: 'trim:edit', description: 'Редактировать сухой вес, попкорн, завершать трим', module: 'trim' },
 
-  // SuperAdmin permission
-  { name: '*', description: 'Полный доступ ко всем функциям', module: 'system' }
+  // ── Rooms (комнаты) ──
+  { name: 'rooms:edit', description: 'Редактировать настройки комнат (освещение, площадь, карта)', module: 'rooms' },
+  { name: 'rooms:start_cycle', description: 'Запускать новый цикл в комнате', module: 'rooms' },
+  { name: 'rooms:notes', description: 'Добавлять заметки к комнатам', module: 'rooms' },
+
+  // ── Tasks (задачи) ──
+  { name: 'tasks:create', description: 'Создавать задачи для комнат', module: 'tasks' },
+  { name: 'tasks:complete', description: 'Выполнять (отмечать) задачи', module: 'tasks' },
+  { name: 'tasks:delete', description: 'Удалять задачи', module: 'tasks' },
+
+  // ── Clones (клоны) ──
+  { name: 'clones:create', description: 'Создавать нарезки клонов', module: 'clones' },
+  { name: 'clones:edit', description: 'Редактировать записи клонов', module: 'clones' },
+  { name: 'clones:delete', description: 'Удалять записи клонов', module: 'clones' },
+  { name: 'clones:send_to_veg', description: 'Отправлять клоны в вегетацию', module: 'clones' },
+
+  // ── Vegetation (вегетация) ──
+  { name: 'vegetation:create', description: 'Создавать бэтчи вегетации', module: 'vegetation' },
+  { name: 'vegetation:edit', description: 'Редактировать бэтчи вегетации', module: 'vegetation' },
+  { name: 'vegetation:delete', description: 'Удалять бэтчи вегетации', module: 'vegetation' },
+  { name: 'vegetation:send_to_flower', description: 'Отправлять растения в цветение', module: 'vegetation' },
+
+  // ── Harvest (сбор урожая) ──
+  { name: 'harvest:record', description: 'Записывать вес при сборе урожая', module: 'harvest' },
+  { name: 'harvest:complete', description: 'Завершать сессию сбора урожая (архивировать цикл)', module: 'harvest' },
+  { name: 'harvest:edit_weights', description: 'Редактировать веса после записи', module: 'harvest' },
+
+  // ── Trim (трим) ──
+  { name: 'trim:create', description: 'Добавлять записи трима (вес за день)', module: 'trim' },
+  { name: 'trim:edit', description: 'Редактировать записи трима', module: 'trim' },
+  { name: 'trim:complete', description: 'Завершать трим (вводить сухой вес, попкорн)', module: 'trim' },
+
+  // ── Archive (архив) ──
+  { name: 'archive:edit', description: 'Редактировать данные архивных циклов', module: 'archive' },
+  { name: 'archive:delete', description: 'Удалять архивные циклы', module: 'archive' },
+
+  // ── Cycles (циклы) ──
+  { name: 'cycles:edit_name', description: 'Редактировать названия циклов', module: 'cycles' },
+  { name: 'cycles:plan', description: 'Создавать и редактировать планы циклов', module: 'cycles' },
+
+  // ── Templates (шаблоны) ──
+  { name: 'templates:manage', description: 'Создавать и удалять шаблоны комнат', module: 'templates' },
+
+  // ── Users (пользователи) ──
+  { name: 'users:read', description: 'Просмотр пользователей и ролей', module: 'users' },
+  { name: 'users:create', description: 'Создание пользователей', module: 'users' },
+  { name: 'users:update', description: 'Редактирование пользователей и настройка ролей', module: 'users' },
+  { name: 'users:delete', description: 'Удаление пользователей', module: 'users' },
+  { name: 'audit:read', description: 'Просмотр лога действий и корзины', module: 'users' },
+
+  // ── System (система) ──
+  { name: '*', description: 'Полный доступ ко всем функциям (суперадмин)', module: 'system' }
 ];
 
 const seedDatabase = async () => {
@@ -61,65 +84,113 @@ const seedDatabase = async () => {
 
     // Create permissions
     const createdPermissions = await Permission.insertMany(permissions);
-    console.log('Created permissions');
+    console.log(`Created ${createdPermissions.length} permissions`);
 
     const permissionMap = {};
     createdPermissions.forEach(p => {
       permissionMap[p.name] = p._id;
     });
 
+    // Helper: resolve permission IDs from names
+    const resolve = (...names) => names.map(n => permissionMap[n]).filter(Boolean);
+
+    // View permissions (все разделы)
+    const viewPerms = resolve(
+      'overview:view', 'active:view', 'harvest:view', 'clones:view',
+      'vegetation:view', 'archive:view', 'stats:view', 'trim:view'
+    );
+
     // Create roles
-    const viewPerms = [
-      permissionMap['overview:view'],
-      permissionMap['active:view'],
-      permissionMap['harvest:view'],
-      permissionMap['clones:view'],
-      permissionMap['vegetation:view'],
-      permissionMap['archive:view'],
-      permissionMap['stats:view'],
-      permissionMap['trim:view']
-    ];
     const roles = [
       {
         name: 'SuperAdmin',
         description: 'Полный доступ ко всей системе',
-        permissions: [permissionMap['*']],
+        permissions: resolve('*'),
         isSystem: true
       },
       {
         name: 'Admin',
         description: 'Администратор: все разделы и все действия',
         permissions: [
-          permissionMap['users:read'],
-          permissionMap['users:create'],
-          permissionMap['users:update'],
-          permissionMap['users:delete'],
-          permissionMap['audit:read'],
-          permissionMap['dashboard:view'],
-          permissionMap['harvest:do'],
-          permissionMap['harvest:edit_weights'],
-          permissionMap['cycles:edit_name'],
-          permissionMap['clones:create'],
-          permissionMap['vegetation:create'],
-          permissionMap['trim:create'],
-          permissionMap['trim:edit'],
-          ...viewPerms
+          ...viewPerms,
+          ...resolve(
+            // Rooms
+            'rooms:edit', 'rooms:start_cycle', 'rooms:notes',
+            // Tasks
+            'tasks:create', 'tasks:complete', 'tasks:delete',
+            // Clones
+            'clones:create', 'clones:edit', 'clones:delete', 'clones:send_to_veg',
+            // Vegetation
+            'vegetation:create', 'vegetation:edit', 'vegetation:delete', 'vegetation:send_to_flower',
+            // Harvest
+            'harvest:record', 'harvest:complete', 'harvest:edit_weights',
+            // Trim
+            'trim:create', 'trim:edit', 'trim:complete',
+            // Archive
+            'archive:edit', 'archive:delete',
+            // Cycles
+            'cycles:edit_name', 'cycles:plan',
+            // Templates
+            'templates:manage',
+            // Users
+            'users:read', 'users:create', 'users:update', 'users:delete',
+            'audit:read'
+          )
         ],
         isSystem: true
       },
       {
-        name: 'User',
-        description: 'Работник: только просмотр разделов (без сбора урожая, без редактирования клонов и вегетации)',
+        name: 'Grower',
+        description: 'Гровер: управление растениями, задачами и сбором урожая',
         permissions: [
-          permissionMap['dashboard:view'],
-          ...viewPerms
+          ...viewPerms,
+          ...resolve(
+            // Rooms
+            'rooms:edit', 'rooms:start_cycle', 'rooms:notes',
+            // Tasks
+            'tasks:create', 'tasks:complete', 'tasks:delete',
+            // Clones
+            'clones:create', 'clones:edit', 'clones:send_to_veg',
+            // Vegetation
+            'vegetation:create', 'vegetation:edit', 'vegetation:send_to_flower',
+            // Harvest
+            'harvest:record', 'harvest:complete', 'harvest:edit_weights',
+            // Trim
+            'trim:create', 'trim:edit', 'trim:complete',
+            // Cycles
+            'cycles:edit_name', 'cycles:plan'
+          )
         ],
+        isSystem: true
+      },
+      {
+        name: 'Worker',
+        description: 'Работник: выполнение задач, запись весов, трим',
+        permissions: [
+          ...viewPerms,
+          ...resolve(
+            // Rooms
+            'rooms:notes',
+            // Tasks
+            'tasks:complete',
+            // Harvest
+            'harvest:record',
+            // Trim
+            'trim:create'
+          )
+        ],
+        isSystem: true
+      },
+      {
+        name: 'Viewer',
+        description: 'Наблюдатель: только просмотр всех разделов',
+        permissions: [...viewPerms],
         isSystem: true
       }
     ];
 
     const createdRoles = await Role.insertMany(roles);
-    console.log('Created roles');
+    console.log(`Created ${createdRoles.length} roles`);
 
     const roleMap = {};
     createdRoles.forEach(r => {
@@ -139,6 +210,8 @@ const seedDatabase = async () => {
     console.log('Created admin user');
 
     console.log('\n=== Seed completed successfully ===');
+    console.log(`Permissions: ${createdPermissions.length}`);
+    console.log(`Roles: ${createdRoles.length} (SuperAdmin, Admin, Grower, Worker, Viewer)`);
     console.log('Admin credentials:');
     console.log('Email: admin@farm.com');
     console.log('Password: admin123');
