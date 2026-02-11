@@ -94,6 +94,68 @@ app.get('/api/health', (req, res) => {
 // TEMPORARY: Sync permissions endpoint
 import Permission from './models/Permission.js';
 import Role from './models/Role.js';
+
+// TEMPORARY: Update roles with new permissions
+app.post('/api/update-roles', async (req, res) => {
+  if (req.headers['x-sync-secret'] !== 'sync-perms-2025') {
+    return res.status(403).json({ message: 'Forbidden' });
+  }
+  try {
+    const allPerms = await Permission.find({});
+    const permMap = {};
+    allPerms.forEach(p => { permMap[p.name] = p._id; });
+    const resolve = (...names) => names.map(n => permMap[n]).filter(Boolean);
+
+    const viewPerms = resolve(
+      'overview:view', 'active:view', 'harvest:view', 'clones:view',
+      'vegetation:view', 'archive:view', 'stats:view', 'trim:view'
+    );
+
+    // Update Admin role
+    const adminRole = await Role.findOne({ name: 'Admin' });
+    if (adminRole) {
+      adminRole.permissions = [
+        ...viewPerms,
+        ...resolve(
+          'rooms:edit', 'rooms:start_cycle', 'rooms:notes',
+          'tasks:create', 'tasks:complete', 'tasks:delete',
+          'clones:create', 'clones:edit', 'clones:delete', 'clones:send_to_veg',
+          'vegetation:create', 'vegetation:edit', 'vegetation:delete', 'vegetation:send_to_flower',
+          'harvest:record', 'harvest:complete', 'harvest:edit_weights',
+          'trim:create', 'trim:edit', 'trim:complete',
+          'archive:edit', 'archive:delete',
+          'cycles:edit_name', 'cycles:plan',
+          'templates:manage',
+          'users:read', 'users:create', 'users:update', 'users:delete',
+          'audit:read'
+        )
+      ];
+      await adminRole.save();
+    }
+
+    // Update User role → now has all view perms + rooms:notes + tasks:complete + harvest:record + trim:create
+    const userRole = await Role.findOne({ name: 'User' });
+    if (userRole) {
+      userRole.permissions = [
+        ...viewPerms,
+        ...resolve('rooms:notes', 'tasks:complete', 'harvest:record', 'trim:create')
+      ];
+      await userRole.save();
+    }
+
+    const roles = await Role.find({}).populate('permissions', 'name');
+    const summary = roles.map(r => ({
+      name: r.name,
+      permsCount: r.permissions.length,
+      perms: r.permissions.map(p => p.name)
+    }));
+
+    res.json({ success: true, roles: summary });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+});
+
 app.post('/api/sync-permissions', async (req, res) => {
   if (req.headers['x-sync-secret'] !== 'sync-perms-2025') {
     return res.status(403).json({ message: 'Forbidden' });
