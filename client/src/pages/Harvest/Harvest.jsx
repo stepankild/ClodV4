@@ -377,7 +377,7 @@ const Harvest = () => {
           </div>
 
           {/* Карта комнаты */}
-          {hasRoomMap && (
+          {hasRoomMap ? (
             <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 mb-6">
               <h2 className="text-lg font-semibold text-white mb-4">Карта комнаты</h2>
               <HarvestRoomMap
@@ -390,6 +390,13 @@ const Harvest = () => {
                   }
                 }}
               />
+            </div>
+          ) : selectedRoom && (
+            <div className="bg-dark-800/50 rounded-xl p-4 border border-dark-700/50 mb-6">
+              <p className="text-dark-500 text-sm">
+                Карта комнаты не настроена.{' '}
+                <span className="text-dark-400">Настройте карту и расставьте кусты в «Активных комнатах» чтобы видеть прогресс сбора.</span>
+              </p>
             </div>
           )}
 
