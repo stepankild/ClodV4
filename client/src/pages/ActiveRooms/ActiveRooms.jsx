@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import RoomMap from '../../components/RoomMap/RoomMap';
+import RoomMapMini from '../../components/RoomMap/RoomMapMini';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -124,11 +125,11 @@ export default function ActiveRooms() {
     }
   };
 
-  const openRoom = (room) => {
+  const openRoom = (room, openMap = false) => {
     setSelectedRoom(room);
     setEditMode(false);
     setStartMode(false);
-    setMapMode(false);
+    setMapMode(openMap);
     setSettingsMode(false);
     setSprayFormOpen(false);
     setSprayProduct('');
@@ -604,6 +605,22 @@ export default function ActiveRooms() {
                     </div>
                   )}
                 </div>
+
+                {/* Мини-карта + кнопка */}
+                {room.roomLayout?.plantPositions?.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-dark-700">
+                    <div className="flex items-center justify-between gap-2">
+                      <RoomMapMini room={room} onClick={(e) => { e.stopPropagation(); openRoom(room, true); }} />
+                      <button
+                        type="button"
+                        onClick={(e) => { e.stopPropagation(); openRoom(room, true); }}
+                        className="px-2 py-1 text-[10px] bg-dark-700 text-dark-400 rounded hover:bg-dark-600 hover:text-dark-200 transition shrink-0"
+                      >
+                        Карта
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
