@@ -218,7 +218,11 @@ const Vegetation = () => {
 
   const handleSendToFlower = async (e) => {
     e.preventDefault();
-    if (!sendToFlowerModal || !sendRoomId) return;
+    if (!sendToFlowerModal) return;
+    if (!sendRoomId) {
+      setError('Выберите комнату цветения.');
+      return;
+    }
     const room = rooms.find((r) => r._id === sendRoomId);
     if (room && room.isActive) {
       setError('В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.');
@@ -1027,6 +1031,11 @@ const Vegetation = () => {
               Хороших в бэтче: {getBatchGoodCount(sendToFlowerModal)} шт. После отправки в бэтче останется меньше на выбранное количество.
             </p>
             <form onSubmit={handleSendToFlower} className="space-y-4">
+              {error && (
+                <div className="bg-red-900/30 border border-red-800 text-red-400 px-3 py-2 rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
               {sendStrains.length > 0 ? (
                 <div>
                   <label className="block text-xs text-dark-400 mb-2">Сколько какого сорта отправляете в цвет (в комнату будет видно сорт и кол-во)</label>
@@ -1102,7 +1111,7 @@ const Vegetation = () => {
                   disabled={saving || !sendRoomId || (!!sendRoomId && !!rooms.find((r) => r._id === sendRoomId)?.isActive)}
                   className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50"
                 >
-                  {saving ? 'Сохранение...' : 'Привязать'}
+                  {saving ? 'Отправка...' : 'Отправить в цвет'}
                 </button>
               </div>
             </form>
