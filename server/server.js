@@ -91,28 +91,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// TEMPORARY: reset all data except users/roles
-app.post('/api/admin/reset-all-data', async (req, res) => {
-  const secret = req.headers['x-reset-secret'];
-  if (secret !== 'truesource-reset-2025') {
-    return res.status(403).json({ message: 'Forbidden' });
-  }
-  try {
-    const mongoose = (await import('mongoose')).default;
-    const collections = ['auditlogs', 'clonecuts', 'cyclearchives', 'flowerrooms',
-      'harvestsessions', 'plannedcycles', 'roomlogs', 'roomtasks', 'roomtemplates',
-      'trimlogs', 'vegbatches'];
-    const results = {};
-    for (const name of collections) {
-      const col = mongoose.connection.collection(name);
-      const { deletedCount } = await col.deleteMany({});
-      results[name] = deletedCount;
-    }
-    res.json({ message: 'All data reset (users & roles preserved)', results });
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
-});
 
 const clientDist = path.join(__dirname, '../client/dist');
 const indexPath = path.join(clientDist, 'index.html');
