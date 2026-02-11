@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
@@ -247,14 +247,9 @@ const Harvest = () => {
 
   // Данные для карты комнаты в режиме сбора
   const selectedRoom = safeRooms.find(r => r._id === selectedRoomId);
-  const harvestedPlants = useMemo(() => {
-    return new Set((session?.plants || []).map(p => p.plantNumber));
-  }, [session?.plants]);
-  const harvestedWeights = useMemo(() => {
-    const m = new Map();
-    (session?.plants || []).forEach(p => m.set(p.plantNumber, p.wetWeight));
-    return m;
-  }, [session?.plants]);
+  const sessionPlants = session?.plants || [];
+  const harvestedPlants = new Set(sessionPlants.map(p => p.plantNumber));
+  const harvestedWeights = new Map(sessionPlants.map(p => [p.plantNumber, p.wetWeight]));
   const hasRoomMap = selectedRoom?.roomLayout?.customRows?.length > 0 &&
     selectedRoom?.roomLayout?.plantPositions?.length > 0;
 
