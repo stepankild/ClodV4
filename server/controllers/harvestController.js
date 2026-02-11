@@ -218,10 +218,12 @@ export const completeSession = async (req, res) => {
     const room = await FlowerRoom.findById(session.room);
     if (room && room.isActive) {
       const totalWet = (session.plants || []).reduce((sum, p) => sum + (p.wetWeight || 0), 0);
-      const completedTasks = await RoomTask.find({
-        room: room._id,
-        completed: true
-      }).populate('completedBy', 'name');
+      // Берём только задачи текущего цикла (по cycleId), не прошлых
+      const taskQuery = { room: room._id, completed: true };
+      if (room.currentCycleId) {
+        taskQuery.cycleId = room.currentCycleId;
+      }
+      const completedTasks = await RoomTask.find(taskQuery).populate('completedBy', 'name');
 
       const harvestDate = new Date();
       const actualDays = room.currentDay || 0;
@@ -375,11 +377,12 @@ export const completeSession = async (req, res) => {
         dayOfCycle: actualDays
       });
 
-      // Мягкое удаление задач комнаты
-      await RoomTask.updateMany(
-        { room: room._id, deletedAt: null },
-        { $set: { deletedAt: new Date() } }
-      );
+      // Мягкое удаление задач текущего цикла
+      const deleteTaskQuery = { room: room._id, deletedAt: null };
+      if (room.currentCycleId) {
+        deleteTaskQuery.cycleId = room.currentCycleId;
+      }
+      await RoomTask.updateMany(deleteTaskQuery, { $set: { deletedAt: new Date() } });
 
       room.cycleName = '';
       room.strain = '';
