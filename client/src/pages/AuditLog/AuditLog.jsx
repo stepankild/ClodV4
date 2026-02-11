@@ -15,28 +15,130 @@ const formatDate = (date) => {
   });
 };
 
+// Все действия с описаниями и цветами
 const ACTION_LABELS = {
-  'user.create': 'Создан пользователь',
-  'user.update': 'Изменён пользователь',
-  'user.delete': 'Удалён пользователь',
-  'role.create': 'Создана роль',
-  'role.update': 'Изменена роль',
-  'role.delete': 'Удалена роль',
-  'clone_cut.upsert': 'Нарезка клонов (создание/обновление)',
-  'clone_cut.update': 'Нарезка клонов (изменение)',
-  'veg_batch.create': 'Создан бэтч вегетации',
-  'veg_batch.update': 'Изменён бэтч вегетации',
-  'veg_batch.delete': 'Удалён бэтч вегетации',
-  'harvest.archive': 'Урожай архивирован (ручной ввод весов)',
-  'harvest.complete': 'Сбор урожая завершён (автоархив)',
-  'harvest.plant_add': 'Записан куст при сборе',
-  'archive.update': 'Изменён архив цикла',
-  'room.cycle_start': 'Запущен цикл в комнате',
-  'room.update': 'Изменена комната',
-  'plan.upsert': 'План цикла (создание/обновление)',
-  'plan.update': 'План цикла (изменение)',
-  'plan.delete': 'План цикла удалён'
+  // Авторизация
+  'auth.login': { label: 'Вход в систему', icon: '🔑', color: 'text-green-400' },
+  'auth.logout': { label: 'Выход из системы', icon: '🚪', color: 'text-dark-400' },
+
+  // Пользователи
+  'user.create': { label: 'Создан пользователь', icon: '👤', color: 'text-blue-400' },
+  'user.update': { label: 'Изменён пользователь', icon: '✏️', color: 'text-yellow-400' },
+  'user.approve': { label: 'Одобрен пользователь', icon: '✅', color: 'text-green-400' },
+  'user.delete': { label: 'Удалён пользователь', icon: '🗑️', color: 'text-red-400' },
+  'user.restore': { label: 'Восстановлен пользователь', icon: '♻️', color: 'text-green-400' },
+
+  // Роли
+  'role.create': { label: 'Создана роль', icon: '🛡️', color: 'text-blue-400' },
+  'role.update': { label: 'Изменена роль', icon: '🛡️', color: 'text-yellow-400' },
+  'role.delete': { label: 'Удалена роль', icon: '🛡️', color: 'text-red-400' },
+  'role.restore': { label: 'Восстановлена роль', icon: '🛡️', color: 'text-green-400' },
+
+  // Комнаты
+  'room.update': { label: 'Изменена комната', icon: '🏠', color: 'text-yellow-400' },
+  'room.cycle_start': { label: 'Запущен цикл', icon: '🌱', color: 'text-green-400' },
+  'room.note': { label: 'Добавлена заметка', icon: '📝', color: 'text-blue-400' },
+  'room.harvest_reset': { label: 'Комната сброшена (сбор)', icon: '🏠', color: 'text-orange-400' },
+
+  // Задачи
+  'task.create': { label: 'Создана задача', icon: '📋', color: 'text-blue-400' },
+  'task.quick_add': { label: 'Быстрая задача', icon: '⚡', color: 'text-blue-400' },
+  'task.complete': { label: 'Задача выполнена', icon: '✅', color: 'text-green-400' },
+  'task.uncomplete': { label: 'Задача снята', icon: '↩️', color: 'text-yellow-400' },
+  'task.update': { label: 'Изменена задача', icon: '📋', color: 'text-yellow-400' },
+  'task.delete': { label: 'Удалена задача', icon: '🗑️', color: 'text-red-400' },
+  'task.restore': { label: 'Восстановлена задача', icon: '♻️', color: 'text-green-400' },
+
+  // Клоны
+  'clone_cut.create_order': { label: 'Заказ клонов', icon: '🌿', color: 'text-blue-400' },
+  'clone_cut.upsert': { label: 'Нарезка клонов', icon: '✂️', color: 'text-green-400' },
+  'clone_cut.update': { label: 'Изменены клоны', icon: '✂️', color: 'text-yellow-400' },
+  'clone_cut.delete': { label: 'Удалены клоны', icon: '🗑️', color: 'text-red-400' },
+  'clone_cut.restore': { label: 'Восстановлены клоны', icon: '♻️', color: 'text-green-400' },
+
+  // Вегетация
+  'veg_batch.create': { label: 'Создан бэтч вегетации', icon: '🌱', color: 'text-green-400' },
+  'veg_batch.update': { label: 'Изменён бэтч', icon: '🌱', color: 'text-yellow-400' },
+  'veg_batch.dispose_remaining': { label: 'Списаны остатки', icon: '🌱', color: 'text-orange-400' },
+  'veg_batch.delete': { label: 'Удалён бэтч', icon: '🗑️', color: 'text-red-400' },
+  'veg_batch.restore': { label: 'Восстановлен бэтч', icon: '♻️', color: 'text-green-400' },
+
+  // Сбор урожая
+  'harvest.session_start': { label: 'Начат сбор урожая', icon: '⚖️', color: 'text-blue-400' },
+  'harvest.plant_add': { label: 'Записан куст', icon: '🌿', color: 'text-green-400' },
+  'harvest.complete': { label: 'Сбор завершён', icon: '🎉', color: 'text-green-400' },
+  'harvest.archive': { label: 'Урожай архивирован', icon: '📦', color: 'text-blue-400' },
+
+  // Трим
+  'trim.log_add': { label: 'Записан трим', icon: '✂️', color: 'text-green-400' },
+  'trim.log_delete': { label: 'Удалён трим', icon: '🗑️', color: 'text-red-400' },
+  'trim.log_restore': { label: 'Восстановлен трим', icon: '♻️', color: 'text-green-400' },
+  'trim.archive_update': { label: 'Обновлён трим-архив', icon: '✂️', color: 'text-yellow-400' },
+  'trim.complete': { label: 'Трим завершён', icon: '✅', color: 'text-green-400' },
+
+  // Архив
+  'archive.update': { label: 'Изменён архив цикла', icon: '📦', color: 'text-yellow-400' },
+  'archive.delete': { label: 'Удалён архив', icon: '🗑️', color: 'text-red-400' },
+  'archive.restore': { label: 'Восстановлен архив', icon: '♻️', color: 'text-green-400' },
+
+  // Планы
+  'plan.upsert': { label: 'План цикла создан', icon: '📅', color: 'text-blue-400' },
+  'plan.update': { label: 'План цикла изменён', icon: '📅', color: 'text-yellow-400' },
+  'plan.delete': { label: 'План цикла удалён', icon: '🗑️', color: 'text-red-400' },
+  'plan.restore': { label: 'План восстановлен', icon: '♻️', color: 'text-green-400' },
+
+  // Шаблоны
+  'roomTemplate.create': { label: 'Создан шаблон', icon: '📐', color: 'text-blue-400' },
+  'roomTemplate.delete': { label: 'Удалён шаблон', icon: '🗑️', color: 'text-red-400' },
 };
+
+// Названия деталей на русском
+const DETAIL_LABELS = {
+  email: 'Email',
+  name: 'Имя',
+  roomName: 'Комната',
+  roomId: 'ID комнаты',
+  cycleName: 'Цикл',
+  strain: 'Сорт',
+  plantsCount: 'Кустов',
+  floweringDays: 'Дней цвет.',
+  title: 'Название',
+  type: 'Тип',
+  note: 'Заметка',
+  quantity: 'Кол-во',
+  cutDate: 'Дата нарезки',
+  isDone: 'Готово',
+  isOrder: 'Заказ',
+  flowerRoom: 'Комната',
+  disposedCount: 'Списано',
+  plantNumber: 'Куст №',
+  wetWeight: 'Сырой вес',
+  dryWeight: 'Сухой вес',
+  popcornWeight: 'Попкорн',
+  trimWeight: 'Вес трима',
+  weight: 'Вес',
+  plantsRecorded: 'Записано',
+  archiveId: 'ID архива',
+  rowCount: 'Рядов',
+  harvestData: 'Данные урожая',
+  isApproved: 'Одобрен'
+};
+
+// Группы действий для фильтра
+const ACTION_GROUPS = [
+  { label: 'Авторизация', options: ['auth.login', 'auth.logout'] },
+  { label: 'Пользователи', options: ['user.create', 'user.update', 'user.approve', 'user.delete', 'user.restore'] },
+  { label: 'Роли', options: ['role.create', 'role.update', 'role.delete', 'role.restore'] },
+  { label: 'Комнаты', options: ['room.update', 'room.cycle_start', 'room.note', 'room.harvest_reset'] },
+  { label: 'Задачи', options: ['task.create', 'task.quick_add', 'task.complete', 'task.uncomplete', 'task.update', 'task.delete', 'task.restore'] },
+  { label: 'Клоны', options: ['clone_cut.create_order', 'clone_cut.upsert', 'clone_cut.update', 'clone_cut.delete', 'clone_cut.restore'] },
+  { label: 'Вегетация', options: ['veg_batch.create', 'veg_batch.update', 'veg_batch.dispose_remaining', 'veg_batch.delete', 'veg_batch.restore'] },
+  { label: 'Сбор урожая', options: ['harvest.session_start', 'harvest.plant_add', 'harvest.complete', 'harvest.archive'] },
+  { label: 'Трим', options: ['trim.log_add', 'trim.log_delete', 'trim.log_restore', 'trim.archive_update', 'trim.complete'] },
+  { label: 'Архив', options: ['archive.update', 'archive.delete', 'archive.restore'] },
+  { label: 'Планы', options: ['plan.upsert', 'plan.update', 'plan.delete', 'plan.restore'] },
+  { label: 'Шаблоны', options: ['roomTemplate.create', 'roomTemplate.delete'] },
+];
 
 const AuditLog = () => {
   const { hasPermission } = useAuth();
@@ -50,20 +152,17 @@ const AuditLog = () => {
   const [filterAction, setFilterAction] = useState('');
   const [filterFrom, setFilterFrom] = useState('');
   const [filterTo, setFilterTo] = useState('');
+  const [search, setSearch] = useState('');
   const limit = 30;
 
   const canRead = hasPermission && hasPermission('audit:read');
 
   useEffect(() => {
-    if (canRead) {
-      loadUsers();
-    }
+    if (canRead) loadUsers();
   }, [canRead]);
 
   useEffect(() => {
-    if (canRead) {
-      loadLogs();
-    }
+    if (canRead) loadLogs();
   }, [canRead, page, filterUserId, filterAction, filterFrom, filterTo]);
 
   const loadUsers = async () => {
@@ -101,46 +200,95 @@ const AuditLog = () => {
       <div className="flex items-center justify-center h-64">
         <div className="text-center text-dark-400">
           <p className="text-lg font-medium">Нет доступа</p>
-          <p className="text-sm mt-1">Для просмотра лога действий нужно право «Просмотр лога действий» (audit:read).</p>
+          <p className="text-sm mt-1">Нужно право «audit:read».</p>
         </div>
       </div>
     );
   }
 
   const totalPages = Math.ceil(total / limit);
-  const actionOptions = [...new Set(Object.keys(ACTION_LABELS))].sort();
+
+  // Фильтрация по тексту (локально по загруженным логам)
+  const filteredLogs = search.trim()
+    ? logs.filter(log => {
+        const s = search.toLowerCase();
+        const actionInfo = ACTION_LABELS[log.action];
+        const actionLabel = actionInfo?.label || log.action;
+        const userName = log.user?.name || '';
+        const details = log.details ? Object.values(log.details).join(' ') : '';
+        return (
+          actionLabel.toLowerCase().includes(s) ||
+          userName.toLowerCase().includes(s) ||
+          details.toLowerCase().includes(s) ||
+          log.action.toLowerCase().includes(s)
+        );
+      })
+    : logs;
+
+  // Рендер деталей
+  const renderDetails = (log) => {
+    if (!log.details || Object.keys(log.details).length === 0) return null;
+    const entries = Object.entries(log.details).filter(([, v]) => v !== undefined && v !== null && v !== '');
+    if (entries.length === 0) return null;
+
+    return (
+      <div className="text-xs space-y-0.5">
+        {entries.map(([key, value]) => {
+          const label = DETAIL_LABELS[key] || key;
+          let displayValue = value;
+          if (typeof value === 'boolean') displayValue = value ? 'Да' : 'Нет';
+          else if (key.endsWith('Weight') || key === 'weight') displayValue = `${value}г`;
+          else displayValue = String(value);
+          return (
+            <div key={key} className="flex gap-1.5">
+              <span className="text-dark-500 shrink-0">{label}:</span>
+              <span className="text-dark-300 truncate" title={displayValue}>{displayValue}</span>
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
+
+  const hasFilters = filterUserId || filterAction || filterFrom || filterTo || search;
 
   return (
     <div>
-      <div className="mb-8">
+      <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Лог действий</h1>
-        <p className="text-dark-400 mt-1">
-          Кто что сделал и когда. Помогает найти, кто внёс изменение при ошибке.
-        </p>
+        <p className="text-dark-400 mt-1">Все действия пользователей в системе</p>
       </div>
 
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
           <span>{error}</span>
-          <button type="button" onClick={loadLogs} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">
-            Повторить
-          </button>
+          <button type="button" onClick={loadLogs} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">Повторить</button>
         </div>
       )}
 
+      {/* Фильтры */}
       <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-6">
-        <h2 className="text-sm font-semibold text-dark-300 mb-3">Фильтры</h2>
-        <div className="flex flex-wrap items-end gap-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-xs text-dark-500 mb-1">Поиск</label>
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Имя, действие, детали..."
+              className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500"
+            />
+          </div>
           <div>
             <label className="block text-xs text-dark-500 mb-1">Пользователь</label>
             <select
               value={filterUserId}
               onChange={(e) => { setFilterUserId(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[180px]"
+              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[150px]"
             >
               <option value="">Все</option>
               {users.map((u) => (
-                <option key={u._id} value={u._id}>{u.name} ({u.email})</option>
+                <option key={u._id} value={u._id}>{u.name}</option>
               ))}
             </select>
           </div>
@@ -149,57 +297,54 @@ const AuditLog = () => {
             <select
               value={filterAction}
               onChange={(e) => { setFilterAction(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[220px]"
+              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[190px]"
             >
               <option value="">Все</option>
-              {actionOptions.map((a) => (
-                <option key={a} value={a}>{ACTION_LABELS[a] || a}</option>
+              {ACTION_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.options.map((a) => (
+                    <option key={a} value={a}>{ACTION_LABELS[a]?.label || a}</option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
           <div>
             <label className="block text-xs text-dark-500 mb-1">С</label>
-            <input
-              type="date"
-              value={filterFrom}
-              onChange={(e) => { setFilterFrom(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-            />
+            <input type="date" value={filterFrom} onChange={(e) => { setFilterFrom(e.target.value); setPage(1); }}
+              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
           </div>
           <div>
             <label className="block text-xs text-dark-500 mb-1">По</label>
-            <input
-              type="date"
-              value={filterTo}
-              onChange={(e) => { setFilterTo(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-            />
+            <input type="date" value={filterTo} onChange={(e) => { setFilterTo(e.target.value); setPage(1); }}
+              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
           </div>
+          {hasFilters && (
+            <button type="button"
+              onClick={() => { setFilterUserId(''); setFilterAction(''); setFilterFrom(''); setFilterTo(''); setSearch(''); setPage(1); }}
+              className="px-3 py-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg text-sm">
+              Сбросить
+            </button>
+          )}
         </div>
       </div>
 
+      {/* Таблица */}
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
         <div className="px-4 py-3 border-b border-dark-700 flex items-center justify-between flex-wrap gap-2">
-          <span className="text-dark-400 text-sm">Всего записей: <span className="text-white font-medium">{total}</span></span>
+          <span className="text-dark-400 text-sm">
+            Записей: <span className="text-white font-medium">{total}</span>
+            {search && filteredLogs.length !== logs.length && (
+              <span className="text-dark-500 ml-2">(показано {filteredLogs.length})</span>
+            )}
+          </span>
           {totalPages > 1 && (
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page <= 1}
-                className="px-2 py-1 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600"
-              >
-                ←
-              </button>
-              <span className="text-dark-400 text-sm">Стр. {page} из {totalPages}</span>
-              <button
-                type="button"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page >= totalPages}
-                className="px-2 py-1 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600"
-              >
-                →
-              </button>
+              <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                className="px-2.5 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">←</button>
+              <span className="text-dark-400 text-sm">{page} / {totalPages}</span>
+              <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+                className="px-2.5 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">→</button>
             </div>
           )}
         </div>
@@ -212,52 +357,50 @@ const AuditLog = () => {
             <table className="w-full text-sm">
               <thead className="bg-dark-900">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Когда</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Кто</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[155px]">Когда</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[120px]">Кто</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Действие</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Детали</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-700">
-                {logs.length === 0 ? (
+                {filteredLogs.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-4 py-12 text-center text-dark-500">
-                      {page === 1 && !filterUserId && !filterAction && !filterFrom && !filterTo
-                        ? 'Пока нет записей в логе.'
-                        : 'Нет записей по выбранным фильтрам.'}
+                      {!hasFilters ? 'Пока нет записей.' : 'Нет записей по фильтрам.'}
                     </td>
                   </tr>
                 ) : (
-                  logs.map((log) => (
-                    <tr key={log._id} className="hover:bg-dark-700/30">
-                      <td className="px-4 py-3 text-dark-300 whitespace-nowrap">{formatDate(log.createdAt)}</td>
-                      <td className="px-4 py-3">
-                        <span className="text-white font-medium">{log.user?.name || '—'}</span>
-                        {log.user?.email && <span className="text-dark-500 text-xs block">{log.user.email}</span>}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-primary-400">{ACTION_LABELS[log.action] || log.action}</span>
-                      </td>
-                      <td className="px-4 py-3 text-dark-300 max-w-md">
-                        {log.details && Object.keys(log.details).length > 0 ? (
-                          <div className="text-xs font-sans bg-dark-900/50 rounded px-2 py-1 overflow-x-auto">
-                            {Object.entries(log.details)
-                              .filter(([, v]) => v !== undefined && v !== null && v !== '')
-                              .map(([k, v]) => (
-                                <div key={k} className="truncate" title={String(v)}>
-                                  <span className="text-dark-500">{k}:</span> <span className="text-dark-300">{String(v)}</span>
-                                </div>
-                              ))}
+                  filteredLogs.map((log) => {
+                    const ai = ACTION_LABELS[log.action];
+                    return (
+                      <tr key={log._id} className="hover:bg-dark-700/30">
+                        <td className="px-4 py-2.5 text-dark-400 whitespace-nowrap text-xs">{formatDate(log.createdAt)}</td>
+                        <td className="px-4 py-2.5">
+                          <span className="text-white font-medium text-sm">{log.user?.name || '—'}</span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <div className="flex items-center gap-1.5">
+                            {ai?.icon && <span className="text-sm">{ai.icon}</span>}
+                            <span className={`font-medium ${ai?.color || 'text-primary-400'}`}>{ai?.label || log.action}</span>
                           </div>
-                        ) : (
-                          <span className="text-dark-500">—</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                        </td>
+                        <td className="px-4 py-2.5 max-w-sm">{renderDetails(log) || <span className="text-dark-600">—</span>}</td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
+          </div>
+        )}
+        {totalPages > 1 && (
+          <div className="px-4 py-3 border-t border-dark-700 flex justify-center gap-2">
+            <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+              className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">← Назад</button>
+            <span className="px-3 py-1.5 text-dark-400 text-sm">Стр. {page} из {totalPages}</span>
+            <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+              className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">Вперёд →</button>
           </div>
         )}
       </div>
