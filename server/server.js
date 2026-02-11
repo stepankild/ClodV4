@@ -37,6 +37,7 @@ import './models/PlannedCycle.js';
 import './models/CloneCut.js';
 import './models/VegBatch.js';
 import './models/TrimLog.js';
+import './models/RoomTemplate.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load .env from server folder (Railway uses Variables, so MONGODB_URI must be set there)
 dotenv.config({ path: path.join(__dirname, '.env') });
