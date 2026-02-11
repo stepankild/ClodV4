@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { archiveService } from '../../services/archiveService';
 import { useAuth } from '../../context/AuthContext';
+import ArchiveHeatMap from '../../components/RoomMap/ArchiveHeatMap';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -395,6 +396,13 @@ export default function ArchiveDetail() {
               </div>
             )}
           </Section>
+
+          {/* Карта сбора (тепловая) */}
+          {archive?.harvestMapData?.plants?.length > 0 && (
+            <Section title="Карта сбора" icon="🗺️">
+              <ArchiveHeatMap harvestMapData={archive.harvestMapData} />
+            </Section>
+          )}
 
           {/* Completed Tasks */}
           {tasks.length > 0 && (

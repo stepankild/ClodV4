@@ -294,6 +294,26 @@ export const completeSession = async (req, res) => {
         strainData = [{ strain: room.strain || '—', wetWeight: totalWet, dryWeight: 0, popcornWeight: 0 }];
       }
 
+      // Снимок карты комнаты для архива (позиции + веса кустов)
+      const harvestMapData = {
+        customRows: (room.roomLayout?.customRows || []).map(r => ({
+          name: r.name || '',
+          cols: r.cols || 4,
+          rows: r.rows || 1,
+          fillDirection: r.fillDirection || 'topDown'
+        })),
+        plants: (room.roomLayout?.plantPositions || []).map(pp => {
+          const harvested = (session.plants || []).find(p => p.plantNumber === pp.plantNumber);
+          return {
+            plantNumber: pp.plantNumber,
+            row: pp.row,
+            position: pp.position,
+            strain: harvested?.strain || '',
+            wetWeight: harvested?.wetWeight || 0
+          };
+        })
+      };
+
       const archive = await CycleArchive.create({
         room: room._id,
         roomNumber: room.roomNumber,
@@ -340,7 +360,8 @@ export const completeSession = async (req, res) => {
           sprayProduct: t.sprayProduct,
           feedProduct: t.feedProduct,
           feedDosage: t.feedDosage
-        }))
+        })),
+        harvestMapData
       });
 
       await RoomLog.create({
