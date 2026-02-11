@@ -25,6 +25,6 @@ router.post('/log', checkPermission('trim:create'), addTrimLog);
 router.get('/logs/:archiveId', checkPermission('trim:view'), getTrimLogs);
 router.delete('/log/:id', checkPermission('trim:edit'), deleteTrimLog);
 router.put('/archive/:archiveId', checkPermission('trim:edit'), updateTrimArchive);
-router.post('/complete/:archiveId', checkPermission('trim:edit'), completeTrim);
+router.post('/complete/:archiveId', checkPermission('trim:complete'), completeTrim);
 
 export default router;

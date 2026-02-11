@@ -50,12 +50,12 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route path="/" element={<Overview />} />
-        <Route path="/active" element={<ActiveRooms />} />
-        <Route path="/harvest" element={<Harvest />} />
+        <Route path="/" element={<ProtectedRoute permission="overview:view"><Overview /></ProtectedRoute>} />
+        <Route path="/active" element={<ProtectedRoute permission="active:view"><ActiveRooms /></ProtectedRoute>} />
+        <Route path="/harvest" element={<ProtectedRoute permission="harvest:view"><Harvest /></ProtectedRoute>} />
         <Route path="/trim" element={<ProtectedRoute permission="trim:view"><Trim /></ProtectedRoute>} />
-        <Route path="/clones" element={<Clones />} />
-        <Route path="/vegetation" element={<Vegetation />} />
+        <Route path="/clones" element={<ProtectedRoute permission="clones:view"><Clones /></ProtectedRoute>} />
+        <Route path="/vegetation" element={<ProtectedRoute permission="vegetation:view"><Vegetation /></ProtectedRoute>} />
         <Route path="/archive" element={<ProtectedRoute permission="archive:view"><Archives /></ProtectedRoute>} />
         <Route path="/archive/:id" element={<ProtectedRoute permission="archive:view"><ArchiveDetail /></ProtectedRoute>} />
         <Route path="/stats" element={<ProtectedRoute permission="stats:view"><Statistics /></ProtectedRoute>} />

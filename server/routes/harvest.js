@@ -15,12 +15,15 @@ const router = express.Router();
 
 router.use(protect);
 
+// Просмотр
 router.get('/scale', getScaleReading);
 router.get('/session', checkPermission('harvest:view'), getSessionByRoom);
-router.post('/session', checkPermission('harvest:do'), createSession);
-router.post('/session/:sessionId/plant', checkPermission('harvest:do'), addPlant);
-router.patch('/session/:sessionId/plant/:plantNumber', checkPermission('harvest:do'), setPlantErrorNote);
-router.post('/session/:sessionId/complete', checkPermission('harvest:do'), completeSession);
 router.get('/sessions', checkPermission('harvest:view'), getSessions);
+
+// Действия
+router.post('/session', checkPermission('harvest:record'), createSession);
+router.post('/session/:sessionId/plant', checkPermission('harvest:record'), addPlant);
+router.patch('/session/:sessionId/plant/:plantNumber', checkPermission('harvest:edit_weights'), setPlantErrorNote);
+router.post('/session/:sessionId/complete', checkPermission('harvest:complete'), completeSession);
 
 export default router;

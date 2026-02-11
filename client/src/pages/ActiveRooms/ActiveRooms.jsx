@@ -16,7 +16,7 @@ const formatDateInput = (date) => {
 export default function ActiveRooms() {
   const { hasPermission } = useAuth();
   const canEditCycleName = hasPermission ? hasPermission('cycles:edit_name') : false;
-  const canHarvest = hasPermission ? hasPermission('harvest:do') : false;
+  const canHarvest = hasPermission ? hasPermission('harvest:complete') : false;
 
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);

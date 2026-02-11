@@ -53,9 +53,9 @@ const TrashSection = ({ title, items, renderInfo, onRestore, restoringId, type }
 
 const Trash = () => {
   const { hasPermission } = useAuth();
-  const canRestoreClones = hasPermission && hasPermission('clones:create');
-  const canRestoreVeg = hasPermission && hasPermission('vegetation:create');
-  const canRestoreArchive = hasPermission && (hasPermission('archive:view') || hasPermission('harvest:do'));
+  const canRestoreClones = hasPermission && hasPermission('clones:delete');
+  const canRestoreVeg = hasPermission && hasPermission('vegetation:delete');
+  const canRestoreArchive = hasPermission && hasPermission('archive:delete');
   const canRestoreTrim = hasPermission && hasPermission('trim:edit');
   const canRestoreUsers = hasPermission && hasPermission('users:update');
 

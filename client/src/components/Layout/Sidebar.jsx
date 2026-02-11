@@ -65,10 +65,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
   const filteredMenuItems = menuItems.filter((item) => {
     if (!item.permission) return true;
-    if (hasPermission(item.permission)) return true;
-    if (hasPermission('*')) return true;
-    if (item.permission.endsWith(':view') && hasPermission('dashboard:view')) return true;
-    return false;
+    return hasPermission(item.permission);
   });
 
   return (
