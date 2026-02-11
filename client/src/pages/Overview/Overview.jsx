@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
+import RoomMapMini from '../../components/RoomMap/RoomMapMini';
 
 const WEEKS_BEFORE_CLONE = 4;
 const DAYS_BEFORE_CUT = WEEKS_BEFORE_CLONE * 7;
@@ -306,6 +307,13 @@ const Overview = () => {
                       )}
                     </div>
                   </div>
+
+                  {/* Мини-карта комнаты */}
+                  {room.roomLayout?.plantPositions?.length > 0 && (
+                    <div className="mb-3 py-2 border-t border-dark-700/50">
+                      <RoomMapMini room={room} />
+                    </div>
+                  )}
 
                   {/* Milestones — compact row */}
                   {(() => {
