@@ -1,6 +1,7 @@
 import User from '../models/User.js';
 import Role from '../models/Role.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
+import AuditLog from '../models/AuditLog.js';
 
 // @desc    Register new user (requires admin approval)
 // @route   POST /api/auth/register
@@ -82,6 +83,19 @@ export const login = async (req, res) => {
     // Get permissions
     const permissions = await user.getPermissions();
 
+    // Audit log — вход
+    try {
+      await AuditLog.create({
+        user: user._id,
+        action: 'auth.login',
+        entityType: 'User',
+        entityId: user._id,
+        details: { email: user.email },
+        ip: req.ip || req.connection?.remoteAddress || '',
+        userAgent: req.get?.('user-agent') || ''
+      });
+    } catch (_) { /* не блокируем логин из-за ошибки лога */ }
+
     res.json({
       accessToken,
       refreshToken,
@@ -148,6 +162,18 @@ export const logout = async (req, res) => {
     if (user) {
       user.refreshToken = null;
       await user.save();
+      // Audit log — выход
+      try {
+        await AuditLog.create({
+          user: user._id,
+          action: 'auth.logout',
+          entityType: 'User',
+          entityId: user._id,
+          details: { email: user.email },
+          ip: req.ip || req.connection?.remoteAddress || '',
+          userAgent: req.get?.('user-agent') || ''
+        });
+      } catch (_) {}
     }
     res.json({ message: 'Выход выполнен успешно' });
   } catch (error) {

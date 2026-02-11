@@ -312,6 +312,7 @@ export const addNote = async (req, res) => {
       dayOfCycle: room.currentDay
     });
 
+    await createAuditLog(req, { action: 'room.note', entityType: 'FlowerRoom', entityId: room._id, details: { roomName: room.name, note: note?.substring(0, 100) } });
     res.json(room);
   } catch (error) {
     console.error('Add note error:', error);
@@ -351,6 +352,7 @@ export const harvestRoom = async (req, res) => {
 
     await room.save();
 
+    await createAuditLog(req, { action: 'room.harvest_reset', entityType: 'FlowerRoom', entityId: room._id, details: { roomName: room.name } });
     res.json(room);
   } catch (error) {
     console.error('Harvest room error:', error);

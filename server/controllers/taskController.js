@@ -78,6 +78,7 @@ export const createTask = async (req, res) => {
       dayOfCycle: room.currentDay || null
     });
 
+    await createAuditLog(req, { action: 'task.create', entityType: 'RoomTask', entityId: task._id, details: { title: task.title, roomName: room.name, type } });
     res.status(201).json(task);
   } catch (error) {
     console.error('Create task error:', error);
@@ -128,6 +129,7 @@ export const toggleTask = async (req, res) => {
     await task.save();
     await task.populate('completedBy', 'name');
 
+    await createAuditLog(req, { action: task.completed ? 'task.complete' : 'task.uncomplete', entityType: 'RoomTask', entityId: task._id, details: { title: task.title, roomId: task.room?.toString?.() || task.room } });
     res.json(task);
   } catch (error) {
     console.error('Toggle task error:', error);
@@ -166,6 +168,7 @@ export const updateTask = async (req, res) => {
     await task.save();
     await task.populate('completedBy', 'name');
 
+    await createAuditLog(req, { action: 'task.update', entityType: 'RoomTask', entityId: task._id, details: { title: task.title } });
     res.json(task);
   } catch (error) {
     console.error('Update task error:', error);
@@ -269,6 +272,7 @@ export const quickAddTask = async (req, res) => {
 
     await task.populate('completedBy', 'name');
 
+    await createAuditLog(req, { action: 'task.quick_add', entityType: 'RoomTask', entityId: task._id, details: { title: task.title, roomName: room.name, type } });
     res.status(201).json(task);
   } catch (error) {
     console.error('Quick add task error:', error);

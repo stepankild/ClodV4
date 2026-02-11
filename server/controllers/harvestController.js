@@ -93,6 +93,7 @@ export const createSession = async (req, res) => {
       status: 'in_progress',
       plants: []
     });
+    await createAuditLog(req, { action: 'harvest.session_start', entityType: 'HarvestSession', entityId: session._id, details: { roomName: room.name, strain: room.strain, plantsCount: room.plantsCount } });
     res.status(201).json(session);
   } catch (error) {
     console.error('Create harvest session error:', error);
