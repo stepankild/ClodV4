@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import { harvestService } from '../../services/harvestService';
+import HarvestRoomMap from '../../components/RoomMap/HarvestRoomMap';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -244,6 +245,19 @@ const Harvest = () => {
     return map;
   })();
 
+  // Данные для карты комнаты в режиме сбора
+  const selectedRoom = safeRooms.find(r => r._id === selectedRoomId);
+  const harvestedPlants = useMemo(() => {
+    return new Set((session?.plants || []).map(p => p.plantNumber));
+  }, [session?.plants]);
+  const harvestedWeights = useMemo(() => {
+    const m = new Map();
+    (session?.plants || []).forEach(p => m.set(p.plantNumber, p.wetWeight));
+    return m;
+  }, [session?.plants]);
+  const hasRoomMap = selectedRoom?.roomLayout?.customRows?.length > 0 &&
+    selectedRoom?.roomLayout?.plantPositions?.length > 0;
+
   return (
     <div>
       <div className="mb-8">
@@ -366,6 +380,23 @@ const Harvest = () => {
               </button>
             </div>
           </div>
+
+          {/* Карта комнаты */}
+          {hasRoomMap && (
+            <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 mb-6">
+              <h2 className="text-lg font-semibold text-white mb-4">Карта комнаты</h2>
+              <HarvestRoomMap
+                room={selectedRoom}
+                harvestedPlants={harvestedPlants}
+                harvestedWeights={harvestedWeights}
+                onPlantClick={(plantNumber) => {
+                  if (!harvestedPlants.has(plantNumber)) {
+                    setPlantNumber(String(plantNumber));
+                  }
+                }}
+              />
+            </div>
+          )}
 
           {/* Инфографика */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
