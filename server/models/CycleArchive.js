@@ -199,6 +199,22 @@ const cycleArchiveSchema = new mongoose.Schema({
     lampType: { type: String, default: null },
     totalWatts: { type: Number, default: null }
   },
+  // Снимок карты комнаты на момент сбора (позиции + веса каждого куста)
+  harvestMapData: {
+    customRows: [{
+      name: { type: String, default: '' },
+      cols: { type: Number, default: 4 },
+      rows: { type: Number, default: 1 },
+      fillDirection: { type: String, default: 'topDown' }
+    }],
+    plants: [{
+      plantNumber: { type: Number },
+      row: { type: Number },
+      position: { type: Number },
+      strain: { type: String, default: '' },
+      wetWeight: { type: Number, default: 0 }
+    }]
+  },
   deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
