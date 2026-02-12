@@ -182,6 +182,53 @@ export const logout = async (req, res) => {
   }
 };
 
+// @desc    Change password (for logged-in user)
+// @route   POST /api/auth/change-password
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ message: 'Укажите текущий и новый пароль' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ message: 'Новый пароль должен быть минимум 6 символов' });
+    }
+
+    const user = await User.findById(req.user._id);
+    if (!user) {
+      return res.status(404).json({ message: 'Пользователь не найден' });
+    }
+
+    const isMatch = await user.comparePassword(currentPassword);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Неверный текущий пароль' });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    // Audit log
+    try {
+      await AuditLog.create({
+        user: user._id,
+        action: 'auth.change_password',
+        entityType: 'User',
+        entityId: user._id,
+        details: { email: user.email },
+        ip: req.ip || req.connection?.remoteAddress || '',
+        userAgent: req.get?.('user-agent') || ''
+      });
+    } catch (_) {}
+
+    res.json({ message: 'Пароль успешно изменён' });
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
 // @desc    Get current user
 // @route   GET /api/auth/me
 export const getMe = async (req, res) => {

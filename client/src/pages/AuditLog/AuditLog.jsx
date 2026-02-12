@@ -20,6 +20,7 @@ const ACTION_LABELS = {
   // Авторизация
   'auth.login': { label: 'Вход в систему', icon: '🔑', color: 'text-green-400' },
   'auth.logout': { label: 'Выход из системы', icon: '🚪', color: 'text-dark-400' },
+  'auth.change_password': { label: 'Смена пароля', icon: '🔐', color: 'text-yellow-400' },
 
   // Пользователи
   'user.create': { label: 'Создан пользователь', icon: '👤', color: 'text-blue-400' },
@@ -126,7 +127,7 @@ const DETAIL_LABELS = {
 
 // Группы действий для фильтра
 const ACTION_GROUPS = [
-  { label: 'Авторизация', options: ['auth.login', 'auth.logout'] },
+  { label: 'Авторизация', options: ['auth.login', 'auth.logout', 'auth.change_password'] },
   { label: 'Пользователи', options: ['user.create', 'user.update', 'user.approve', 'user.delete', 'user.restore'] },
   { label: 'Роли', options: ['role.create', 'role.update', 'role.delete', 'role.restore'] },
   { label: 'Комнаты', options: ['room.update', 'room.cycle_start', 'room.note', 'room.harvest_reset'] },
