@@ -4,5 +4,10 @@ export const auditLogService = {
   async getLogs(params = {}) {
     const response = await api.get('/audit-logs', { params });
     return response.data;
+  },
+
+  async getSessions() {
+    const response = await api.get('/audit-logs/sessions');
+    return response.data;
   }
 };

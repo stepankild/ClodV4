@@ -15,6 +15,30 @@ const formatDate = (date) => {
   });
 };
 
+const formatDateShort = (date) => {
+  if (!date) return '—';
+  return new Date(date).toLocaleString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+};
+
+const formatDuration = (ms) => {
+  if (!ms || ms < 0) return '—';
+  const totalMin = Math.floor(ms / 60000);
+  if (totalMin < 1) return '< 1м';
+  const days = Math.floor(totalMin / 1440);
+  const hours = Math.floor((totalMin % 1440) / 60);
+  const mins = totalMin % 60;
+  const parts = [];
+  if (days > 0) parts.push(`${days}д`);
+  if (hours > 0) parts.push(`${hours}ч`);
+  if (mins > 0) parts.push(`${mins}м`);
+  return parts.join(' ') || '< 1м';
+};
+
 // Все действия с описаниями и цветами
 const ACTION_LABELS = {
   // Авторизация
@@ -143,6 +167,16 @@ const ACTION_GROUPS = [
 
 const AuditLog = () => {
   const { hasPermission } = useAuth();
+
+  // Tabs
+  const [activeTab, setActiveTab] = useState('sessions');
+
+  // Sessions state
+  const [sessions, setSessions] = useState({ activeSessions: [], loginHistory: [] });
+  const [sessionsLoading, setSessionsLoading] = useState(true);
+  const [sessionsError, setSessionsError] = useState('');
+
+  // Log state
   const [logs, setLogs] = useState([]);
   const [total, setTotal] = useState(0);
   const [users, setUsers] = useState([]);
@@ -163,8 +197,12 @@ const AuditLog = () => {
   }, [canRead]);
 
   useEffect(() => {
-    if (canRead) loadLogs();
-  }, [canRead, page, filterUserId, filterAction, filterFrom, filterTo]);
+    if (canRead && activeTab === 'sessions') loadSessions();
+  }, [canRead, activeTab]);
+
+  useEffect(() => {
+    if (canRead && activeTab === 'log') loadLogs();
+  }, [canRead, activeTab, page, filterUserId, filterAction, filterFrom, filterTo]);
 
   const loadUsers = async () => {
     try {
@@ -172,6 +210,22 @@ const AuditLog = () => {
       setUsers(Array.isArray(list) ? list : []);
     } catch (_) {
       setUsers([]);
+    }
+  };
+
+  const loadSessions = async () => {
+    try {
+      setSessionsLoading(true);
+      setSessionsError('');
+      const data = await auditLogService.getSessions();
+      setSessions({
+        activeSessions: Array.isArray(data.activeSessions) ? data.activeSessions : [],
+        loginHistory: Array.isArray(data.loginHistory) ? data.loginHistory : []
+      });
+    } catch (err) {
+      setSessionsError(err.response?.data?.message || err.message || 'Ошибка загрузки сессий');
+    } finally {
+      setSessionsLoading(false);
     }
   };
 
@@ -260,151 +314,307 @@ const AuditLog = () => {
         <p className="text-dark-400 mt-1">Все действия пользователей в системе</p>
       </div>
 
-      {error && (
-        <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
-          <span>{error}</span>
-          <button type="button" onClick={loadLogs} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">Повторить</button>
-        </div>
-      )}
-
-      {/* Фильтры */}
-      <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-6">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[200px]">
-            <label className="block text-xs text-dark-500 mb-1">Поиск</label>
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Имя, действие, детали..."
-              className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-dark-500 mb-1">Пользователь</label>
-            <select
-              value={filterUserId}
-              onChange={(e) => { setFilterUserId(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[150px]"
-            >
-              <option value="">Все</option>
-              {users.map((u) => (
-                <option key={u._id} value={u._id}>{u.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-dark-500 mb-1">Действие</label>
-            <select
-              value={filterAction}
-              onChange={(e) => { setFilterAction(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[190px]"
-            >
-              <option value="">Все</option>
-              {ACTION_GROUPS.map((group) => (
-                <optgroup key={group.label} label={group.label}>
-                  {group.options.map((a) => (
-                    <option key={a} value={a}>{ACTION_LABELS[a]?.label || a}</option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs text-dark-500 mb-1">С</label>
-            <input type="date" value={filterFrom} onChange={(e) => { setFilterFrom(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs text-dark-500 mb-1">По</label>
-            <input type="date" value={filterTo} onChange={(e) => { setFilterTo(e.target.value); setPage(1); }}
-              className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-          </div>
-          {hasFilters && (
-            <button type="button"
-              onClick={() => { setFilterUserId(''); setFilterAction(''); setFilterFrom(''); setFilterTo(''); setSearch(''); setPage(1); }}
-              className="px-3 py-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg text-sm">
-              Сбросить
-            </button>
-          )}
-        </div>
+      {/* Табы */}
+      <div className="flex gap-1 mb-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab('sessions')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+            activeTab === 'sessions'
+              ? 'bg-primary-600 text-white'
+              : 'bg-dark-800 text-dark-400 border border-dark-700 hover:text-white hover:bg-dark-700'
+          }`}
+        >
+          Сессии
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('log')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
+            activeTab === 'log'
+              ? 'bg-primary-600 text-white'
+              : 'bg-dark-800 text-dark-400 border border-dark-700 hover:text-white hover:bg-dark-700'
+          }`}
+        >
+          Лог действий
+        </button>
       </div>
 
-      {/* Таблица */}
-      <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
-        <div className="px-4 py-3 border-b border-dark-700 flex items-center justify-between flex-wrap gap-2">
-          <span className="text-dark-400 text-sm">
-            Записей: <span className="text-white font-medium">{total}</span>
-            {search && filteredLogs.length !== logs.length && (
-              <span className="text-dark-500 ml-2">(показано {filteredLogs.length})</span>
-            )}
-          </span>
-          {totalPages > 1 && (
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-                className="px-2.5 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">←</button>
-              <span className="text-dark-400 text-sm">{page} / {totalPages}</span>
-              <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-                className="px-2.5 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">→</button>
+      {/* ===== ВКЛАДКА: СЕССИИ ===== */}
+      {activeTab === 'sessions' && (
+        <>
+          {sessionsError && (
+            <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+              <span>{sessionsError}</span>
+              <button type="button" onClick={loadSessions} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">Повторить</button>
             </div>
           )}
-        </div>
-        {loading ? (
-          <div className="flex items-center justify-center py-16">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500" />
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-dark-900">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[155px]">Когда</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[120px]">Кто</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Действие</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Детали</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-dark-700">
-                {filteredLogs.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-4 py-12 text-center text-dark-500">
-                      {!hasFilters ? 'Пока нет записей.' : 'Нет записей по фильтрам.'}
-                    </td>
-                  </tr>
+
+          {sessionsLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500" />
+            </div>
+          ) : (
+            <>
+              {/* Активные сессии */}
+              <div className="mb-6">
+                <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                  </span>
+                  Активные сессии ({sessions.activeSessions.length})
+                </h2>
+
+                {sessions.activeSessions.length === 0 ? (
+                  <div className="bg-dark-800 rounded-xl border border-dark-700 p-8 text-center text-dark-500">
+                    Нет активных сессий
+                  </div>
                 ) : (
-                  filteredLogs.map((log) => {
-                    const ai = ACTION_LABELS[log.action];
-                    return (
-                      <tr key={log._id} className="hover:bg-dark-700/30">
-                        <td className="px-4 py-2.5 text-dark-400 whitespace-nowrap text-xs">{formatDate(log.createdAt)}</td>
-                        <td className="px-4 py-2.5">
-                          <span className="text-white font-medium text-sm">{log.user?.name || '—'}</span>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-1.5">
-                            {ai?.icon && <span className="text-sm">{ai.icon}</span>}
-                            <span className={`font-medium ${ai?.color || 'text-primary-400'}`}>{ai?.label || log.action}</span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {sessions.activeSessions.map((s) => (
+                      <div key={s.userId} className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="relative flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                          </span>
+                          <span className="text-white font-medium">{s.name}</span>
+                        </div>
+                        <div className="space-y-1 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-dark-500">Вход</span>
+                            <span className="text-dark-300">{formatDateShort(s.loginAt)}</span>
                           </div>
-                        </td>
-                        <td className="px-4 py-2.5 max-w-sm">{renderDetails(log) || <span className="text-dark-600">—</span>}</td>
-                      </tr>
-                    );
-                  })
+                          <div className="flex justify-between">
+                            <span className="text-dark-500">IP</span>
+                            <span className="text-dark-300 font-mono">{s.ip}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-dark-500">Браузер</span>
+                            <span className="text-dark-300">{s.browser} · {s.os}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-dark-500">Онлайн</span>
+                            <span className="text-green-400 font-medium">{formatDuration(s.duration)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </tbody>
-            </table>
+              </div>
+
+              {/* История входов */}
+              <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
+                <div className="px-4 py-3 border-b border-dark-700">
+                  <span className="text-white font-medium text-sm">История входов</span>
+                  <span className="text-dark-500 text-sm ml-2">({sessions.loginHistory.length})</span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-dark-900">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Пользователь</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Вход</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Выход</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Длительность</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">IP</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Браузер</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-dark-700">
+                      {sessions.loginHistory.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="px-4 py-12 text-center text-dark-500">Нет записей</td>
+                        </tr>
+                      ) : (
+                        sessions.loginHistory.map((h, i) => (
+                          <tr key={i} className="hover:bg-dark-700/30">
+                            <td className="px-4 py-2.5">
+                              <span className="text-white font-medium">{h.name}</span>
+                            </td>
+                            <td className="px-4 py-2.5 text-dark-300 text-xs whitespace-nowrap">{formatDateShort(h.loginAt)}</td>
+                            <td className="px-4 py-2.5 text-xs whitespace-nowrap">
+                              {h.isActive ? (
+                                <span className="inline-flex items-center gap-1 text-green-400 font-medium">
+                                  <span className="relative flex h-2 w-2">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                                  </span>
+                                  Онлайн
+                                </span>
+                              ) : (
+                                <span className="text-dark-400">{h.logoutAt ? formatDateShort(h.logoutAt) : '—'}</span>
+                              )}
+                            </td>
+                            <td className={`px-4 py-2.5 text-xs font-medium ${h.isActive ? 'text-green-400' : 'text-dark-300'}`}>
+                              {formatDuration(h.duration)}
+                            </td>
+                            <td className="px-4 py-2.5 text-dark-400 text-xs font-mono">{h.ip}</td>
+                            <td className="px-4 py-2.5 text-dark-400 text-xs">{h.browser} · {h.os}</td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* ===== ВКЛАДКА: ЛОГ ДЕЙСТВИЙ ===== */}
+      {activeTab === 'log' && (
+        <>
+          {error && (
+            <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+              <span>{error}</span>
+              <button type="button" onClick={loadLogs} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">Повторить</button>
+            </div>
+          )}
+
+          {/* Фильтры */}
+          <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-6">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[200px]">
+                <label className="block text-xs text-dark-500 mb-1">Поиск</label>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Имя, действие, детали..."
+                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-500 mb-1">Пользователь</label>
+                <select
+                  value={filterUserId}
+                  onChange={(e) => { setFilterUserId(e.target.value); setPage(1); }}
+                  className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[150px]"
+                >
+                  <option value="">Все</option>
+                  {users.map((u) => (
+                    <option key={u._id} value={u._id}>{u.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-500 mb-1">Действие</label>
+                <select
+                  value={filterAction}
+                  onChange={(e) => { setFilterAction(e.target.value); setPage(1); }}
+                  className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[190px]"
+                >
+                  <option value="">Все</option>
+                  {ACTION_GROUPS.map((group) => (
+                    <optgroup key={group.label} label={group.label}>
+                      {group.options.map((a) => (
+                        <option key={a} value={a}>{ACTION_LABELS[a]?.label || a}</option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-dark-500 mb-1">С</label>
+                <input type="date" value={filterFrom} onChange={(e) => { setFilterFrom(e.target.value); setPage(1); }}
+                  className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-500 mb-1">По</label>
+                <input type="date" value={filterTo} onChange={(e) => { setFilterTo(e.target.value); setPage(1); }}
+                  className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </div>
+              {hasFilters && (
+                <button type="button"
+                  onClick={() => { setFilterUserId(''); setFilterAction(''); setFilterFrom(''); setFilterTo(''); setSearch(''); setPage(1); }}
+                  className="px-3 py-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg text-sm">
+                  Сбросить
+                </button>
+              )}
+            </div>
           </div>
-        )}
-        {totalPages > 1 && (
-          <div className="px-4 py-3 border-t border-dark-700 flex justify-center gap-2">
-            <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-              className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">← Назад</button>
-            <span className="px-3 py-1.5 text-dark-400 text-sm">Стр. {page} из {totalPages}</span>
-            <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-              className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">Вперёд →</button>
+
+          {/* Таблица */}
+          <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
+            <div className="px-4 py-3 border-b border-dark-700 flex items-center justify-between flex-wrap gap-2">
+              <span className="text-dark-400 text-sm">
+                Записей: <span className="text-white font-medium">{total}</span>
+                {search && filteredLogs.length !== logs.length && (
+                  <span className="text-dark-500 ml-2">(показано {filteredLogs.length})</span>
+                )}
+              </span>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                    className="px-2.5 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">←</button>
+                  <span className="text-dark-400 text-sm">{page} / {totalPages}</span>
+                  <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+                    className="px-2.5 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">→</button>
+                </div>
+              )}
+            </div>
+            {loading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500" />
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-dark-900">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[155px]">Когда</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[120px]">Кто</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Действие</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Детали</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-dark-700">
+                    {filteredLogs.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-12 text-center text-dark-500">
+                          {!hasFilters ? 'Пока нет записей.' : 'Нет записей по фильтрам.'}
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredLogs.map((log) => {
+                        const ai = ACTION_LABELS[log.action];
+                        return (
+                          <tr key={log._id} className="hover:bg-dark-700/30">
+                            <td className="px-4 py-2.5 text-dark-400 whitespace-nowrap text-xs">{formatDate(log.createdAt)}</td>
+                            <td className="px-4 py-2.5">
+                              <span className="text-white font-medium text-sm">{log.user?.name || '—'}</span>
+                            </td>
+                            <td className="px-4 py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                {ai?.icon && <span className="text-sm">{ai.icon}</span>}
+                                <span className={`font-medium ${ai?.color || 'text-primary-400'}`}>{ai?.label || log.action}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-2.5 max-w-sm">{renderDetails(log) || <span className="text-dark-600">—</span>}</td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            )}
+            {totalPages > 1 && (
+              <div className="px-4 py-3 border-t border-dark-700 flex justify-center gap-2">
+                <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+                  className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">← Назад</button>
+                <span className="px-3 py-1.5 text-dark-400 text-sm">Стр. {page} из {totalPages}</span>
+                <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
+                  className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">Вперёд →</button>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 };
