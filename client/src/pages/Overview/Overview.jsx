@@ -72,14 +72,24 @@ const Overview = () => {
     try {
       setLoading(true);
       setError('');
-      const [data, cuts, vegs] = await Promise.all([
+      const [data, cuts, deletedCuts, vegs, deletedVegs] = await Promise.all([
         roomService.getRoomsSummary(),
         cloneCutService.getAll().catch(() => []),
-        vegBatchService.getAll().catch(() => [])
+        cloneCutService.getDeleted().catch(() => []),
+        vegBatchService.getAll().catch(() => []),
+        vegBatchService.getDeleted().catch(() => [])
       ]);
       setRooms(Array.isArray(data) ? data : []);
-      setCloneCuts(Array.isArray(cuts) ? cuts : []);
-      setVegBatches(Array.isArray(vegs) ? vegs : []);
+      const allCuts = [
+        ...(Array.isArray(cuts) ? cuts : []),
+        ...(Array.isArray(deletedCuts) ? deletedCuts : [])
+      ];
+      setCloneCuts(allCuts);
+      const allVegs = [
+        ...(Array.isArray(vegs) ? vegs : []),
+        ...(Array.isArray(deletedVegs) ? deletedVegs : [])
+      ];
+      setVegBatches(allVegs);
     } catch (err) {
       const msg = err.response?.data?.message || err.message;
       const isNetwork = err.code === 'ECONNREFUSED' || err.message?.includes('Network Error');
