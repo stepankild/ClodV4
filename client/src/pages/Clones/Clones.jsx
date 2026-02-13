@@ -141,11 +141,20 @@ const Clones = () => {
       try {
         allVegBatches = await vegBatchService.getAll();
       } catch (_) {}
+      let deletedVegBatches = [];
+      try {
+        deletedVegBatches = await vegBatchService.getDeleted();
+      } catch (_) {}
       try {
         deletedCuts = await cloneCutService.getDeleted();
       } catch (_) {}
       setCloneCuts(Array.isArray(cutsData) ? cutsData : []);
-      setVegBatches(Array.isArray(allVegBatches) ? allVegBatches : []);
+      // Объединяем активные и удалённые vegBatches для подсчёта суммарного количества клонов
+      const allBatches = [
+        ...(Array.isArray(allVegBatches) ? allVegBatches : []),
+        ...(Array.isArray(deletedVegBatches) ? deletedVegBatches : [])
+      ];
+      setVegBatches(allBatches);
       setArchivedCuts(Array.isArray(deletedCuts) ? deletedCuts : []);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Ошибка загрузки комнат');
@@ -1240,12 +1249,23 @@ const Clones = () => {
               <tbody className="divide-y divide-dark-700">
                 {archivedCuts.map((cut) => {
                   const strains = getStrainsFromCut(cut);
+                  const currentQty = strains.reduce((s, x) => s + x.quantity, 0);
+                  // Суммарное кол-во: остаток + все отправленные в вег из этого бэтча
+                  const sentToVeg = (Array.isArray(vegBatches) ? vegBatches : [])
+                    .filter((b) => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id))
+                    .reduce((s, b) => s + (b.initialQuantity || b.quantity || 0), 0);
+                  const totalQty = currentQty + sentToVeg;
                   const roomName = cut.room?.name || cut.room?.roomNumber || (cut.room ? '—' : 'На заказ');
                   return (
                     <tr key={cut._id} className="hover:bg-dark-700/30">
                       <td className="px-4 py-3 text-dark-400">{roomName}</td>
                       <td className="px-4 py-3 text-dark-400">{formatDate(cut.cutDate)}</td>
-                      <td className="px-4 py-3 text-dark-400">{formatStrainsShort(strains)}</td>
+                      <td className="px-4 py-3 text-dark-400">
+                        {totalQty > 0 ? totalQty : currentQty > 0 ? currentQty : '—'}
+                        {sentToVeg > 0 && currentQty > 0 && (
+                          <span className="text-dark-500 text-xs ml-1">(ост. {currentQty})</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3 text-dark-500 text-xs">{formatDate(cut.deletedAt)}</td>
                       {canCreateClones && (
                         <td className="px-4 py-3 text-right">
