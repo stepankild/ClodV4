@@ -26,7 +26,7 @@ export const createTemplate = async (req, res) => {
     const sanitizedRows = customRows.map(r => ({
       name: r.name || '',
       cols: Math.max(1, Math.min(30, parseInt(r.cols, 10) || 4)),
-      rows: Math.max(1, Math.min(20, parseInt(r.rows, 10) || 1)),
+      rows: Math.max(1, Math.min(100, parseInt(r.rows, 10) || 1)),
       fillDirection: r.fillDirection === 'bottomUp' ? 'bottomUp' : 'topDown'
     }));
 
