@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
+import { vegBatchService } from '../../services/vegBatchService';
 
 
 const WEEKS_BEFORE_CLONE = 4;
@@ -58,6 +59,7 @@ const Overview = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cloneCuts, setCloneCuts] = useState([]);
+  const [vegBatches, setVegBatches] = useState([]);
   const [expandedNotes, setExpandedNotes] = useState({});
 
   const toggleNotes = (roomId) => {
@@ -70,12 +72,14 @@ const Overview = () => {
     try {
       setLoading(true);
       setError('');
-      const [data, cuts] = await Promise.all([
+      const [data, cuts, vegs] = await Promise.all([
         roomService.getRoomsSummary(),
-        cloneCutService.getAll().catch(() => [])
+        cloneCutService.getAll().catch(() => []),
+        vegBatchService.getAll().catch(() => [])
       ]);
       setRooms(Array.isArray(data) ? data : []);
       setCloneCuts(Array.isArray(cuts) ? cuts : []);
+      setVegBatches(Array.isArray(vegs) ? vegs : []);
     } catch (err) {
       const msg = err.response?.data?.message || err.message;
       const isNetwork = err.code === 'ECONNREFUSED' || err.message?.includes('Network Error');
@@ -107,13 +111,17 @@ const Overview = () => {
   const alerts = [];
 
   // Overdue clone cuts
+  const safeVegBatches = Array.isArray(vegBatches) ? vegBatches : [];
   safeRooms.forEach(room => {
     const cutDate = getCutDateForRoom(room);
     if (!cutDate) return;
     const daysUntil = getDaysUntilCut(cutDate);
     const cut = (Array.isArray(cloneCuts) ? cloneCuts : []).find(c => c.room?._id === room._id || c.room === room._id);
     const isDone = cut?.isDone ?? false;
-    if (!isDone && daysUntil !== null && daysUntil <= 3) {
+    const hasTransplanted = cut && safeVegBatches.some(
+      b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id)
+    );
+    if (!isDone && !hasTransplanted && daysUntil !== null && daysUntil <= 3) {
       alerts.push({
         type: daysUntil < 0 ? 'danger' : 'warning',
         icon: '✂️',
@@ -234,7 +242,10 @@ const Overview = () => {
           const cutDate = getCutDateForRoom(room);
           const daysUntilCut = cutDate ? getDaysUntilCut(cutDate) : null;
           const cut = (Array.isArray(cloneCuts) ? cloneCuts : []).find(c => c.room?._id === room._id || c.room === room._id);
-          const clonesDone = cut?.isDone ?? false;
+          const hasTransplantedRoom = cut && safeVegBatches.some(
+            b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id)
+          );
+          const clonesDone = (cut?.isDone ?? false) || !!hasTransplantedRoom;
           const hasCutPlan = cutDate != null;
 
           return (
@@ -397,7 +408,8 @@ const Overview = () => {
                   }`}>
                     <span className="font-medium">✂️ Клоны</span>
                     <span>
-                      {clonesDone ? 'Нарезано ✓' :
+                      {hasTransplantedRoom ? 'В веге ✓' :
+                        clonesDone ? 'Нарезано ✓' :
                         daysUntilCut === null ? '—' :
                         daysUntilCut < 0 ? `Просрочено ${-daysUntilCut} дн.` :
                         daysUntilCut === 0 ? 'Сегодня!' :
