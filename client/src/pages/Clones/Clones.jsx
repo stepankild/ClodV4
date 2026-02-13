@@ -1219,7 +1219,7 @@ const Clones = () => {
                       <td className="px-4 py-3 text-dark-300">{sourceRoom}</td>
                       <td className="px-4 py-3 text-dark-300">{formatDate(b.cutDate)}</td>
                       <td className="px-4 py-3 text-dark-300">{formatDate(b.transplantedToVegAt)}</td>
-                      <td className="px-4 py-3 text-dark-300">{b.quantity > 0 ? b.quantity : '—'}</td>
+                      <td className="px-4 py-3 text-dark-300">{(b.initialQuantity || b.quantity) > 0 ? (b.initialQuantity || b.quantity) : '—'}</td>
                     </tr>
                   );
                 })}
