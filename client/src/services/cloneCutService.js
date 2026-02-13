@@ -34,5 +34,10 @@ export const cloneCutService = {
   async restore(id) {
     const response = await api.post(`/clone-cuts/deleted/${id}/restore`);
     return response.data;
+  },
+
+  async disposeRemaining(id) {
+    const response = await api.put(`/clone-cuts/${id}`, { disposeRemaining: true });
+    return response.data;
   }
 };

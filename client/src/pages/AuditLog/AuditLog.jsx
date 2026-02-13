@@ -80,6 +80,7 @@ const ACTION_LABELS = {
   'clone_cut.update': { label: 'Изменены клоны', icon: '✂️', color: 'text-yellow-400' },
   'clone_cut.delete': { label: 'Удалены клоны', icon: '🗑️', color: 'text-red-400' },
   'clone_cut.restore': { label: 'Восстановлены клоны', icon: '♻️', color: 'text-green-400' },
+  'clone_cut.dispose': { label: 'Списаны остатки клонов', icon: '🗑️', color: 'text-orange-400' },
 
   // Вегетация
   'veg_batch.create': { label: 'Создан бэтч вегетации', icon: '🌱', color: 'text-green-400' },
@@ -156,7 +157,7 @@ const ACTION_GROUPS = [
   { label: 'Роли', options: ['role.create', 'role.update', 'role.delete', 'role.restore'] },
   { label: 'Комнаты', options: ['room.update', 'room.cycle_start', 'room.note', 'room.harvest_reset'] },
   { label: 'Задачи', options: ['task.create', 'task.quick_add', 'task.complete', 'task.uncomplete', 'task.update', 'task.delete', 'task.restore'] },
-  { label: 'Клоны', options: ['clone_cut.create_order', 'clone_cut.upsert', 'clone_cut.update', 'clone_cut.delete', 'clone_cut.restore'] },
+  { label: 'Клоны', options: ['clone_cut.create_order', 'clone_cut.upsert', 'clone_cut.update', 'clone_cut.delete', 'clone_cut.restore', 'clone_cut.dispose'] },
   { label: 'Вегетация', options: ['veg_batch.create', 'veg_batch.update', 'veg_batch.dispose_remaining', 'veg_batch.delete', 'veg_batch.restore'] },
   { label: 'Сбор урожая', options: ['harvest.session_start', 'harvest.plant_add', 'harvest.complete', 'harvest.archive'] },
   { label: 'Трим', options: ['trim.log_add', 'trim.log_delete', 'trim.log_restore', 'trim.archive_update', 'trim.complete'] },

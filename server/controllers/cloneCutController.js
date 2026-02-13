@@ -93,6 +93,15 @@ export const updateCloneCut = async (req, res) => {
     const doc = await CloneCut.findOne({ _id: req.params.id, ...notDeleted });
     if (!doc) return res.status(404).json({ message: 'Запись не найдена' });
 
+    // Списать остатки (утилизация)
+    if (req.body.disposeRemaining === true) {
+      const details = { cutDate: doc.cutDate, strain: doc.strain, quantity: doc.quantity, isOrder: !doc.room };
+      await createAuditLog(req, { action: 'clone_cut.dispose', entityType: 'CloneCut', entityId: doc._id, details });
+      doc.deletedAt = new Date();
+      await doc.save();
+      return res.json({ message: 'Остатки списаны' });
+    }
+
     if (cutDate !== undefined) doc.cutDate = new Date(cutDate);
     if (strains !== undefined) {
       const norm = normalizeStrains(strains, doc.strain, doc.quantity);
