@@ -71,16 +71,34 @@ export const upsertCloneCut = async (req, res) => {
       notes: notes != null ? String(notes).trim() : ''
     };
 
-    let doc = await CloneCut.findOneAndUpdate(
-      { room: roomId, ...notDeleted },
-      { $set: { ...data, room: roomId } },
-      { new: true, upsert: true }
-    );
+    let doc = await CloneCut.findOne({ room: roomId, ...notDeleted });
+    let action = 'clone_cut.upsert';
+    if (doc) {
+      Object.assign(doc, data);
+      await doc.save();
+    } else {
+      doc = await CloneCut.create({ ...data, room: roomId });
+      action = 'clone_cut.create';
+    }
     await doc.populate('room', 'name roomNumber');
-    await createAuditLog(req, { action: 'clone_cut.upsert', entityType: 'CloneCut', entityId: doc._id, details: { roomId, cutDate: data.cutDate, isDone: data.isDone } });
+    await createAuditLog(req, { action, entityType: 'CloneCut', entityId: doc._id, details: { roomId, cutDate: data.cutDate, isDone: data.isDone } });
     res.json(doc);
   } catch (error) {
     console.error('Upsert clone cut error:', error);
+    if (error.code === 11000) {
+      // Duplicate key — drop stale unique index and retry once
+      try {
+        const indexes = await CloneCut.collection.listIndexes().toArray();
+        for (const idx of indexes) {
+          if (idx.unique && idx.name !== '_id_') {
+            console.log(`[CloneCut] Dropping stale unique index on retry: ${idx.name}`);
+            await CloneCut.collection.dropIndex(idx.name);
+          }
+        }
+        return res.status(409).json({ message: 'Конфликт ключа. Проблемный индекс удалён — попробуйте снова.' });
+      } catch (_) {}
+      return res.status(409).json({ message: 'Бэтч для этой комнаты уже существует. Попробуйте ещё раз.' });
+    }
     res.status(500).json({ message: error.message || 'Ошибка сервера' });
   }
 };
