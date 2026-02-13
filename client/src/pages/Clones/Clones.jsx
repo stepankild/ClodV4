@@ -207,7 +207,7 @@ const Clones = () => {
       : (row.strain || row.quantity ? [{ strain: String(row.strain ?? ''), quantity: String(row.quantity ?? '') }] : []);
     while (list.length < 2) list.push({ strain: '', quantity: '' });
     setModalStrains(list);
-    setEditForm({ isDone: row.isDone });
+    setEditForm({ isDone: row.isDone, cutDate: row.cutDate ? new Date(row.cutDate).toISOString().slice(0, 10) : '' });
     setEditModalOpen(true);
   };
 
@@ -232,7 +232,7 @@ const Clones = () => {
 
   const handleSave = async () => {
     if (!editRow) return;
-    const { room, cutDate, cutId } = editRow;
+    const { room, cutId } = editRow;
     const strains = (modalStrains || [])
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
@@ -244,7 +244,7 @@ const Clones = () => {
       setSavingId(room._id);
       const payload = {
         roomId: room._id,
-        cutDate: cutDate.toISOString().slice(0, 10),
+        cutDate: editForm.cutDate || editRow.cutDate?.toISOString?.()?.slice(0, 10) || '',
         strains: strains.length ? strains : [{ strain: '', quantity: 0 }],
         isDone: editForm.isDone
       };
@@ -831,7 +831,15 @@ const Clones = () => {
             onClick={(e) => e.stopPropagation()}
           >
             <h3 className="text-lg font-semibold text-white mb-1">Нарезка клонов · {editRow.room.name}</h3>
-            <p className="text-dark-400 text-sm mb-4">Дата нарезки: {formatDate(editRow.cutDate)}. Сортов без ограничения — добавляйте строки кнопкой «+».</p>
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-dark-400 text-sm">Дата нарезки:</span>
+              <input
+                type="date"
+                value={editForm.cutDate || ''}
+                onChange={(e) => setEditForm((f) => ({ ...f, cutDate: e.target.value }))}
+                className="px-2 py-1 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+              />
+            </div>
             {editForm.isDone && !rowHasStrainData(editRow) && (
               <p className="text-amber-400 text-sm mb-3 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
                 Укажите, сколько какого сорта нарезано (хотя бы один сорт и количество), затем нажмите «Сохранить».
