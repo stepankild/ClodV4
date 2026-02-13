@@ -534,6 +534,20 @@ const Clones = () => {
     }
   };
 
+  const handleDispose = async (cutId, quantity, roomId) => {
+    if (!cutId) return;
+    if (!confirm(`Списать оставшиеся ${quantity} клонов?`)) return;
+    try {
+      setSavingId(roomId || cutId);
+      await cloneCutService.disposeRemaining(cutId);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка списания');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   const restoreArchivedCut = async (cut) => {
     try {
       setRestoringId(cut._id);
@@ -691,6 +705,16 @@ const Clones = () => {
                               >
                                 Заполнить / изменить
                               </button>
+                              {row.cutId && row.quantity > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDispose(row.cutId, row.quantity, row.room._id)}
+                                  disabled={savingId === row.room._id}
+                                  className="px-2 py-1 bg-orange-900/30 text-orange-400 hover:bg-orange-900/50 rounded text-xs font-medium"
+                                >
+                                  Списать остатки
+                                </button>
+                              )}
                             </>
                           ) : (
                             <span className="text-dark-500 text-xs">Только просмотр</span>
@@ -774,6 +798,9 @@ const Clones = () => {
                               {cut.isDone ? 'Снять отметку' : 'Отметить нарезано'}
                             </button>
                             <button type="button" onClick={() => deleteOrderCut(cut)} disabled={savingOrderId === cut._id} className="px-2 py-1 text-red-400 hover:bg-red-900/30 rounded text-xs">Удалить</button>
+                            {quantity > 0 && (
+                              <button type="button" onClick={() => handleDispose(cut._id, quantity, null)} disabled={savingOrderId === cut._id} className="px-2 py-1 bg-orange-900/30 text-orange-400 hover:bg-orange-900/50 rounded text-xs font-medium">Списать</button>
+                            )}
                           </div>
                         </td>
                       )}
