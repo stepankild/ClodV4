@@ -1,6 +1,7 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import PlantCell, { STRAIN_COLORS } from './PlantCell';
 import RoomMapSetup from './RoomMapSetup';
+import { roomTemplateService } from '../../services/roomTemplateService';
 
 function getStrainForPlant(plantNumber, flowerStrains) {
   if (!flowerStrains || !plantNumber) return null;
@@ -234,6 +235,45 @@ export default function RoomMap({ room, onSave, saving }) {
   const [assignCell, setAssignCell] = useState(null);
   const [exporting, setExporting] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const templateDropdownRef = useRef(null);
+
+  useEffect(() => {
+    roomTemplateService.getTemplates().then(setTemplates).catch(() => {});
+  }, []);
+
+  // Закрыть dropdown при клике вне
+  useEffect(() => {
+    if (!showTemplates) return;
+    const handler = (e) => {
+      if (templateDropdownRef.current && !templateDropdownRef.current.contains(e.target)) {
+        setShowTemplates(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showTemplates]);
+
+  const handleApplyTemplate = (template) => {
+    const rows = template.customRows.map(r => ({
+      name: r.name || '',
+      cols: r.cols || 4,
+      rows: r.rows || 1,
+      fillDirection: r.fillDirection || 'topDown'
+    }));
+    if (plantPositions.length > 0) {
+      if (!window.confirm(`Применить шаблон «${template.name}»? Размещённые кусты будут очищены, если не поместятся в новую раскладку.`)) return;
+    }
+    const cleaned = plantPositions.filter(p => {
+      if (p.row >= rows.length) return false;
+      if (p.position >= getRowPositions(rows[p.row])) return false;
+      return true;
+    });
+    setCustomRows(rows);
+    setPlantPositions(cleaned);
+    setShowTemplates(false);
+  };
 
   const positionMap = useMemo(() => {
     const m = {};
@@ -425,6 +465,27 @@ export default function RoomMap({ room, onSave, saving }) {
                 className="px-2 py-1 text-xs bg-dark-700 text-red-400 rounded hover:bg-dark-600 transition">Очистить</button>
               <button type="button" onClick={() => setShowSetup(true)}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
+              {templates.length > 0 && (
+                <div className="relative" ref={templateDropdownRef}>
+                  <button type="button" onClick={() => setShowTemplates(!showTemplates)}
+                    className="px-2 py-1 text-xs bg-dark-700 text-primary-400 rounded hover:bg-dark-600 transition">Шаблоны</button>
+                  {showTemplates && (
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 py-1 max-h-60 overflow-y-auto">
+                      {templates.map(t => {
+                        const spots = t.customRows.reduce((s, r) => s + (r.cols || 1) * (r.rows || 1), 0);
+                        return (
+                          <button key={t._id} type="button"
+                            onClick={() => handleApplyTemplate(t)}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-dark-700 transition">
+                            <div className="text-white">{t.name}</div>
+                            <div className="text-dark-500">{t.customRows.length} рядов, {spots} мест</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <button type="button" onClick={handleSave} disabled={saving}
                 className="px-3 py-1 text-xs bg-primary-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 transition">
@@ -448,6 +509,27 @@ export default function RoomMap({ room, onSave, saving }) {
                 className="px-3 py-1 text-xs bg-dark-700 text-white rounded hover:bg-dark-600 transition">Редактировать</button>
               <button type="button" onClick={() => setShowSetup(true)}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
+              {templates.length > 0 && (
+                <div className="relative" ref={templateDropdownRef}>
+                  <button type="button" onClick={() => setShowTemplates(!showTemplates)}
+                    className="px-2 py-1 text-xs bg-dark-700 text-primary-400 rounded hover:bg-dark-600 transition">Шаблоны</button>
+                  {showTemplates && (
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 py-1 max-h-60 overflow-y-auto">
+                      {templates.map(t => {
+                        const spots = t.customRows.reduce((s, r) => s + (r.cols || 1) * (r.rows || 1), 0);
+                        return (
+                          <button key={t._id} type="button"
+                            onClick={() => handleApplyTemplate(t)}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-dark-700 transition">
+                            <div className="text-white">{t.name}</div>
+                            <div className="text-dark-500">{t.customRows.length} рядов, {spots} мест</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
               <button type="button" onClick={handleExportPDF} disabled={exporting}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition disabled:opacity-50"
                 title="Скачать PDF для печати">
