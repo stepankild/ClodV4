@@ -172,7 +172,7 @@ const Clones = () => {
     .filter((r) => r != null)
     .map((room) => {
       const cut = cloneCuts.find((c) => c.room?._id === room._id || c.room === room._id);
-      const cutDate = getCutDateForRoom(room) || (cut?.cutDate ? new Date(cut.cutDate) : null);
+      const cutDate = (cut?.cutDate ? new Date(cut.cutDate) : null) || getCutDateForRoom(room);
       if (!cutDate && !cut) return null;
       const cutId = cut?._id;
       const strains = getStrainsFromCut(cut);
