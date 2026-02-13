@@ -183,9 +183,9 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
                   <input
                     type="number"
                     min={1}
-                    max={20}
+                    max={100}
                     value={row.rows}
-                    onChange={(e) => updateRow(idx, 'rows', Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                    onChange={(e) => updateRow(idx, 'rows', Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
                     className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
                   />
                   <span className="text-dark-500">по вертикали</span>
