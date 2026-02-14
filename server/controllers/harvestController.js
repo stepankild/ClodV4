@@ -218,6 +218,27 @@ export const completeSession = async (req, res) => {
 
     const room = await FlowerRoom.findById(session.room);
     if (room && room.isActive) {
+      // Защита от дублей: если архив с этой комнатой и startDate уже создан — пропускаем
+      const existingArchive = await CycleArchive.findOne({
+        room: room._id,
+        startDate: room.startDate,
+        $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }]
+      });
+      if (existingArchive) {
+        // Архив уже существует (создан параллельным запросом) — просто сбрасываем комнату
+        room.cycleName = '';
+        room.strain = '';
+        room.plantsCount = 0;
+        room.startDate = null;
+        room.expectedHarvestDate = null;
+        room.notes = '';
+        room.isActive = false;
+        room.currentCycleId = null;
+        if (room.roomLayout) room.roomLayout.plantPositions = [];
+        await room.save();
+        return res.json(session);
+      }
+
       const totalWet = (session.plants || []).reduce((sum, p) => sum + (p.wetWeight || 0), 0);
       // Берём только задачи текущего цикла (по cycleId), не прошлых
       const taskQuery = { room: room._id, completed: true };
