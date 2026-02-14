@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { auditLogService } from '../../services/auditLogService';
 import { userService } from '../../services/userService';
@@ -200,7 +200,14 @@ const AuditLog = () => {
 
   useEffect(() => {
     if (canRead && activeTab === 'sessions') loadSessions();
-  }, [canRead, activeTab]);
+  }, [canRead, activeTab, loadSessions]);
+
+  // Авто-рефреш сессий каждые 30 секунд
+  useEffect(() => {
+    if (!canRead || activeTab !== 'sessions') return;
+    const interval = setInterval(() => loadSessions(true), 30_000);
+    return () => clearInterval(interval);
+  }, [canRead, activeTab, loadSessions]);
 
   useEffect(() => {
     if (canRead && activeTab === 'log') loadLogs();
@@ -215,9 +222,9 @@ const AuditLog = () => {
     }
   };
 
-  const loadSessions = async () => {
+  const loadSessions = useCallback(async (silent = false) => {
     try {
-      setSessionsLoading(true);
+      if (!silent) setSessionsLoading(true);
       setSessionsError('');
       const data = await auditLogService.getSessions();
       setSessions({
@@ -225,11 +232,11 @@ const AuditLog = () => {
         loginHistory: Array.isArray(data.loginHistory) ? data.loginHistory : []
       });
     } catch (err) {
-      setSessionsError(err.response?.data?.message || err.message || 'Ошибка загрузки сессий');
+      if (!silent) setSessionsError(err.response?.data?.message || err.message || 'Ошибка загрузки сессий');
     } finally {
-      setSessionsLoading(false);
+      if (!silent) setSessionsLoading(false);
     }
-  };
+  }, []);
 
   const loadLogs = async () => {
     try {
@@ -366,6 +373,19 @@ const AuditLog = () => {
                     <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
                   </span>
                   Активные сессии ({sessions.activeSessions.length})
+                  <span className="text-xs text-dark-500 font-normal ml-1">
+                    {sessions.activeSessions.filter(s => s.isOnline).length} онлайн
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => loadSessions()}
+                    className="ml-auto p-1.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition"
+                    title="Обновить"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                  </button>
                 </h2>
 
                 {sessions.activeSessions.length === 0 ? (
@@ -375,14 +395,28 @@ const AuditLog = () => {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     {sessions.activeSessions.map((s) => (
-                      <div key={s.userId} className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+                      <div key={s.userId} className={`bg-dark-800 rounded-xl border p-4 ${s.isOnline ? 'border-green-800/50' : 'border-dark-700'}`}>
                         <div className="flex items-center gap-2 mb-2">
                           <span className="relative flex h-2.5 w-2.5">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                            {s.isOnline ? (
+                              <>
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500"></span>
+                              </>
+                            ) : (
+                              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-yellow-500"></span>
+                            )}
                           </span>
                           <span className="text-white font-medium">{s.name}</span>
+                          <span className={`text-xs ml-auto ${s.isOnline ? 'text-green-400' : 'text-yellow-500'}`}>
+                            {s.isOnline ? 'Онлайн' : 'Неактивен'}
+                          </span>
                         </div>
+                        {s.isOnline && s.currentPage && (
+                          <div className="mb-2 px-2 py-1 bg-primary-900/30 border border-primary-800/30 rounded text-xs text-primary-400">
+                            {s.currentPage}
+                          </div>
+                        )}
                         <div className="space-y-1 text-xs">
                           <div className="flex justify-between">
                             <span className="text-dark-500">Вход</span>
@@ -397,8 +431,8 @@ const AuditLog = () => {
                             <span className="text-dark-300">{s.browser} · {s.os}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-dark-500">Онлайн</span>
-                            <span className="text-green-400 font-medium">{formatDuration(s.duration)}</span>
+                            <span className="text-dark-500">Сессия</span>
+                            <span className={`font-medium ${s.isOnline ? 'text-green-400' : 'text-dark-300'}`}>{formatDuration(s.duration)}</span>
                           </div>
                         </div>
                       </div>
