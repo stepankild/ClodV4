@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
@@ -53,28 +53,6 @@ const Harvest = () => {
     loadRooms();
   }, []);
 
-  useEffect(() => {
-    if (roomIdFromUrl && safeRooms.length) {
-      const room = safeRooms.find(r => r._id === roomIdFromUrl);
-      if (room?.isActive) setSelectedRoomId(roomIdFromUrl);
-    }
-  }, [roomIdFromUrl, rooms]);
-
-  useEffect(() => {
-    if (selectedRoomId && !loading) {
-      const room = safeRooms.find(r => r._id === selectedRoomId);
-      if (room?.isActive) {
-        loadOrCreateSession();
-      } else {
-        setSession(null);
-        setError(selectedRoomId ? 'Выбранная комната не активна. Запустите цикл на странице «Активные комнаты».' : '');
-      }
-    } else if (!selectedRoomId) {
-      setSession(null);
-      setError('');
-    }
-  }, [selectedRoomId, loading, rooms]);
-
   const loadRooms = async () => {
     try {
       setLoading(true);
@@ -82,10 +60,6 @@ const Harvest = () => {
       const data = await roomService.getRooms();
       const list = Array.isArray(data) ? data : [];
       setRooms(list);
-      if (!selectedRoomId && list.length) {
-        const firstActive = list.find(r => r && r.isActive);
-        if (firstActive) setSelectedRoomId(firstActive._id);
-      }
     } catch (err) {
       setError('Ошибка загрузки комнат');
       console.error(err);
@@ -95,23 +69,22 @@ const Harvest = () => {
     }
   };
 
-  const loadOrCreateSession = async () => {
-    if (!selectedRoomId) return;
+  const loadOrCreateSession = useCallback(async (roomId) => {
+    if (!roomId) return;
     try {
       setSessionLoading(true);
       setError('');
       let s = null;
       try {
-        s = await harvestService.getSessionByRoom(selectedRoomId);
+        s = await harvestService.getSessionByRoom(roomId);
       } catch (e) {
-        // 404 или сеть — пробуем создать сессию (бэкенд может отдавать 404 при отсутствии сессии)
         if (e.response && Number(e.response.status) === 404) {
-          s = await harvestService.createSession(selectedRoomId);
+          s = await harvestService.createSession(roomId);
         } else {
           throw e;
         }
       }
-      if (!s) s = await harvestService.createSession(selectedRoomId);
+      if (!s) s = await harvestService.createSession(roomId);
       setSession(s);
       if (s?.status === 'in_progress' && scaleWeight == null) {
         setScaleWeight(Math.round(50 + Math.random() * 450));
@@ -124,7 +97,35 @@ const Harvest = () => {
     } finally {
       setSessionLoading(false);
     }
+  }, [scaleWeight]);
+
+  // Выбор комнаты по клику на карточку
+  const handleSelectRoom = (roomId) => {
+    setSelectedRoomId(roomId);
+    setSession(null);
+    setError('');
+    setCompleteSuccess(false);
+    loadOrCreateSession(roomId);
   };
+
+  // Вернуться к выбору комнат
+  const handleBackToRooms = () => {
+    setSelectedRoomId('');
+    setSession(null);
+    setError('');
+    setScaleWeight(null);
+    setPlantNumber('');
+  };
+
+  // URL param auto-select
+  useEffect(() => {
+    if (roomIdFromUrl && safeRooms.length && !selectedRoomId) {
+      const room = safeRooms.find(r => r._id === roomIdFromUrl);
+      if (room?.isActive) {
+        handleSelectRoom(roomIdFromUrl);
+      }
+    }
+  }, [roomIdFromUrl, rooms]);
 
   const handleRecordPlant = async (e) => {
     e.preventDefault();
@@ -147,7 +148,6 @@ const Harvest = () => {
     }
   };
 
-  /** Временная кнопка для теста: записать все кусты разом со случайным весом 80–350 г */
   const handleFillAllPlants = async () => {
     if (!session || session.status !== 'in_progress') return;
     const expected = session.plantsCount ?? 0;
@@ -218,13 +218,94 @@ const Harvest = () => {
     );
   }
 
+  // ── Режим выбора комнаты (нет selectedRoomId) ──
+  if (!selectedRoomId && !sessionLoading) {
+    return (
+      <div>
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-white">Сбор урожая</h1>
+          <p className="text-dark-400 mt-1">Выберите комнату для начала сбора</p>
+        </div>
+
+        {error && (
+          <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6">
+            {error}
+          </div>
+        )}
+        {completeSuccess && (
+          <div className="bg-green-900/30 border border-green-700 text-green-400 px-4 py-3 rounded-lg mb-6">
+            Сбор завершён. Комната автоматически архивирована и освобождена для нового цикла.
+          </div>
+        )}
+
+        {activeRooms.length === 0 ? (
+          <div className="bg-amber-900/20 border border-amber-700 text-amber-400 px-4 py-3 rounded-lg">
+            Нет активных комнат. Запустите цикл в комнате на странице «Активные комнаты», затем возвращайтесь сюда для сбора урожая.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+            {activeRooms.map((r) => {
+              const progress = r.progress ?? 0;
+              const day = r.currentDay ?? 0;
+              const total = r.floweringDays ?? 0;
+              const daysLeft = r.daysRemaining ?? null;
+              const progressColor = progress >= 95 ? 'bg-red-500' : progress >= 80 ? 'bg-yellow-500' : 'bg-primary-500';
+              const borderColor = progress >= 95
+                ? 'border-red-700/50 hover:border-red-500/70'
+                : progress >= 80
+                  ? 'border-yellow-700/50 hover:border-yellow-500/70'
+                  : 'border-dark-600 hover:border-primary-600/50';
+              return (
+                <button
+                  key={r._id}
+                  type="button"
+                  onClick={() => handleSelectRoom(r._id)}
+                  className={`text-left bg-dark-800 rounded-xl p-4 border-2 ${borderColor} transition-all hover:bg-dark-750 group`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-white font-bold text-lg truncate">{r.name}</span>
+                    <svg className="w-5 h-5 text-dark-500 group-hover:text-primary-400 transition shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                  <div className="text-sm text-primary-400 truncate mb-2">{r.strain || 'без сорта'}</div>
+                  <div className="flex items-center gap-3 text-sm text-dark-400 mb-3">
+                    <span>{r.plantsCount || 0} кустов</span>
+                    {daysLeft != null && daysLeft >= 0 && (
+                      <span className={daysLeft <= 3 ? 'text-red-400' : ''}>
+                        {daysLeft === 0 ? 'Урожай сегодня!' : `${daysLeft} дн. до урожая`}
+                      </span>
+                    )}
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-2 bg-dark-700 rounded-full overflow-hidden mb-1.5">
+                    <div
+                      className={`h-full ${progressColor} rounded-full transition-all`}
+                      style={{ width: `${Math.min(progress, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-dark-500">День {day} из {total}</span>
+                    <span className={`font-medium ${progress >= 95 ? 'text-red-400' : progress >= 80 ? 'text-yellow-400' : 'text-primary-400'}`}>
+                      {progress}%
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Режим сессии сбора ──
   const totalWet = session?.plants?.reduce((s, p) => s + p.wetWeight, 0) ?? 0;
   const expected = session?.plantsCount ?? 0;
   const recorded = session?.plants?.length ?? 0;
   const progressPct = expected > 0 ? Math.round((recorded / expected) * 100) : 0;
   const avgWeight = recorded > 0 ? Math.round(totalWet / recorded) : 0;
 
-  // Агрегация по сортам
   const strainStats = (() => {
     if (!session?.plants?.length) return [];
     const map = {};
@@ -245,7 +326,6 @@ const Harvest = () => {
     return map;
   })();
 
-  // Данные для карты комнаты в режиме сбора
   const selectedRoom = safeRooms.find(r => r._id === selectedRoomId);
   const sessionPlants = session?.plants || [];
   const harvestedPlants = new Set(sessionPlants.map(p => p.plantNumber));
@@ -255,8 +335,21 @@ const Harvest = () => {
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Сбор урожая</h1>
+      {/* Шапка с кнопкой назад */}
+      <div className="mb-6">
+        <button
+          type="button"
+          onClick={handleBackToRooms}
+          className="flex items-center gap-2 text-dark-400 hover:text-primary-400 transition text-sm mb-3"
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+          </svg>
+          К выбору комнаты
+        </button>
+        <h1 className="text-2xl font-bold text-white">
+          Сбор урожая — {selectedRoom?.name || 'Комната'}
+        </h1>
         <p className="text-dark-400 mt-1">Весы (симуляция). Введите номер куста, снимите вес и запишите.</p>
       </div>
 
@@ -265,70 +358,8 @@ const Harvest = () => {
           {error}
         </div>
       )}
-      {completeSuccess && (
-        <div className="bg-green-900/30 border border-green-700 text-green-400 px-4 py-3 rounded-lg mb-6">
-          Сбор завершён. Комната автоматически архивирована и освобождена для нового цикла.
-        </div>
-      )}
 
-      {!loading && activeRooms.length === 0 && (
-        <div className="bg-amber-900/20 border border-amber-700 text-amber-400 px-4 py-3 rounded-lg mb-6">
-          Нет активных комнат. Запустите цикл в комнате на странице «Активные комнаты», затем возвращайтесь сюда для сбора урожая.
-        </div>
-      )}
-
-      {/* Выбор комнаты — кнопки-карточки с прогресс-баром */}
-      {activeRooms.length > 0 && (
-        <div className="mb-6">
-          <h2 className="text-lg font-semibold text-white mb-3">Выберите комнату</h2>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-            {activeRooms.map((r) => {
-              const isSelected = selectedRoomId === r._id;
-              const progress = r.progress ?? 0;
-              const day = r.currentDay ?? 0;
-              const total = r.floweringDays ?? 0;
-              const progressColor = progress >= 95 ? 'bg-red-500' : progress >= 80 ? 'bg-yellow-500' : 'bg-primary-500';
-              const borderColor = isSelected
-                ? 'border-primary-500 ring-2 ring-primary-500/30'
-                : progress >= 95 ? 'border-red-700/50 hover:border-red-600/70'
-                : progress >= 80 ? 'border-yellow-700/50 hover:border-yellow-600/70'
-                : 'border-dark-600 hover:border-dark-500';
-              return (
-                <button
-                  key={r._id}
-                  type="button"
-                  onClick={() => setSelectedRoomId(r._id)}
-                  className={`text-left bg-dark-800 rounded-xl p-3 border ${borderColor} transition-all`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-white font-semibold text-sm truncate">{r.name}</span>
-                    {isSelected && <span className="w-2 h-2 rounded-full bg-primary-500 shrink-0" />}
-                  </div>
-                  <div className="text-xs text-primary-400 truncate mb-1.5">{r.strain || 'без сорта'}</div>
-                  <div className="text-xs text-dark-400 mb-1">
-                    {r.plantsCount || 0} кустов
-                  </div>
-                  {/* Progress bar */}
-                  <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden mb-1">
-                    <div
-                      className={`h-full ${progressColor} rounded-full transition-all`}
-                      style={{ width: `${Math.min(progress, 100)}%` }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-xs">
-                    <span className="text-dark-500">День {day}/{total}</span>
-                    <span className={`font-medium ${progress >= 95 ? 'text-red-400' : progress >= 80 ? 'text-yellow-400' : 'text-primary-400'}`}>
-                      {progress}%
-                    </span>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {sessionLoading && selectedRoomId && (
+      {sessionLoading && (
         <div className="flex items-center justify-center py-8">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500" />
         </div>
@@ -654,7 +685,13 @@ const Harvest = () => {
         <div className="bg-dark-800 rounded-xl p-6 border border-dark-700">
           <p className="text-green-400 font-medium">Сбор по этой комнате завершён.</p>
           <p className="text-dark-400 text-sm mt-1">Всего записано кустов: {session.plants?.length ?? 0}, мокрый вес: {totalWet} г.</p>
-          <p className="text-dark-500 text-xs mt-2">Выберите другую комнату или начните новый цикл в этой комнате для повторного сбора.</p>
+          <button
+            type="button"
+            onClick={handleBackToRooms}
+            className="mt-3 px-4 py-2 bg-dark-700 hover:bg-dark-600 text-primary-400 rounded-lg text-sm font-medium transition"
+          >
+            ← К выбору комнаты
+          </button>
         </div>
       )}
     </div>
