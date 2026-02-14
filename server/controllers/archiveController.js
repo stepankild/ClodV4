@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import CycleArchive from '../models/CycleArchive.js';
 import FlowerRoom from '../models/FlowerRoom.js';
 import RoomTask from '../models/RoomTask.js';
@@ -492,6 +493,314 @@ export const getRoomLogs = async (req, res) => {
     res.json(logs);
   } catch (error) {
     console.error('Get room logs error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Get detailed stats for a specific strain
+// @route   GET /api/archive/stats/strain/:strain
+export const getStrainDetailStats = async (req, res) => {
+  try {
+    const strainName = decodeURIComponent(req.params.strain);
+    const { period = 'all' } = req.query;
+
+    let dateFilter = {};
+    const now = new Date();
+    if (period === 'year') {
+      dateFilter = { harvestDate: { $gte: new Date(now.getFullYear(), 0, 1) } };
+    } else if (period === '6months') {
+      const d = new Date(now); d.setMonth(d.getMonth() - 6);
+      dateFilter = { harvestDate: { $gte: d } };
+    } else if (period === '3months') {
+      const d = new Date(now); d.setMonth(d.getMonth() - 3);
+      dateFilter = { harvestDate: { $gte: d } };
+    }
+
+    const baseMatch = {
+      strain: strainName,
+      ...dateFilter,
+      $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }]
+    };
+
+    // All cycles for this strain, chronological
+    const cycles = await CycleArchive.find(baseMatch)
+      .sort({ harvestDate: 1 })
+      .select('cycleName roomName roomNumber plantsCount harvestDate startDate actualDays harvestData metrics environment strains strainData quality')
+      .lean();
+
+    if (cycles.length === 0) {
+      return res.json({ strain: strainName, summary: null, cycles: [], byRoom: [] });
+    }
+
+    // Summary aggregation
+    const summaryAgg = await CycleArchive.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: null,
+          totalCycles: { $sum: 1 },
+          totalPlants: { $sum: '$plantsCount' },
+          totalDryWeight: { $sum: '$harvestData.dryWeight' },
+          totalWetWeight: { $sum: '$harvestData.wetWeight' },
+          avgDryPerCycle: { $avg: '$harvestData.dryWeight' },
+          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
+          avgDays: { $avg: '$actualDays' },
+          maxDry: { $max: '$harvestData.dryWeight' },
+          minDry: { $min: '$harvestData.dryWeight' },
+          maxGpp: { $max: '$metrics.gramsPerPlant' },
+          minGpp: { $min: '$metrics.gramsPerPlant' }
+        }
+      }
+    ]);
+
+    const s = summaryAgg[0];
+
+    // Best & worst cycle
+    const bestCycle = cycles.reduce((best, c) =>
+      (c.metrics?.gramsPerPlant || 0) > (best.metrics?.gramsPerPlant || 0) ? c : best, cycles[0]);
+    const worstCycle = cycles.reduce((worst, c) =>
+      (c.metrics?.gramsPerPlant || 0) < (worst.metrics?.gramsPerPlant || 0) ? c : worst, cycles[0]);
+
+    // Trend: compare avg of last 3 cycles vs first 3 cycles
+    let trend = 'stable';
+    if (cycles.length >= 4) {
+      const first3 = cycles.slice(0, 3);
+      const last3 = cycles.slice(-3);
+      const avgFirst = first3.reduce((sum, c) => sum + (c.metrics?.gramsPerPlant || 0), 0) / first3.length;
+      const avgLast = last3.reduce((sum, c) => sum + (c.metrics?.gramsPerPlant || 0), 0) / last3.length;
+      if (avgLast > avgFirst * 1.1) trend = 'up';
+      else if (avgLast < avgFirst * 0.9) trend = 'down';
+    }
+
+    // By room breakdown
+    const byRoom = await CycleArchive.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: { room: '$room', roomName: '$roomName', roomNumber: '$roomNumber' },
+          cycles: { $sum: 1 },
+          totalWeight: { $sum: '$harvestData.dryWeight' },
+          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgDays: { $avg: '$actualDays' }
+        }
+      },
+      { $sort: { totalWeight: -1 } }
+    ]);
+
+    res.json({
+      strain: strainName,
+      summary: {
+        totalCycles: s.totalCycles,
+        totalPlants: s.totalPlants,
+        totalDryWeight: s.totalDryWeight,
+        totalWetWeight: s.totalWetWeight,
+        avgDryPerCycle: Math.round(s.avgDryPerCycle || 0),
+        avgGramsPerPlant: Math.round((s.avgGramsPerPlant || 0) * 10) / 10,
+        avgGramsPerWatt: Math.round((s.avgGramsPerWatt || 0) * 100) / 100,
+        avgDays: Math.round(s.avgDays || 0),
+        bestCycle: {
+          cycleName: bestCycle.cycleName,
+          roomName: bestCycle.roomName,
+          harvestDate: bestCycle.harvestDate,
+          dryWeight: bestCycle.harvestData?.dryWeight,
+          gramsPerPlant: bestCycle.metrics?.gramsPerPlant
+        },
+        worstCycle: {
+          cycleName: worstCycle.cycleName,
+          roomName: worstCycle.roomName,
+          harvestDate: worstCycle.harvestDate,
+          dryWeight: worstCycle.harvestData?.dryWeight,
+          gramsPerPlant: worstCycle.metrics?.gramsPerPlant
+        },
+        trend
+      },
+      cycles: cycles.map(c => ({
+        _id: c._id,
+        cycleName: c.cycleName,
+        roomName: c.roomName,
+        roomNumber: c.roomNumber,
+        plantsCount: c.plantsCount,
+        harvestDate: c.harvestDate,
+        startDate: c.startDate,
+        actualDays: c.actualDays,
+        dryWeight: c.harvestData?.dryWeight || 0,
+        wetWeight: c.harvestData?.wetWeight || 0,
+        gramsPerPlant: c.metrics?.gramsPerPlant || 0,
+        gramsPerWatt: c.metrics?.gramsPerWatt || 0,
+        quality: c.harvestData?.quality || 'medium'
+      })),
+      byRoom: byRoom.map(r => ({
+        roomId: r._id.room,
+        roomName: r._id.roomName,
+        roomNumber: r._id.roomNumber,
+        cycles: r.cycles,
+        totalWeight: Math.round(r.totalWeight),
+        avgGramsPerPlant: Math.round((r.avgGramsPerPlant || 0) * 10) / 10,
+        avgDays: Math.round(r.avgDays || 0)
+      }))
+    });
+  } catch (error) {
+    console.error('Get strain detail stats error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Get detailed stats for a specific room
+// @route   GET /api/archive/stats/room/:roomId
+export const getRoomDetailStats = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { period = 'all' } = req.query;
+
+    let dateFilter = {};
+    const now = new Date();
+    if (period === 'year') {
+      dateFilter = { harvestDate: { $gte: new Date(now.getFullYear(), 0, 1) } };
+    } else if (period === '6months') {
+      const d = new Date(now); d.setMonth(d.getMonth() - 6);
+      dateFilter = { harvestDate: { $gte: d } };
+    } else if (period === '3months') {
+      const d = new Date(now); d.setMonth(d.getMonth() - 3);
+      dateFilter = { harvestDate: { $gte: d } };
+    }
+
+    const baseMatch = {
+      room: new mongoose.Types.ObjectId(roomId),
+      ...dateFilter,
+      $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }]
+    };
+
+    // All cycles for this room, chronological
+    const cycles = await CycleArchive.find({
+      room: roomId,
+      ...dateFilter,
+      $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }]
+    })
+      .sort({ harvestDate: 1 })
+      .select('cycleName strain roomName roomNumber plantsCount harvestDate startDate actualDays harvestData metrics environment strains')
+      .lean();
+
+    if (cycles.length === 0) {
+      const room = await FlowerRoom.findById(roomId).select('name roomNumber').lean();
+      return res.json({
+        roomId,
+        roomName: room?.name || '—',
+        roomNumber: room?.roomNumber,
+        summary: null,
+        cycles: [],
+        byStrain: []
+      });
+    }
+
+    const roomName = cycles[0].roomName;
+    const roomNumber = cycles[0].roomNumber;
+
+    // Summary aggregation
+    const summaryAgg = await CycleArchive.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: null,
+          totalCycles: { $sum: 1 },
+          totalPlants: { $sum: '$plantsCount' },
+          totalDryWeight: { $sum: '$harvestData.dryWeight' },
+          totalWetWeight: { $sum: '$harvestData.wetWeight' },
+          avgDryPerCycle: { $avg: '$harvestData.dryWeight' },
+          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
+          avgDays: { $avg: '$actualDays' }
+        }
+      }
+    ]);
+
+    const sm = summaryAgg[0];
+
+    // Best & worst cycle
+    const bestCycle = cycles.reduce((best, c) =>
+      (c.metrics?.gramsPerPlant || 0) > (best.metrics?.gramsPerPlant || 0) ? c : best, cycles[0]);
+    const worstCycle = cycles.reduce((worst, c) =>
+      (c.metrics?.gramsPerPlant || 0) < (worst.metrics?.gramsPerPlant || 0) ? c : worst, cycles[0]);
+
+    // Trend
+    let trend = 'stable';
+    if (cycles.length >= 4) {
+      const first3 = cycles.slice(0, 3);
+      const last3 = cycles.slice(-3);
+      const avgFirst = first3.reduce((s, c) => s + (c.metrics?.gramsPerPlant || 0), 0) / first3.length;
+      const avgLast = last3.reduce((s, c) => s + (c.metrics?.gramsPerPlant || 0), 0) / last3.length;
+      if (avgLast > avgFirst * 1.1) trend = 'up';
+      else if (avgLast < avgFirst * 0.9) trend = 'down';
+    }
+
+    // By strain breakdown
+    const byStrain = await CycleArchive.aggregate([
+      { $match: baseMatch },
+      {
+        $group: {
+          _id: '$strain',
+          cycles: { $sum: 1 },
+          totalWeight: { $sum: '$harvestData.dryWeight' },
+          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgDays: { $avg: '$actualDays' }
+        }
+      },
+      { $sort: { totalWeight: -1 } }
+    ]);
+
+    res.json({
+      roomId,
+      roomName,
+      roomNumber,
+      summary: {
+        totalCycles: sm.totalCycles,
+        totalPlants: sm.totalPlants,
+        totalDryWeight: sm.totalDryWeight,
+        totalWetWeight: sm.totalWetWeight,
+        avgDryPerCycle: Math.round(sm.avgDryPerCycle || 0),
+        avgGramsPerPlant: Math.round((sm.avgGramsPerPlant || 0) * 10) / 10,
+        avgGramsPerWatt: Math.round((sm.avgGramsPerWatt || 0) * 100) / 100,
+        avgDays: Math.round(sm.avgDays || 0),
+        bestCycle: {
+          cycleName: bestCycle.cycleName,
+          strain: bestCycle.strain,
+          harvestDate: bestCycle.harvestDate,
+          dryWeight: bestCycle.harvestData?.dryWeight,
+          gramsPerPlant: bestCycle.metrics?.gramsPerPlant
+        },
+        worstCycle: {
+          cycleName: worstCycle.cycleName,
+          strain: worstCycle.strain,
+          harvestDate: worstCycle.harvestDate,
+          dryWeight: worstCycle.harvestData?.dryWeight,
+          gramsPerPlant: worstCycle.metrics?.gramsPerPlant
+        },
+        trend
+      },
+      cycles: cycles.map(c => ({
+        _id: c._id,
+        cycleName: c.cycleName,
+        strain: c.strain,
+        plantsCount: c.plantsCount,
+        harvestDate: c.harvestDate,
+        startDate: c.startDate,
+        actualDays: c.actualDays,
+        dryWeight: c.harvestData?.dryWeight || 0,
+        wetWeight: c.harvestData?.wetWeight || 0,
+        gramsPerPlant: c.metrics?.gramsPerPlant || 0,
+        gramsPerWatt: c.metrics?.gramsPerWatt || 0,
+        quality: c.harvestData?.quality || 'medium'
+      })),
+      byStrain: byStrain.map(s => ({
+        strain: s._id,
+        cycles: s.cycles,
+        totalWeight: Math.round(s.totalWeight),
+        avgGramsPerPlant: Math.round((s.avgGramsPerPlant || 0) * 10) / 10,
+        avgDays: Math.round(s.avgDays || 0)
+      }))
+    });
+  } catch (error) {
+    console.error('Get room detail stats error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

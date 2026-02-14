@@ -39,5 +39,17 @@ export const archiveService = {
   async getStats(period = 'all') {
     const response = await api.get('/archive/stats', { params: { period } });
     return response.data;
+  },
+
+  /** Detailed stats for a specific strain */
+  async getStrainStats(strain, period = 'all') {
+    const response = await api.get(`/archive/stats/strain/${encodeURIComponent(strain)}`, { params: { period } });
+    return response.data;
+  },
+
+  /** Detailed stats for a specific room */
+  async getRoomStats(roomId, period = 'all') {
+    const response = await api.get(`/archive/stats/room/${roomId}`, { params: { period } });
+    return response.data;
   }
 };
