@@ -59,8 +59,10 @@ export const getRoomsSummary = async (req, res) => {
     }
     const summary = await Promise.all(rooms.map(async (room) => {
       const roomId = room._id;
+      // Фильтр задач по текущему циклу (если есть cycleId)
+      const cycleFilter = room.currentCycleId ? { cycleId: room.currentCycleId } : {};
       const [completedTasksRaw, pendingTasksRaw, lastArchive, plannedCycle] = await Promise.all([
-        RoomTask.find({ room: roomId, completed: true, ...notDeleted }).lean(),
+        RoomTask.find({ room: roomId, completed: true, ...cycleFilter, ...notDeleted }).lean(),
         RoomTask.find({ room: roomId, completed: false, ...notDeleted }).lean(),
         CycleArchive.findOne({ room: roomId }).sort({ harvestDate: -1 }).lean(),
         PlannedCycle.findOne({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
