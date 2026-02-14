@@ -304,6 +304,36 @@ export const harvestAndArchive = async (req, res) => {
         }))
       : [{ strain: room.strain || '—', wetWeight: wetWeight || 0, dryWeight: dryWeight || 0, popcornWeight: 0 }];
 
+    // Защита от дублей: если архив с этой комнатой и startDate уже существует — не создаём
+    const existingArchive = await CycleArchive.findOne({
+      room: roomId,
+      startDate: room.startDate,
+      $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }]
+    });
+    if (existingArchive) {
+      return res.status(409).json({
+        message: 'Архив для этого цикла уже существует',
+        archive: existingArchive
+      });
+    }
+
+    // Снимок карты комнаты (позиции кустов)
+    const harvestMapData = {
+      customRows: (room.roomLayout?.customRows || []).map(r => ({
+        name: r.name || '',
+        cols: r.cols || 4,
+        rows: r.rows || 1,
+        fillDirection: r.fillDirection || 'topDown'
+      })),
+      plants: (room.roomLayout?.plantPositions || []).map(pp => ({
+        plantNumber: pp.plantNumber,
+        row: pp.row,
+        position: pp.position,
+        strain: pp.strain || '',
+        wetWeight: 0
+      }))
+    };
+
     // Создаём архивную запись
     const archive = await CycleArchive.create({
       room: roomId,
@@ -351,7 +381,8 @@ export const harvestAndArchive = async (req, res) => {
         sprayProduct: t.sprayProduct,
         feedProduct: t.feedProduct,
         feedDosage: t.feedDosage
-      }))
+      })),
+      harvestMapData
     });
 
     // Создаём лог завершения цикла
