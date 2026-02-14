@@ -21,6 +21,7 @@ const Strains = () => {
   const [mergeTarget, setMergeTarget] = useState('');
   const [merging, setMerging] = useState(false);
   const [mergeResult, setMergeResult] = useState(null);
+  const [manualMergeName, setManualMergeName] = useState('');
 
   const load = async () => {
     try {
@@ -114,11 +115,13 @@ const Strains = () => {
       setSelected(new Set());
       setMergeTarget('');
       setMergeResult(null);
+      setManualMergeName('');
     } else {
       setMergeMode(true);
       setSelected(new Set());
       setMergeTarget('');
       setMergeResult(null);
+      setManualMergeName('');
     }
   };
 
@@ -257,6 +260,38 @@ const Strains = () => {
         </div>
       )}
 
+      {/* Manual merge input — for strains not in library */}
+      {mergeMode && (
+        <div className="bg-dark-800/50 border border-dark-700 rounded-lg px-4 py-3 mb-4">
+          <div className="text-dark-400 text-sm mb-2">
+            Если сорт не отображается в списке, введите его имя вручную:
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={manualMergeName}
+              onChange={(e) => setManualMergeName(e.target.value)}
+              placeholder="Название сорта (как в базе)"
+              className="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm placeholder-dark-500 focus:ring-2 focus:ring-yellow-500"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                const name = manualMergeName.trim();
+                if (name && !selected.has(name)) {
+                  setSelected(prev => new Set([...prev, name]));
+                  setManualMergeName('');
+                }
+              }}
+              disabled={!manualMergeName.trim()}
+              className="px-4 py-2 bg-yellow-600/50 hover:bg-yellow-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition"
+            >
+              + Добавить
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Add form */}
       {!mergeMode && (
         <form onSubmit={handleCreate} className="flex gap-2 mb-6">
@@ -363,15 +398,29 @@ const Strains = () => {
           {showDeleted && (
             <div className="bg-dark-800/50 rounded-xl border border-dark-700 divide-y divide-dark-700">
               {deleted.map(s => (
-                <div key={s._id} className="flex items-center gap-3 px-4 py-3">
-                  <span className="flex-1 text-dark-400 line-through">{s.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => handleRestore(s._id)}
-                    className="px-3 py-1 bg-green-900/30 text-green-400 hover:bg-green-900/50 rounded text-xs font-medium"
-                  >
-                    Восстановить
-                  </button>
+                <div key={s._id} className={`flex items-center gap-3 px-4 py-3 ${mergeMode && selected.has(s.name) ? 'bg-yellow-900/10' : ''}`}>
+                  {mergeMode ? (
+                    <>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(s.name)}
+                        onChange={() => toggleSelect(s.name)}
+                        className="w-4 h-4 rounded border-dark-600 text-yellow-500 focus:ring-yellow-500 bg-dark-700 cursor-pointer"
+                      />
+                      <span className={`flex-1 line-through ${selected.has(s.name) ? 'text-yellow-300' : 'text-dark-400'}`}>{s.name}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="flex-1 text-dark-400 line-through">{s.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRestore(s._id)}
+                        className="px-3 py-1 bg-green-900/30 text-green-400 hover:bg-green-900/50 rounded text-xs font-medium"
+                      >
+                        Восстановить
+                      </button>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
