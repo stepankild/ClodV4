@@ -492,7 +492,7 @@ export const mergeStrains = async (req, res) => {
     // Soft-delete merged strains from Strain library (keep target, case-insensitive)
     const strainRegexFilters = patterns.map(p => ({ name: { $regex: p } }));
     const deletedStrains = await Strain.updateMany(
-      { $or: strainRegexFilters, ...notDeleted },
+      { $and: [{ $or: strainRegexFilters }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] },
       { $set: { deletedAt: new Date() } }
     );
 
@@ -516,6 +516,26 @@ export const mergeStrains = async (req, res) => {
   } catch (error) {
     console.error('Merge strains error:', error);
     res.status(500).json({ message: 'Ошибка объединения' });
+  }
+};
+
+// @desc    Restore all strains deleted in last N minutes (emergency fix)
+// @route   POST /api/strains/restore-recent
+export const restoreRecentStrains = async (req, res) => {
+  try {
+    const minutes = parseInt(req.query.minutes) || 60;
+    const since = new Date(Date.now() - minutes * 60 * 1000);
+    const result = await Strain.updateMany(
+      { deletedAt: { $gte: since } },
+      { $set: { deletedAt: null } }
+    );
+    res.json({
+      message: `Восстановлено ${result.modifiedCount} сортов, удалённых за последние ${minutes} мин`,
+      restored: result.modifiedCount
+    });
+  } catch (error) {
+    console.error('Restore recent strains error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
