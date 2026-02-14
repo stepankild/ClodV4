@@ -109,6 +109,9 @@ const Overview = () => {
   }
 
   // ── Computed data ──
+  const safeVegBatches = Array.isArray(vegBatches) ? vegBatches : [];
+  const safeCloneCuts = Array.isArray(cloneCuts) ? cloneCuts : [];
+
   const activeRooms = safeRooms.filter(r => r.isActive);
   const flowerPlants = activeRooms.reduce((s, r) => s + (r.plantsCount || 0), 0);
 
@@ -140,10 +143,6 @@ const Overview = () => {
 
   // Alerts — things requiring attention
   const alerts = [];
-
-  // Overdue clone cuts
-  const safeVegBatches = Array.isArray(vegBatches) ? vegBatches : [];
-  const safeCloneCuts = Array.isArray(cloneCuts) ? cloneCuts : [];
 
   // Найти актуальный клон-бэтч для комнаты: самый свежий по cutDate,
   // чья дата нарезки в пределах ±60 дней от расчётной даты нарезки для текущего цикла
