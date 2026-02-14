@@ -136,14 +136,12 @@ export const refreshToken = async (req, res) => {
       }
 
       const newAccessToken = generateAccessToken(user._id);
-      const newRefreshToken = generateRefreshToken(user._id);
-
-      user.refreshToken = newRefreshToken;
-      await user.save();
-
+      // НЕ ротируем refresh token — он валиден до истечения (30d).
+      // Ротация вызывала гонку между вкладками: вкладка A обновляет токен в БД,
+      // вкладка B пытается refresh со старым токеном → 401 → logout обеих вкладок.
       res.json({
         accessToken: newAccessToken,
-        refreshToken: newRefreshToken
+        refreshToken              // возвращаем тот же refresh token
       });
     } catch (error) {
       return res.status(401).json({ message: 'Недействительный refresh token' });
