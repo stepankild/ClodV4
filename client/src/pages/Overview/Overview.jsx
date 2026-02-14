@@ -110,7 +110,28 @@ const Overview = () => {
 
   // ── Computed data ──
   const activeRooms = safeRooms.filter(r => r.isActive);
-  const totalPlants = activeRooms.reduce((s, r) => s + (r.plantsCount || 0), 0);
+  const flowerPlants = activeRooms.reduce((s, r) => s + (r.plantsCount || 0), 0);
+
+  // Veg plants: active (not deleted, not transplanted to flower) batches
+  const activeVegBatches = safeVegBatches.filter(b => !b.deletedAt && !b.transplantedToFlowerAt);
+  const vegPlants = activeVegBatches.reduce((s, b) => {
+    const total = b.strains?.length > 0
+      ? b.strains.reduce((ss, st) => ss + (st.quantity || 0), 0)
+      : (b.quantity || 0);
+    return s + total - (b.diedCount || 0) - (b.notGrownCount || 0) - (b.sentToFlowerCount || 0) - (b.disposedCount || 0);
+  }, 0);
+
+  // Clone plants: done (not deleted) batches that haven't been transplanted to veg yet
+  const activeCloneCuts = safeCloneCuts.filter(c => !c.deletedAt && c.isDone && !safeVegBatches.some(
+    v => String(v.sourceCloneCut?._id || v.sourceCloneCut || '') === String(c._id)
+  ));
+  const clonePlants = activeCloneCuts.reduce((s, c) => {
+    return s + (c.strains?.length > 0
+      ? c.strains.reduce((ss, st) => ss + (st.quantity || 0), 0)
+      : (c.quantity || 0));
+  }, 0);
+
+  const totalPlants = flowerPlants + Math.max(0, vegPlants) + clonePlants;
   const nearestHarvest = activeRooms
     .filter(r => r.expectedHarvestDate)
     .sort((a, b) => new Date(a.expectedHarvestDate) - new Date(b.expectedHarvestDate))[0] || null;
@@ -214,6 +235,13 @@ const Overview = () => {
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">Кустов</div>
           <div className="text-xl font-bold text-green-400 mt-0.5">{totalPlants > 0 ? formatNum(totalPlants) : '—'}</div>
+          {totalPlants > 0 && (
+            <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
+              {flowerPlants > 0 && <span className="text-xs text-purple-400">🌸 {flowerPlants}</span>}
+              {vegPlants > 0 && <span className="text-xs text-emerald-400">🌱 {Math.max(0, vegPlants)}</span>}
+              {clonePlants > 0 && <span className="text-xs text-blue-400">✂️ {clonePlants}</span>}
+            </div>
+          )}
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">Ближайший урожай</div>
