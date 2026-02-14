@@ -292,20 +292,45 @@ export const mergeStrains = async (req, res) => {
     const db = mongoose.connection.db;
     const stats = { collections: {}, totalUpdated: 0 };
 
+    // Build regex patterns for case-insensitive + whitespace-tolerant matching
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const buildPattern = (name) => {
+      // Replace each space/whitespace run with \s* so "lt 20" matches "lt20", "lt  20", etc.
+      const parts = name.trim().split(/\s+/);
+      return new RegExp('^\\s*' + parts.map(escapeRegex).join('\\s*') + '\\s*$', 'i');
+    };
+    const patterns = namesToReplace.map(buildPattern);
+    // Combined regex for MongoDB $or queries
+    const regexFilters = patterns.map(p => ({ $regex: p }));
+
+    // Check if a string matches any of the source names (fuzzy)
+    const matchesAny = (str) => {
+      if (!str) return false;
+      return patterns.some(p => p.test(str));
+    };
+
     // Helper: update top-level `strain` field
     const updateTopLevel = async (collectionName, field = 'strain') => {
-      const result = await db.collection(collectionName).updateMany(
-        { [field]: { $in: namesToReplace } },
-        { $set: { [field]: target } }
-      );
-      return result.modifiedCount;
+      const docs = await db.collection(collectionName).find({
+        $or: regexFilters.map(r => ({ [field]: r }))
+      }).toArray();
+      let count = 0;
+      for (const doc of docs) {
+        if (matchesAny(doc[field])) {
+          await db.collection(collectionName).updateOne(
+            { _id: doc._id },
+            { $set: { [field]: target } }
+          );
+          count++;
+        }
+      }
+      return count;
     };
 
     // Helper: update array of objects with `.strain` field
     const updateArrayField = async (collectionName, arrayField) => {
-      // Find docs where any element matches
       const docs = await db.collection(collectionName).find({
-        [`${arrayField}.strain`]: { $in: namesToReplace }
+        $or: regexFilters.map(r => ({ [`${arrayField}.strain`]: r }))
       }).toArray();
       let count = 0;
       for (const doc of docs) {
@@ -313,7 +338,7 @@ export const mergeStrains = async (req, res) => {
         const arr = doc[arrayField];
         if (Array.isArray(arr)) {
           for (const item of arr) {
-            if (item.strain && namesToReplace.includes(item.strain)) {
+            if (matchesAny(item.strain)) {
               item.strain = target;
               changed = true;
             }
@@ -334,7 +359,7 @@ export const mergeStrains = async (req, res) => {
     const updateNestedArrayField = async (collectionName, parentField, arrayField) => {
       const fullPath = `${parentField}.${arrayField}`;
       const docs = await db.collection(collectionName).find({
-        [`${fullPath}.strain`]: { $in: namesToReplace }
+        $or: regexFilters.map(r => ({ [`${fullPath}.strain`]: r }))
       }).toArray();
       let count = 0;
       for (const doc of docs) {
@@ -342,7 +367,7 @@ export const mergeStrains = async (req, res) => {
         if (!parent || !Array.isArray(parent[arrayField])) continue;
         let changed = false;
         for (const item of parent[arrayField]) {
-          if (item.strain && namesToReplace.includes(item.strain)) {
+          if (matchesAny(item.strain)) {
             item.strain = target;
             changed = true;
           }
@@ -361,7 +386,7 @@ export const mergeStrains = async (req, res) => {
     // Helper: update string array (CycleArchive.strains is string[])
     const updateStringArray = async (collectionName, arrayField) => {
       const docs = await db.collection(collectionName).find({
-        [arrayField]: { $in: namesToReplace }
+        $or: regexFilters.map(r => ({ [arrayField]: r }))
       }).toArray();
       let count = 0;
       for (const doc of docs) {
@@ -369,7 +394,7 @@ export const mergeStrains = async (req, res) => {
         if (!Array.isArray(arr)) continue;
         let changed = false;
         const newArr = arr.map(s => {
-          if (namesToReplace.includes(s)) { changed = true; return target; }
+          if (matchesAny(s)) { changed = true; return target; }
           return s;
         });
         if (changed) {
@@ -386,11 +411,10 @@ export const mergeStrains = async (req, res) => {
     // Helper: update plants array (HarvestSession.plants, CycleArchive.harvestMapData.plants)
     const updatePlantsStrain = async (collectionName, plantsPath) => {
       const docs = await db.collection(collectionName).find({
-        [`${plantsPath}.strain`]: { $in: namesToReplace }
+        $or: regexFilters.map(r => ({ [`${plantsPath}.strain`]: r }))
       }).toArray();
       let count = 0;
       for (const doc of docs) {
-        // Navigate to the plants array
         const parts = plantsPath.split('.');
         let obj = doc;
         for (const p of parts.slice(0, -1)) obj = obj?.[p];
@@ -398,7 +422,7 @@ export const mergeStrains = async (req, res) => {
         if (!Array.isArray(plants)) continue;
         let changed = false;
         for (const p of plants) {
-          if (p.strain && namesToReplace.includes(p.strain)) {
+          if (matchesAny(p.strain)) {
             p.strain = target;
             changed = true;
           }
@@ -465,9 +489,10 @@ export const mergeStrains = async (req, res) => {
     stats.collections.trimlogs = tl;
     stats.totalUpdated += tl;
 
-    // Soft-delete merged strains from Strain library (keep target)
+    // Soft-delete merged strains from Strain library (keep target, case-insensitive)
+    const strainRegexFilters = patterns.map(p => ({ name: { $regex: p } }));
     const deletedStrains = await Strain.updateMany(
-      { name: { $in: namesToReplace }, ...notDeleted },
+      { $or: strainRegexFilters, ...notDeleted },
       { $set: { deletedAt: new Date() } }
     );
 
