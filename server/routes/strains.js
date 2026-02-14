@@ -6,6 +6,7 @@ import {
   deleteStrain,
   getDeletedStrains,
   restoreStrain,
+  restoreRecentStrains,
   migrateStrains,
   mergeStrains
 } from '../controllers/strainController.js';
@@ -17,6 +18,7 @@ router.use(protect);
 
 router.post('/migrate', migrateStrains);
 router.post('/merge', mergeStrains);
+router.post('/restore-recent', restoreRecentStrains);
 router.get('/deleted', getDeletedStrains);
 router.post('/deleted/:id/restore', restoreStrain);
 
