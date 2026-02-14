@@ -61,29 +61,9 @@ const Overview = () => {
   const [cloneCuts, setCloneCuts] = useState([]);
   const [vegBatches, setVegBatches] = useState([]);
   const [expandedNotes, setExpandedNotes] = useState({});
-  const [milestoneSaving, setMilestoneSaving] = useState(null);
 
   const toggleNotes = (roomId) => {
     setExpandedNotes(prev => ({ ...prev, [roomId]: !prev[roomId] }));
-  };
-
-  const handleMilestoneDone = async (roomId, type) => {
-    const key = `${roomId}_${type}`;
-    if (milestoneSaving === key) return;
-    const label = type === 'trim' ? 'подрезку' : 'дефолиацию';
-    if (!confirm(`Отметить ${label} как выполненную?`)) return;
-    setMilestoneSaving(key);
-    try {
-      await roomService.quickTask(roomId, {
-        type,
-        completedAt: new Date().toISOString()
-      });
-      await loadSummary();
-    } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
-    } finally {
-      setMilestoneSaving(null);
-    }
   };
 
   useEffect(() => { loadSummary(); }, []);
@@ -354,28 +334,16 @@ const Overview = () => {
                     const day = room.currentDay ?? 0;
                     const trimDone = !!room.trimWeek2Done;
                     const defolDone = !!room.defoliationWeek4Done;
-                    const trimSaving = milestoneSaving === `${room._id}_trim`;
-                    const defolSaving = milestoneSaving === `${room._id}_defoliation`;
                     return (
                       <div className="flex gap-2 mb-3">
-                        <button
-                          type="button"
-                          disabled={trimDone || trimSaving}
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (!trimDone) handleMilestoneDone(room._id, 'trim'); }}
-                          className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs text-left transition ${trimDone ? 'bg-green-900/30 text-green-400' : day >= 14 ? 'bg-red-900/20 text-red-400 hover:bg-red-900/40 cursor-pointer' : 'bg-dark-700/50 text-dark-400 hover:bg-dark-600/50 cursor-pointer'}`}
-                        >
+                        <div className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs ${trimDone ? 'bg-green-900/30 text-green-400' : day >= 14 ? 'bg-red-900/20 text-red-400' : 'bg-dark-700/50 text-dark-400'}`}>
                           <div className="font-medium">Подрезка</div>
-                          <div>{trimSaving ? 'Сохранение...' : trimDone ? formatDate(room.trimWeek2Done) : day >= 14 ? '⚠ Просрочено — нажмите ✓' : `через ${14 - day} дн.`}</div>
-                        </button>
-                        <button
-                          type="button"
-                          disabled={defolDone || defolSaving}
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (!defolDone) handleMilestoneDone(room._id, 'defoliation'); }}
-                          className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs text-left transition ${defolDone ? 'bg-green-900/30 text-green-400' : day >= 28 ? 'bg-red-900/20 text-red-400 hover:bg-red-900/40 cursor-pointer' : 'bg-dark-700/50 text-dark-400 hover:bg-dark-600/50 cursor-pointer'}`}
-                        >
+                          <div>{trimDone ? formatDate(room.trimWeek2Done) : day >= 14 ? 'Просрочено' : `через ${14 - day} дн.`}</div>
+                        </div>
+                        <div className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs ${defolDone ? 'bg-green-900/30 text-green-400' : day >= 28 ? 'bg-red-900/20 text-red-400' : 'bg-dark-700/50 text-dark-400'}`}>
                           <div className="font-medium">Дефолиация</div>
-                          <div>{defolSaving ? 'Сохранение...' : defolDone ? formatDate(room.defoliationWeek4Done) : day >= 28 ? '⚠ Просрочено — нажмите ✓' : `через ${28 - day} дн.`}</div>
-                        </button>
+                          <div>{defolDone ? formatDate(room.defoliationWeek4Done) : day >= 28 ? 'Просрочено' : `через ${28 - day} дн.`}</div>
+                        </div>
                       </div>
                     );
                   })()}
