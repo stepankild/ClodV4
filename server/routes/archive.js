@@ -3,6 +3,8 @@ import {
   getArchives,
   getArchive,
   getArchiveStats,
+  getStrainDetailStats,
+  getRoomDetailStats,
   getDeletedArchives,
   harvestAndArchive,
   updateArchive,
@@ -20,6 +22,8 @@ router.use(protect);
 // Просмотр — доступно всем с archive:view (проверяется на фронте через ProtectedRoute)
 router.get('/', getArchives);
 router.get('/stats', checkPermission('stats:view'), getArchiveStats);
+router.get('/stats/strain/:strain', checkPermission('stats:view'), getStrainDetailStats);
+router.get('/stats/room/:roomId', checkPermission('stats:view'), getRoomDetailStats);
 router.get('/logs/:roomId', getRoomLogs);
 router.get('/:id', getArchive);
 

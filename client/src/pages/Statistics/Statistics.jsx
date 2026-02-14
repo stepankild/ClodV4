@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { roomService } from '../../services/roomService';
 import { archiveService } from '../../services/archiveService';
@@ -28,12 +28,346 @@ const ChartTooltipStyle = {
   fontSize: '13px'
 };
 
+const QUALITY_LABELS = { low: 'Низкое', medium: 'Среднее', high: 'Высокое', premium: 'Премиум' };
+const TREND_ICONS = { up: '↑', down: '↓', stable: '→' };
+const TREND_COLORS = { up: 'text-green-400', down: 'text-red-400', stable: 'text-dark-400' };
+
+// ── Expandable detail card for a strain ──
+const StrainDetailCard = ({ strain, period }) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    archiveService.getStrainStats(strain, period).then((d) => {
+      if (!cancelled) { setData(d); setLoading(false); }
+    }).catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [strain, period]);
+
+  if (loading) {
+    return (
+      <div className="px-4 py-6 flex justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
+      </div>
+    );
+  }
+
+  if (!data?.summary) {
+    return <div className="px-4 py-4 text-dark-500 text-sm">Нет данных</div>;
+  }
+
+  const { summary, cycles, byRoom } = data;
+
+  // Chart data — chronological cycles
+  const chartData = cycles.map((c, i) => ({
+    name: c.roomName ? `${c.roomName}` : `#${i + 1}`,
+    date: formatDate(c.harvestDate),
+    gpp: roundTo(c.gramsPerPlant, 1) || 0,
+    dry: Math.round(c.dryWeight || 0),
+    days: c.actualDays || 0
+  }));
+
+  return (
+    <div className="px-4 pb-4 space-y-4 bg-dark-850 border-t border-dark-600">
+      {/* Mini summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+        <div className="bg-dark-800 rounded-lg p-3 border border-dark-700">
+          <div className="text-dark-400 text-xs">Сред. г/куст</div>
+          <div className="text-lg font-bold text-blue-400">{summary.avgGramsPerPlant}</div>
+        </div>
+        <div className="bg-dark-800 rounded-lg p-3 border border-dark-700">
+          <div className="text-dark-400 text-xs">Сред. урожай/цикл</div>
+          <div className="text-lg font-bold text-green-400">{formatNum(summary.avgDryPerCycle)} г</div>
+        </div>
+        <div className="bg-dark-800 rounded-lg p-3 border border-dark-700">
+          <div className="text-dark-400 text-xs">Тренд</div>
+          <div className={`text-lg font-bold ${TREND_COLORS[summary.trend]}`}>
+            {TREND_ICONS[summary.trend]} {summary.trend === 'up' ? 'Растёт' : summary.trend === 'down' ? 'Падает' : 'Стабильно'}
+          </div>
+        </div>
+        <div className="bg-dark-800 rounded-lg p-3 border border-dark-700">
+          <div className="text-dark-400 text-xs">Сред. дней</div>
+          <div className="text-lg font-bold text-white">{summary.avgDays}</div>
+        </div>
+      </div>
+
+      {/* Best / worst cycle */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="bg-green-900/20 border border-green-800/30 rounded-lg p-3">
+          <div className="text-green-400 text-xs font-semibold mb-1">🏆 Лучший цикл</div>
+          <div className="text-white text-sm">
+            {summary.bestCycle.roomName} — {formatNum(summary.bestCycle.gramsPerPlant)} г/куст
+          </div>
+          <div className="text-dark-400 text-xs">{formatDate(summary.bestCycle.harvestDate)} · {formatNum(summary.bestCycle.dryWeight)} г сухой</div>
+        </div>
+        <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
+          <div className="text-red-400 text-xs font-semibold mb-1">📉 Худший цикл</div>
+          <div className="text-white text-sm">
+            {summary.worstCycle.roomName} — {formatNum(summary.worstCycle.gramsPerPlant)} г/куст
+          </div>
+          <div className="text-dark-400 text-xs">{formatDate(summary.worstCycle.harvestDate)} · {formatNum(summary.worstCycle.dryWeight)} г сухой</div>
+        </div>
+      </div>
+
+      {/* Charts */}
+      {chartData.length > 1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-dark-800 rounded-lg border border-dark-700 p-4">
+            <h4 className="text-sm font-semibold text-white mb-3">г/куст по циклам</h4>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                <Tooltip contentStyle={ChartTooltipStyle} labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ''} />
+                <Line type="monotone" dataKey="gpp" stroke="#6366f1" strokeWidth={2} name="г/куст" dot={{ r: 4, fill: '#6366f1' }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-dark-800 rounded-lg border border-dark-700 p-4">
+            <h4 className="text-sm font-semibold text-white mb-3">Урожай по циклам</h4>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                <Tooltip contentStyle={ChartTooltipStyle} labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ''} formatter={(v) => [`${v} г`, 'Сухой вес']} />
+                <Bar dataKey="dry" fill="#10b981" radius={[4, 4, 0, 0]} name="Сухой вес" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* By room */}
+      {byRoom.length > 1 && (
+        <div>
+          <h4 className="text-sm font-semibold text-white mb-2">По комнатам</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {byRoom.map((r) => (
+              <div key={r.roomId} className="bg-dark-800 rounded-lg border border-dark-700 p-3 text-sm">
+                <div className="font-medium text-white">{r.roomName}</div>
+                <div className="text-dark-400 text-xs mt-1">
+                  {r.cycles} цикл. · {formatNum(r.totalWeight)} г · {r.avgGramsPerPlant} г/куст · {r.avgDays} дн.
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cycles table */}
+      <div>
+        <h4 className="text-sm font-semibold text-white mb-2">Все циклы ({cycles.length})</h4>
+        <div className="overflow-x-auto rounded-lg border border-dark-700">
+          <table className="w-full text-xs">
+            <thead className="bg-dark-900">
+              <tr>
+                <th className="px-3 py-2 text-left text-dark-400">Дата</th>
+                <th className="px-3 py-2 text-left text-dark-400">Комната</th>
+                <th className="px-3 py-2 text-right text-dark-400">Кустов</th>
+                <th className="px-3 py-2 text-right text-dark-400">Сухой (г)</th>
+                <th className="px-3 py-2 text-right text-dark-400">г/куст</th>
+                <th className="px-3 py-2 text-right text-dark-400">г/ватт</th>
+                <th className="px-3 py-2 text-right text-dark-400">Дней</th>
+                <th className="px-3 py-2 text-left text-dark-400">Качество</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-dark-700">
+              {cycles.map((c) => (
+                <tr key={c._id} className="hover:bg-dark-700/30">
+                  <td className="px-3 py-2 text-dark-300">{formatDate(c.harvestDate)}</td>
+                  <td className="px-3 py-2 text-white">{c.roomName}</td>
+                  <td className="px-3 py-2 text-right text-dark-300">{c.plantsCount}</td>
+                  <td className="px-3 py-2 text-right text-green-400">{formatNum(Math.round(c.dryWeight))}</td>
+                  <td className="px-3 py-2 text-right text-blue-400">{formatNum(roundTo(c.gramsPerPlant, 1))}</td>
+                  <td className="px-3 py-2 text-right text-amber-400">{c.gramsPerWatt > 0 ? roundTo(c.gramsPerWatt, 2) : '—'}</td>
+                  <td className="px-3 py-2 text-right text-dark-300">{c.actualDays}</td>
+                  <td className="px-3 py-2 text-dark-300">{QUALITY_LABELS[c.quality] || c.quality}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Expandable detail card for a room ──
+const RoomDetailCard = ({ roomId, period }) => {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    archiveService.getRoomStats(roomId, period).then((d) => {
+      if (!cancelled) { setData(d); setLoading(false); }
+    }).catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [roomId, period]);
+
+  if (loading) {
+    return (
+      <div className="px-4 py-6 flex justify-center">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
+      </div>
+    );
+  }
+
+  if (!data?.summary) {
+    return <div className="px-4 py-4 text-dark-500 text-sm">Нет данных по этой комнате</div>;
+  }
+
+  const { summary, cycles, byStrain } = data;
+
+  const chartData = cycles.map((c, i) => ({
+    name: c.strain || `#${i + 1}`,
+    date: formatDate(c.harvestDate),
+    gpp: roundTo(c.gramsPerPlant, 1) || 0,
+    dry: Math.round(c.dryWeight || 0),
+    days: c.actualDays || 0
+  }));
+
+  return (
+    <div className="px-4 pb-4 space-y-4 bg-dark-850 border-t border-dark-600">
+      {/* Mini summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
+        <div className="bg-dark-800 rounded-lg p-3 border border-dark-700">
+          <div className="text-dark-400 text-xs">Сред. г/куст</div>
+          <div className="text-lg font-bold text-blue-400">{summary.avgGramsPerPlant}</div>
+        </div>
+        <div className="bg-dark-800 rounded-lg p-3 border border-dark-700">
+          <div className="text-dark-400 text-xs">Всего урожай</div>
+          <div className="text-lg font-bold text-green-400">{formatNum(Math.round(summary.totalDryWeight))} г</div>
+        </div>
+        <div className="bg-dark-800 rounded-lg p-3 border border-dark-700">
+          <div className="text-dark-400 text-xs">Тренд</div>
+          <div className={`text-lg font-bold ${TREND_COLORS[summary.trend]}`}>
+            {TREND_ICONS[summary.trend]} {summary.trend === 'up' ? 'Растёт' : summary.trend === 'down' ? 'Падает' : 'Стабильно'}
+          </div>
+        </div>
+        <div className="bg-dark-800 rounded-lg p-3 border border-dark-700">
+          <div className="text-dark-400 text-xs">Сред. дней</div>
+          <div className="text-lg font-bold text-white">{summary.avgDays}</div>
+        </div>
+      </div>
+
+      {/* Best / worst */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div className="bg-green-900/20 border border-green-800/30 rounded-lg p-3">
+          <div className="text-green-400 text-xs font-semibold mb-1">🏆 Лучший цикл</div>
+          <div className="text-white text-sm">
+            {summary.bestCycle.strain} — {formatNum(summary.bestCycle.gramsPerPlant)} г/куст
+          </div>
+          <div className="text-dark-400 text-xs">{formatDate(summary.bestCycle.harvestDate)} · {formatNum(summary.bestCycle.dryWeight)} г сухой</div>
+        </div>
+        <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
+          <div className="text-red-400 text-xs font-semibold mb-1">📉 Худший цикл</div>
+          <div className="text-white text-sm">
+            {summary.worstCycle.strain} — {formatNum(summary.worstCycle.gramsPerPlant)} г/куст
+          </div>
+          <div className="text-dark-400 text-xs">{formatDate(summary.worstCycle.harvestDate)} · {formatNum(summary.worstCycle.dryWeight)} г сухой</div>
+        </div>
+      </div>
+
+      {/* Charts */}
+      {chartData.length > 1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-dark-800 rounded-lg border border-dark-700 p-4">
+            <h4 className="text-sm font-semibold text-white mb-3">г/куст по циклам</h4>
+            <ResponsiveContainer width="100%" height={200}>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                <Tooltip contentStyle={ChartTooltipStyle} labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ''} />
+                <Line type="monotone" dataKey="gpp" stroke="#6366f1" strokeWidth={2} name="г/куст" dot={{ r: 4, fill: '#6366f1' }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="bg-dark-800 rounded-lg border border-dark-700 p-4">
+            <h4 className="text-sm font-semibold text-white mb-3">Урожай по циклам</h4>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                <XAxis dataKey="name" tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} />
+                <Tooltip contentStyle={ChartTooltipStyle} labelFormatter={(_, payload) => payload?.[0]?.payload?.date || ''} formatter={(v) => [`${v} г`, 'Сухой вес']} />
+                <Bar dataKey="dry" fill="#10b981" radius={[4, 4, 0, 0]} name="Сухой вес" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* By strain */}
+      {byStrain.length > 1 && (
+        <div>
+          <h4 className="text-sm font-semibold text-white mb-2">По сортам</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {byStrain.map((s) => (
+              <div key={s.strain} className="bg-dark-800 rounded-lg border border-dark-700 p-3 text-sm">
+                <div className="font-medium text-white">{s.strain}</div>
+                <div className="text-dark-400 text-xs mt-1">
+                  {s.cycles} цикл. · {formatNum(s.totalWeight)} г · {s.avgGramsPerPlant} г/куст · {s.avgDays} дн.
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Cycles table */}
+      <div>
+        <h4 className="text-sm font-semibold text-white mb-2">Все циклы ({cycles.length})</h4>
+        <div className="overflow-x-auto rounded-lg border border-dark-700">
+          <table className="w-full text-xs">
+            <thead className="bg-dark-900">
+              <tr>
+                <th className="px-3 py-2 text-left text-dark-400">Дата</th>
+                <th className="px-3 py-2 text-left text-dark-400">Сорт</th>
+                <th className="px-3 py-2 text-right text-dark-400">Кустов</th>
+                <th className="px-3 py-2 text-right text-dark-400">Сухой (г)</th>
+                <th className="px-3 py-2 text-right text-dark-400">г/куст</th>
+                <th className="px-3 py-2 text-right text-dark-400">г/ватт</th>
+                <th className="px-3 py-2 text-right text-dark-400">Дней</th>
+                <th className="px-3 py-2 text-left text-dark-400">Качество</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-dark-700">
+              {cycles.map((c) => (
+                <tr key={c._id} className="hover:bg-dark-700/30">
+                  <td className="px-3 py-2 text-dark-300">{formatDate(c.harvestDate)}</td>
+                  <td className="px-3 py-2 text-white">{c.strain}</td>
+                  <td className="px-3 py-2 text-right text-dark-300">{c.plantsCount}</td>
+                  <td className="px-3 py-2 text-right text-green-400">{formatNum(Math.round(c.dryWeight))}</td>
+                  <td className="px-3 py-2 text-right text-blue-400">{formatNum(roundTo(c.gramsPerPlant, 1))}</td>
+                  <td className="px-3 py-2 text-right text-amber-400">{c.gramsPerWatt > 0 ? roundTo(c.gramsPerWatt, 2) : '—'}</td>
+                  <td className="px-3 py-2 text-right text-dark-300">{c.actualDays}</td>
+                  <td className="px-3 py-2 text-dark-300">{QUALITY_LABELS[c.quality] || c.quality}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ── Main Statistics page ──
 const Statistics = () => {
   const [rooms, setRooms] = useState([]);
   const [stats, setStats] = useState(null);
   const [period, setPeriod] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [expandedStrain, setExpandedStrain] = useState(null);
+  const [expandedRoom, setExpandedRoom] = useState(null);
 
   useEffect(() => {
     load();
@@ -59,6 +393,14 @@ const Statistics = () => {
     }
   };
 
+  const toggleStrain = useCallback((strainName) => {
+    setExpandedStrain((prev) => (prev === strainName ? null : strainName));
+  }, []);
+
+  const toggleRoom = useCallback((roomId) => {
+    setExpandedRoom((prev) => (prev === roomId ? null : roomId));
+  }, []);
+
   const safeRooms = (Array.isArray(rooms) ? rooms : []).filter((r) => r != null);
   const total = stats?.total || {};
   const byStrain = stats?.byStrain || [];
@@ -80,6 +422,19 @@ const Statistics = () => {
   const avgGpw = roundTo(total.avgGramsPerWatt, 2);
   const avgGpp = roundTo(total.avgGramsPerPlant, 1);
   const avgGpd = roundTo(total.avgGramsPerDay, 1);
+
+  // Best strain & room by g/plant
+  const bestStrain = byStrain.length > 0
+    ? byStrain.reduce((best, s) => (s.avgGramsPerPlant > (best.avgGramsPerPlant || 0) ? s : best), byStrain[0])
+    : null;
+  const bestRoomEntry = (stats?.byRoomId || []).length > 0
+    ? (stats.byRoomId).reduce((best, r) => {
+        const gpp = r.totalWeight && r.cycles ? r.totalWeight / r.cycles : 0;
+        const bestGpp = best.totalWeight && best.cycles ? best.totalWeight / best.cycles : 0;
+        return gpp > bestGpp ? r : best;
+      }, stats.byRoomId[0])
+    : null;
+  const bestRoomObj = bestRoomEntry ? safeRooms.find((r) => String(r._id) === String(bestRoomEntry._id)) : null;
 
   // Данные для графика по месяцам
   const monthlyData = byMonth.map((m) => ({
@@ -145,8 +500,8 @@ const Statistics = () => {
         </div>
       )}
 
-      {/* Сводка по ферме */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+      {/* Сводка по ферме — 6 основных + 2 best */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
           <div className="text-dark-400 text-sm font-medium">Всего циклов</div>
           <div className="text-2xl font-bold text-white mt-1">{formatNum(total.totalCycles)}</div>
@@ -176,13 +531,45 @@ const Statistics = () => {
           </div>
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-          <div className="text-dark-400 text-sm font-medium">Циклов/год (ферма)</div>
+          <div className="text-dark-400 text-sm font-medium">Циклов/год</div>
           <div className="text-2xl font-bold text-primary-400 mt-1">
             {cyclesPerYearFarm != null ? `~${Math.round(cyclesPerYearFarm)}` : '—'}
           </div>
           <p className="text-dark-500 text-xs mt-1">
             {safeRooms.length} комн.
           </p>
+        </div>
+        {/* Best strain card */}
+        <div className="bg-dark-800 rounded-xl border border-emerald-800/40 p-5">
+          <div className="text-dark-400 text-sm font-medium">🏆 Лучший сорт</div>
+          {bestStrain ? (
+            <>
+              <div className="text-lg font-bold text-emerald-400 mt-1 truncate" title={bestStrain._id}>
+                {bestStrain._id || '—'}
+              </div>
+              <p className="text-dark-500 text-xs mt-1">
+                {roundTo(bestStrain.avgGramsPerPlant, 1)} г/куст
+              </p>
+            </>
+          ) : (
+            <div className="text-2xl font-bold text-dark-500 mt-1">—</div>
+          )}
+        </div>
+        {/* Best room card */}
+        <div className="bg-dark-800 rounded-xl border border-indigo-800/40 p-5">
+          <div className="text-dark-400 text-sm font-medium">🏆 Лучшая комната</div>
+          {bestRoomObj && bestRoomEntry ? (
+            <>
+              <div className="text-lg font-bold text-indigo-400 mt-1 truncate" title={bestRoomObj.name}>
+                {bestRoomObj.name}
+              </div>
+              <p className="text-dark-500 text-xs mt-1">
+                {formatNum(Math.round(bestRoomEntry.totalWeight / bestRoomEntry.cycles))} г/цикл
+              </p>
+            </>
+          ) : (
+            <div className="text-2xl font-bold text-dark-500 mt-1">—</div>
+          )}
         </div>
       </div>
 
@@ -228,6 +615,7 @@ const Statistics = () => {
           <div className="lg:col-span-2 bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
             <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">
               По сортам
+              <span className="text-dark-500 text-sm font-normal ml-2">клик для детальной статистики</span>
             </h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -243,20 +631,39 @@ const Statistics = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-dark-700">
-                  {byStrain.map((s, i) => (
-                    <tr key={s._id || i} className="hover:bg-dark-700/30">
-                      <td className="px-4 py-3 font-medium text-white">
-                        <span className="inline-block w-2.5 h-2.5 rounded-full mr-2" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
-                        {s._id || '—'}
-                      </td>
-                      <td className="px-4 py-3 text-right text-dark-300">{s.cycles}</td>
-                      <td className="px-4 py-3 text-right text-green-400">{formatNum(Math.round(s.totalWeight))}</td>
-                      <td className="px-4 py-3 text-right text-dark-300">{formatNum(roundTo(s.avgWeight, 0))}</td>
-                      <td className="px-4 py-3 text-right text-blue-400">{formatNum(roundTo(s.avgGramsPerPlant, 1))}</td>
-                      <td className="px-4 py-3 text-right text-amber-400">{s.avgGramsPerWatt > 0 ? formatNum(roundTo(s.avgGramsPerWatt, 2)) : '—'}</td>
-                      <td className="px-4 py-3 text-right text-dark-300">{s.avgDays != null ? Math.round(s.avgDays) : '—'}</td>
-                    </tr>
-                  ))}
+                  {byStrain.map((s, i) => {
+                    const strainName = s._id || '—';
+                    const isExpanded = expandedStrain === strainName;
+                    return (
+                      <React.Fragment key={strainName}>
+                        <tr
+                          onClick={() => toggleStrain(strainName)}
+                          className={`cursor-pointer transition ${isExpanded ? 'bg-dark-700/50' : 'hover:bg-dark-700/30'}`}
+                        >
+                          <td className="px-4 py-3 font-medium text-white">
+                            <span className="inline-flex items-center gap-2">
+                              <span className="inline-block w-2.5 h-2.5 rounded-full" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                              {strainName}
+                              <span className={`text-dark-500 text-xs transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-dark-300">{s.cycles}</td>
+                          <td className="px-4 py-3 text-right text-green-400">{formatNum(Math.round(s.totalWeight))}</td>
+                          <td className="px-4 py-3 text-right text-dark-300">{formatNum(roundTo(s.avgWeight, 0))}</td>
+                          <td className="px-4 py-3 text-right text-blue-400">{formatNum(roundTo(s.avgGramsPerPlant, 1))}</td>
+                          <td className="px-4 py-3 text-right text-amber-400">{s.avgGramsPerWatt > 0 ? formatNum(roundTo(s.avgGramsPerWatt, 2)) : '—'}</td>
+                          <td className="px-4 py-3 text-right text-dark-300">{s.avgDays != null ? Math.round(s.avgDays) : '—'}</td>
+                        </tr>
+                        {isExpanded && (
+                          <tr>
+                            <td colSpan={7} className="p-0">
+                              <StrainDetailCard strain={strainName} period={period} />
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -295,6 +702,7 @@ const Statistics = () => {
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden mb-8">
         <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">
           По комнатам
+          <span className="text-dark-500 text-sm font-normal ml-2">клик для детальной статистики</span>
         </h2>
         <p className="text-dark-400 text-sm px-4 pt-2 pb-3">
           Сколько циклов прошло, дней в работе, урожай и сколько ещё циклов гипотетически успеем в год.
@@ -327,31 +735,51 @@ const Statistics = () => {
                   const totalWeight = rStat?.totalWeight ?? 0;
                   const avgDays = rStat?.avgDays != null ? Math.round(Number(rStat.avgDays)) : null;
                   const cyclesPerYear = avgDays && avgDays > 0 ? DAYS_PER_YEAR / avgDays : null;
+                  const isExpanded = expandedRoom === String(room._id);
                   return (
-                    <tr key={room._id} className="hover:bg-dark-700/30">
-                      <td className="px-4 py-3 font-medium text-white">{room.name}</td>
-                      <td className="px-4 py-3 text-right text-dark-300">{formatNum(cycles)}</td>
-                      <td className="px-4 py-3 text-right text-dark-300">{formatNum(totalDays)}</td>
-                      <td className="px-4 py-3 text-right text-green-400">{formatNum(totalWeight)}</td>
-                      <td className="px-4 py-3 text-right text-dark-300">{avgDays != null ? `${avgDays} дн.` : '—'}</td>
-                      <td className="px-4 py-3 text-right text-primary-400">
-                        {cyclesPerYear != null ? `~${cyclesPerYear.toFixed(1)}` : '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        {room.isActive ? (
-                          <span className="inline-flex items-center gap-1.5 text-primary-400 text-xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-primary-500" />
-                            Цветёт · урожай {room.expectedHarvestDate ? formatDate(room.expectedHarvestDate) : '—'}
+                    <React.Fragment key={room._id}>
+                      <tr
+                        onClick={() => cycles > 0 && toggleRoom(String(room._id))}
+                        className={`transition ${cycles > 0 ? 'cursor-pointer' : ''} ${isExpanded ? 'bg-dark-700/50' : 'hover:bg-dark-700/30'}`}
+                      >
+                        <td className="px-4 py-3 font-medium text-white">
+                          <span className="inline-flex items-center gap-2">
+                            {room.name}
+                            {cycles > 0 && (
+                              <span className={`text-dark-500 text-xs transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
+                            )}
                           </span>
-                        ) : room.plannedCycle?.plannedStartDate ? (
-                          <span className="text-dark-400 text-xs">
-                            План с {formatDate(room.plannedCycle.plannedStartDate)}
-                          </span>
-                        ) : (
-                          <span className="text-dark-500 text-xs">Свободна</span>
-                        )}
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="px-4 py-3 text-right text-dark-300">{formatNum(cycles)}</td>
+                        <td className="px-4 py-3 text-right text-dark-300">{formatNum(totalDays)}</td>
+                        <td className="px-4 py-3 text-right text-green-400">{formatNum(totalWeight)}</td>
+                        <td className="px-4 py-3 text-right text-dark-300">{avgDays != null ? `${avgDays} дн.` : '—'}</td>
+                        <td className="px-4 py-3 text-right text-primary-400">
+                          {cyclesPerYear != null ? `~${cyclesPerYear.toFixed(1)}` : '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {room.isActive ? (
+                            <span className="inline-flex items-center gap-1.5 text-primary-400 text-xs">
+                              <span className="w-1.5 h-1.5 rounded-full bg-primary-500" />
+                              Цветёт · урожай {room.expectedHarvestDate ? formatDate(room.expectedHarvestDate) : '—'}
+                            </span>
+                          ) : room.plannedCycle?.plannedStartDate ? (
+                            <span className="text-dark-400 text-xs">
+                              План с {formatDate(room.plannedCycle.plannedStartDate)}
+                            </span>
+                          ) : (
+                            <span className="text-dark-500 text-xs">Свободна</span>
+                          )}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr>
+                          <td colSpan={7} className="p-0">
+                            <RoomDetailCard roomId={String(room._id)} period={period} />
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })
               )}
