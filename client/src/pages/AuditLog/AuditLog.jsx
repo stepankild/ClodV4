@@ -194,25 +194,6 @@ const AuditLog = () => {
 
   const canRead = hasPermission && hasPermission('audit:read');
 
-  useEffect(() => {
-    if (canRead) loadUsers();
-  }, [canRead]);
-
-  useEffect(() => {
-    if (canRead && activeTab === 'sessions') loadSessions();
-  }, [canRead, activeTab, loadSessions]);
-
-  // Авто-рефреш сессий каждые 30 секунд
-  useEffect(() => {
-    if (!canRead || activeTab !== 'sessions') return;
-    const interval = setInterval(() => loadSessions(true), 30_000);
-    return () => clearInterval(interval);
-  }, [canRead, activeTab, loadSessions]);
-
-  useEffect(() => {
-    if (canRead && activeTab === 'log') loadLogs();
-  }, [canRead, activeTab, page, filterUserId, filterAction, filterFrom, filterTo]);
-
   const loadUsers = async () => {
     try {
       const list = await userService.getUsers();
@@ -258,6 +239,25 @@ const AuditLog = () => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (canRead) loadUsers();
+  }, [canRead]);
+
+  useEffect(() => {
+    if (canRead && activeTab === 'sessions') loadSessions();
+  }, [canRead, activeTab, loadSessions]);
+
+  // Авто-рефреш сессий каждые 30 секунд
+  useEffect(() => {
+    if (!canRead || activeTab !== 'sessions') return;
+    const interval = setInterval(() => loadSessions(true), 30_000);
+    return () => clearInterval(interval);
+  }, [canRead, activeTab, loadSessions]);
+
+  useEffect(() => {
+    if (canRead && activeTab === 'log') loadLogs();
+  }, [canRead, activeTab, page, filterUserId, filterAction, filterFrom, filterTo]);
 
   if (!canRead) {
     return (
