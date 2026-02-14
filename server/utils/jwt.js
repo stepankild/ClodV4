@@ -12,7 +12,7 @@ export const generateAccessToken = (userId) => {
   return jwt.sign(
     { userId },
     JWT_SECRET,
-    { expiresIn: process.env.JWT_ACCESS_EXPIRES || '1h' }
+    { expiresIn: process.env.JWT_ACCESS_EXPIRES || '24h' }
   );
 };
 
@@ -20,7 +20,7 @@ export const generateRefreshToken = (userId) => {
   return jwt.sign(
     { userId },
     JWT_REFRESH_SECRET,
-    { expiresIn: process.env.JWT_REFRESH_EXPIRES || '30d' }
+    { expiresIn: process.env.JWT_REFRESH_EXPIRES || '90d' }
   );
 };
 
