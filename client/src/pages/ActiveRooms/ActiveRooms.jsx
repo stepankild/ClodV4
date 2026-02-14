@@ -68,6 +68,9 @@ export default function ActiveRooms() {
   const [defolFormOpen, setDefolFormOpen] = useState(false);
   const [defolDate, setDefolDate] = useState(new Date().toISOString().slice(0, 10));
   const [defolNote, setDefolNote] = useState('');
+  const [netFormOpen, setNetFormOpen] = useState(false);
+  const [netDate, setNetDate] = useState(new Date().toISOString().slice(0, 10));
+  const [netNote, setNetNote] = useState('');
   const [customFormOpen, setCustomFormOpen] = useState(false);
   const [customTitle, setCustomTitle] = useState('');
   const [customDate, setCustomDate] = useState(new Date().toISOString().slice(0, 10));
@@ -384,15 +387,17 @@ export default function ActiveRooms() {
 
   // --- Quick task handlers ---
 
-  const handleNetToggle = async () => {
+  const handleNetAdd = async () => {
     if (!selectedRoom) return;
-    const existingNet = roomTasks.find(t => t.type === 'net' && t.completed);
     try {
-      if (existingNet) {
-        await roomService.deleteTask(existingNet._id);
-      } else {
-        await roomService.quickTask(selectedRoom._id, { type: 'net' });
-      }
+      await roomService.quickTask(selectedRoom._id, {
+        type: 'net',
+        completedAt: netDate ? new Date(netDate).toISOString() : undefined,
+        description: netNote.trim() || undefined
+      });
+      setNetFormOpen(false);
+      setNetDate(new Date().toISOString().slice(0, 10));
+      setNetNote('');
       await loadRoomTasks(selectedRoom._id);
       await refreshSelectedRoom();
     } catch (err) {
@@ -520,8 +525,6 @@ export default function ActiveRooms() {
   const inactiveRooms = rooms.filter(r => !r.isActive);
 
   const completedTasks = roomTasks.filter(t => t.completed).sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt));
-  const hasNet = roomTasks.some(t => t.type === 'net' && t.completed);
-  const netTask = roomTasks.find(t => t.type === 'net' && t.completed);
 
   return (
     <div className="p-6">
@@ -1075,18 +1078,53 @@ export default function ActiveRooms() {
                         <h4 className="text-sm font-medium text-dark-300">Быстрые действия</h4>
 
                         {/* Сетки */}
-                        <label className="flex items-center gap-3 cursor-pointer group">
-                          <input
-                            type="checkbox"
-                            checked={hasNet}
-                            onChange={handleNetToggle}
-                            className="w-4 h-4 rounded border-dark-500 bg-dark-700 text-primary-600 focus:ring-primary-500"
-                          />
-                          <span className="text-sm text-dark-300 group-hover:text-white">Сетки натянуты</span>
-                          {netTask && (
-                            <span className="text-xs text-dark-500 ml-auto">{formatDate(netTask.completedAt)}</span>
+                        <div>
+                          <button
+                            onClick={() => setNetFormOpen(!netFormOpen)}
+                            className="text-sm text-primary-400 hover:text-primary-300"
+                          >
+                            + Записать натяжку сетки
+                          </button>
+                          {netFormOpen && (
+                            <div className="mt-2 space-y-2 p-3 bg-dark-700/50 rounded-lg border border-dark-600">
+                              <div>
+                                <label className="block text-xs text-dark-400 mb-1">Дата</label>
+                                <input
+                                  type="date"
+                                  value={netDate}
+                                  onChange={e => setNetDate(e.target.value)}
+                                  className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-dark-400 mb-1">Заметка</label>
+                                <input
+                                  type="text"
+                                  value={netNote}
+                                  onChange={e => setNetNote(e.target.value)}
+                                  onKeyDown={e => e.key === 'Enter' && handleNetAdd()}
+                                  placeholder="Необязательно"
+                                  className="w-full px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                                  autoFocus
+                                />
+                              </div>
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={handleNetAdd}
+                                  className="px-3 py-1.5 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500"
+                                >
+                                  Сохранить
+                                </button>
+                                <button
+                                  onClick={() => { setNetFormOpen(false); setNetNote(''); }}
+                                  className="px-3 py-1.5 bg-dark-600 text-dark-300 rounded-lg text-sm hover:bg-dark-500"
+                                >
+                                  Отмена
+                                </button>
+                              </div>
+                            </div>
                           )}
-                        </label>
+                        </div>
 
                         {/* Обработка */}
                         <div>
