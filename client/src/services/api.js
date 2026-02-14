@@ -65,7 +65,11 @@ async function doRefresh() {
   const response = await axios.post(`${getRefreshBase()}/auth/refresh`, { refreshToken });
   const { accessToken, refreshToken: newRefreshToken } = response.data;
   localStorage.setItem('accessToken', accessToken);
-  localStorage.setItem('refreshToken', newRefreshToken);
+  // Обновляем refreshToken только если сервер вернул другой (backward compat).
+  // Сейчас сервер не ротирует refresh token, но на всякий случай.
+  if (newRefreshToken && newRefreshToken !== refreshToken) {
+    localStorage.setItem('refreshToken', newRefreshToken);
+  }
   return accessToken;
 }
 
