@@ -12,6 +12,8 @@ const Strains = () => {
   const [editName, setEditName] = useState('');
   const [showDeleted, setShowDeleted] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState(null);
 
   const load = async () => {
     try {
@@ -82,6 +84,21 @@ const Strains = () => {
     }
   };
 
+  const handleMigrate = async () => {
+    if (migrating) return;
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      const result = await strainService.migrate();
+      setMigrateResult(result);
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка миграции');
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -92,10 +109,32 @@ const Strains = () => {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Библиотека сортов</h1>
-        <p className="text-dark-400 mt-1 text-sm">Справочник сортов для единообразия во всех формах</p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Библиотека сортов</h1>
+          <p className="text-dark-400 mt-1 text-sm">Справочник сортов для единообразия во всех формах</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleMigrate}
+          disabled={migrating}
+          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition flex items-center gap-2 shrink-0"
+        >
+          {migrating && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
+          Импорт из базы
+        </button>
       </div>
+
+      {migrateResult && (
+        <div className="bg-blue-900/30 border border-blue-800 text-blue-300 px-4 py-3 rounded-lg mb-4 text-sm">
+          <div className="flex items-center justify-between">
+            <span>
+              Найдено: <b>{migrateResult.found}</b> | Уже было: <b>{migrateResult.alreadyExisted}</b> | Добавлено: <b>{migrateResult.inserted}</b>
+            </span>
+            <button type="button" onClick={() => setMigrateResult(null)} className="ml-3 text-blue-500 hover:text-blue-300">×</button>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-4">

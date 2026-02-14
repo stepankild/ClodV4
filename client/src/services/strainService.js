@@ -29,5 +29,10 @@ export const strainService = {
   async restore(id) {
     const response = await api.post(`/strains/deleted/${id}/restore`);
     return response.data;
+  },
+
+  async migrate() {
+    const response = await api.post('/strains/migrate');
+    return response.data;
   }
 };
