@@ -15,6 +15,13 @@ const Strains = () => {
   const [migrating, setMigrating] = useState(false);
   const [migrateResult, setMigrateResult] = useState(null);
 
+  // Merge state
+  const [mergeMode, setMergeMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [mergeTarget, setMergeTarget] = useState('');
+  const [merging, setMerging] = useState(false);
+  const [mergeResult, setMergeResult] = useState(null);
+
   const load = async () => {
     try {
       setLoading(true);
@@ -99,6 +106,57 @@ const Strains = () => {
     }
   };
 
+  // Merge handlers
+  const toggleMergeMode = () => {
+    if (mergeMode) {
+      // Exit merge mode
+      setMergeMode(false);
+      setSelected(new Set());
+      setMergeTarget('');
+      setMergeResult(null);
+    } else {
+      setMergeMode(true);
+      setSelected(new Set());
+      setMergeTarget('');
+      setMergeResult(null);
+    }
+  };
+
+  const toggleSelect = (name) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) {
+        next.delete(name);
+        // If we removed the target, reset it
+        if (mergeTarget === name) setMergeTarget('');
+      } else {
+        next.add(name);
+      }
+      return next;
+    });
+  };
+
+  const handleMerge = async () => {
+    if (merging || !mergeTarget || selected.size < 2) return;
+    const sourceNames = [...selected];
+    if (!confirm(`Объединить ${sourceNames.length} сортов в «${mergeTarget}»?\n\nВсе записи в базе будут обновлены. Это действие нельзя отменить.`)) return;
+    setMerging(true);
+    setMergeResult(null);
+    try {
+      const result = await strainService.merge(sourceNames, mergeTarget);
+      setMergeResult(result);
+      setSelected(new Set());
+      setMergeTarget('');
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка объединения');
+    } finally {
+      setMerging(false);
+    }
+  };
+
+  const selectedArr = [...selected];
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -114,15 +172,28 @@ const Strains = () => {
           <h1 className="text-2xl font-bold text-white">Библиотека сортов</h1>
           <p className="text-dark-400 mt-1 text-sm">Справочник сортов для единообразия во всех формах</p>
         </div>
-        <button
-          type="button"
-          onClick={handleMigrate}
-          disabled={migrating}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition flex items-center gap-2 shrink-0"
-        >
-          {migrating && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
-          Импорт из базы
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={toggleMergeMode}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
+              mergeMode
+                ? 'bg-yellow-600 hover:bg-yellow-700 text-white'
+                : 'bg-dark-700 hover:bg-dark-600 text-dark-300 border border-dark-600'
+            }`}
+          >
+            {mergeMode ? 'Отмена' : 'Объединить'}
+          </button>
+          <button
+            type="button"
+            onClick={handleMigrate}
+            disabled={migrating}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
+          >
+            {migrating && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
+            Импорт из базы
+          </button>
+        </div>
       </div>
 
       {migrateResult && (
@@ -136,6 +207,15 @@ const Strains = () => {
         </div>
       )}
 
+      {mergeResult && (
+        <div className="bg-green-900/30 border border-green-800 text-green-300 px-4 py-3 rounded-lg mb-4 text-sm">
+          <div className="flex items-center justify-between">
+            <span>{mergeResult.message} (обновлено документов: {mergeResult.stats?.totalUpdated || 0})</span>
+            <button type="button" onClick={() => setMergeResult(null)} className="ml-3 text-green-500 hover:text-green-300">×</button>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-4">
           {error}
@@ -143,23 +223,59 @@ const Strains = () => {
         </div>
       )}
 
+      {/* Merge panel */}
+      {mergeMode && selected.size >= 2 && (
+        <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg px-4 py-3 mb-4">
+          <div className="text-yellow-300 text-sm mb-2">
+            Выбрано {selected.size} сортов. Выберите какой оставить:
+          </div>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {selectedArr.map(name => (
+              <button
+                key={name}
+                type="button"
+                onClick={() => setMergeTarget(name)}
+                className={`px-3 py-1.5 rounded text-sm font-medium transition ${
+                  mergeTarget === name
+                    ? 'bg-yellow-600 text-white ring-2 ring-yellow-400'
+                    : 'bg-dark-700 text-dark-300 hover:bg-dark-600 border border-dark-600'
+                }`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={handleMerge}
+            disabled={!mergeTarget || merging}
+            className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
+          >
+            {merging && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
+            Объединить в «{mergeTarget || '...'}»
+          </button>
+        </div>
+      )}
+
       {/* Add form */}
-      <form onSubmit={handleCreate} className="flex gap-2 mb-6">
-        <input
-          type="text"
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="Название нового сорта"
-          className="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-4 py-2 text-white placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-        />
-        <button
-          type="submit"
-          disabled={!newName.trim() || saving}
-          className="px-6 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-medium transition"
-        >
-          Добавить
-        </button>
-      </form>
+      {!mergeMode && (
+        <form onSubmit={handleCreate} className="flex gap-2 mb-6">
+          <input
+            type="text"
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Название нового сорта"
+            className="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-4 py-2 text-white placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+          />
+          <button
+            type="submit"
+            disabled={!newName.trim() || saving}
+            className="px-6 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-medium transition"
+          >
+            Добавить
+          </button>
+        </form>
+      )}
 
       {/* Active strains */}
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
@@ -171,8 +287,18 @@ const Strains = () => {
         ) : (
           <div className="divide-y divide-dark-700">
             {strains.map(s => (
-              <div key={s._id} className="flex items-center gap-3 px-4 py-3">
-                {editId === s._id ? (
+              <div key={s._id} className={`flex items-center gap-3 px-4 py-3 ${mergeMode && selected.has(s.name) ? 'bg-yellow-900/10' : ''}`}>
+                {mergeMode ? (
+                  <>
+                    <input
+                      type="checkbox"
+                      checked={selected.has(s.name)}
+                      onChange={() => toggleSelect(s.name)}
+                      className="w-4 h-4 rounded border-dark-600 text-yellow-500 focus:ring-yellow-500 bg-dark-700 cursor-pointer"
+                    />
+                    <span className={`flex-1 ${selected.has(s.name) ? 'text-yellow-300' : 'text-white'}`}>{s.name}</span>
+                  </>
+                ) : editId === s._id ? (
                   <>
                     <input
                       type="text"

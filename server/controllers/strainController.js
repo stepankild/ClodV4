@@ -267,6 +267,233 @@ export const migrateStrains = async (req, res) => {
   }
 };
 
+// @desc    Merge multiple strains into one (rename all occurrences in DB)
+// @route   POST /api/strains/merge
+export const mergeStrains = async (req, res) => {
+  try {
+    const { sourceNames, targetName } = req.body;
+    if (!targetName || !targetName.trim()) {
+      return res.status(400).json({ message: 'Целевое название обязательно' });
+    }
+    if (!Array.isArray(sourceNames) || sourceNames.length === 0) {
+      return res.status(400).json({ message: 'Нужно указать хотя бы один сорт для объединения' });
+    }
+
+    const target = targetName.trim();
+    // Names to replace (excluding the target itself)
+    const namesToReplace = sourceNames
+      .map(n => (typeof n === 'string' ? n.trim() : ''))
+      .filter(n => n && n !== target);
+
+    if (namesToReplace.length === 0) {
+      return res.status(400).json({ message: 'Нечего объединять' });
+    }
+
+    const db = mongoose.connection.db;
+    const stats = { collections: {}, totalUpdated: 0 };
+
+    // Helper: update top-level `strain` field
+    const updateTopLevel = async (collectionName, field = 'strain') => {
+      const result = await db.collection(collectionName).updateMany(
+        { [field]: { $in: namesToReplace } },
+        { $set: { [field]: target } }
+      );
+      return result.modifiedCount;
+    };
+
+    // Helper: update array of objects with `.strain` field
+    const updateArrayField = async (collectionName, arrayField) => {
+      // Find docs where any element matches
+      const docs = await db.collection(collectionName).find({
+        [`${arrayField}.strain`]: { $in: namesToReplace }
+      }).toArray();
+      let count = 0;
+      for (const doc of docs) {
+        let changed = false;
+        const arr = doc[arrayField];
+        if (Array.isArray(arr)) {
+          for (const item of arr) {
+            if (item.strain && namesToReplace.includes(item.strain)) {
+              item.strain = target;
+              changed = true;
+            }
+          }
+        }
+        if (changed) {
+          await db.collection(collectionName).updateOne(
+            { _id: doc._id },
+            { $set: { [arrayField]: arr } }
+          );
+          count++;
+        }
+      }
+      return count;
+    };
+
+    // Helper: update nested array path like cloneData.strains
+    const updateNestedArrayField = async (collectionName, parentField, arrayField) => {
+      const fullPath = `${parentField}.${arrayField}`;
+      const docs = await db.collection(collectionName).find({
+        [`${fullPath}.strain`]: { $in: namesToReplace }
+      }).toArray();
+      let count = 0;
+      for (const doc of docs) {
+        const parent = doc[parentField];
+        if (!parent || !Array.isArray(parent[arrayField])) continue;
+        let changed = false;
+        for (const item of parent[arrayField]) {
+          if (item.strain && namesToReplace.includes(item.strain)) {
+            item.strain = target;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await db.collection(collectionName).updateOne(
+            { _id: doc._id },
+            { $set: { [fullPath]: parent[arrayField] } }
+          );
+          count++;
+        }
+      }
+      return count;
+    };
+
+    // Helper: update string array (CycleArchive.strains is string[])
+    const updateStringArray = async (collectionName, arrayField) => {
+      const docs = await db.collection(collectionName).find({
+        [arrayField]: { $in: namesToReplace }
+      }).toArray();
+      let count = 0;
+      for (const doc of docs) {
+        const arr = doc[arrayField];
+        if (!Array.isArray(arr)) continue;
+        let changed = false;
+        const newArr = arr.map(s => {
+          if (namesToReplace.includes(s)) { changed = true; return target; }
+          return s;
+        });
+        if (changed) {
+          await db.collection(collectionName).updateOne(
+            { _id: doc._id },
+            { $set: { [arrayField]: newArr } }
+          );
+          count++;
+        }
+      }
+      return count;
+    };
+
+    // Helper: update plants array (HarvestSession.plants, CycleArchive.harvestMapData.plants)
+    const updatePlantsStrain = async (collectionName, plantsPath) => {
+      const docs = await db.collection(collectionName).find({
+        [`${plantsPath}.strain`]: { $in: namesToReplace }
+      }).toArray();
+      let count = 0;
+      for (const doc of docs) {
+        // Navigate to the plants array
+        const parts = plantsPath.split('.');
+        let obj = doc;
+        for (const p of parts.slice(0, -1)) obj = obj?.[p];
+        const plants = obj?.[parts[parts.length - 1]];
+        if (!Array.isArray(plants)) continue;
+        let changed = false;
+        for (const p of plants) {
+          if (p.strain && namesToReplace.includes(p.strain)) {
+            p.strain = target;
+            changed = true;
+          }
+        }
+        if (changed) {
+          await db.collection(collectionName).updateOne(
+            { _id: doc._id },
+            { $set: { [plantsPath]: plants } }
+          );
+          count++;
+        }
+      }
+      return count;
+    };
+
+    // 1. CloneCut
+    let cc = 0;
+    cc += await updateTopLevel('clonecuts');
+    cc += await updateArrayField('clonecuts', 'strains');
+    stats.collections.clonecuts = cc;
+    stats.totalUpdated += cc;
+
+    // 2. VegBatch
+    let vb = 0;
+    vb += await updateTopLevel('vegbatches');
+    vb += await updateArrayField('vegbatches', 'strains');
+    vb += await updateArrayField('vegbatches', 'diedStrains');
+    vb += await updateArrayField('vegbatches', 'notGrownStrains');
+    vb += await updateArrayField('vegbatches', 'sentToFlowerStrains');
+    stats.collections.vegbatches = vb;
+    stats.totalUpdated += vb;
+
+    // 3. FlowerRoom
+    let fr = 0;
+    fr += await updateTopLevel('flowerrooms');
+    fr += await updateArrayField('flowerrooms', 'flowerStrains');
+    stats.collections.flowerrooms = fr;
+    stats.totalUpdated += fr;
+
+    // 4. PlannedCycle
+    let pc = await updateTopLevel('plannedcycles');
+    stats.collections.plannedcycles = pc;
+    stats.totalUpdated += pc;
+
+    // 5. CycleArchive
+    let ca = 0;
+    ca += await updateTopLevel('cyclearchives');
+    ca += await updateStringArray('cyclearchives', 'strains');
+    ca += await updateArrayField('cyclearchives', 'strainData');
+    ca += await updateNestedArrayField('cyclearchives', 'cloneData', 'strains');
+    ca += await updatePlantsStrain('cyclearchives', 'harvestMapData.plants');
+    stats.collections.cyclearchives = ca;
+    stats.totalUpdated += ca;
+
+    // 6. HarvestSession
+    let hs = 0;
+    hs += await updateTopLevel('harvestsessions');
+    hs += await updatePlantsStrain('harvestsessions', 'plants');
+    stats.collections.harvestsessions = hs;
+    stats.totalUpdated += hs;
+
+    // 7. TrimLog
+    let tl = await updateTopLevel('trimlogs');
+    stats.collections.trimlogs = tl;
+    stats.totalUpdated += tl;
+
+    // Soft-delete merged strains from Strain library (keep target)
+    const deletedStrains = await Strain.updateMany(
+      { name: { $in: namesToReplace }, ...notDeleted },
+      { $set: { deletedAt: new Date() } }
+    );
+
+    await createAuditLog(req, {
+      action: 'strain.merge',
+      entityType: 'Strain',
+      details: {
+        sourceNames: namesToReplace,
+        targetName: target,
+        stats
+      }
+    });
+
+    res.json({
+      message: `Объединено ${namesToReplace.length} сортов в «${target}»`,
+      merged: namesToReplace,
+      target,
+      deletedFromLibrary: deletedStrains.modifiedCount,
+      stats
+    });
+  } catch (error) {
+    console.error('Merge strains error:', error);
+    res.status(500).json({ message: 'Ошибка объединения' });
+  }
+};
+
 // @desc    Restore deleted strain
 // @route   POST /api/strains/deleted/:id/restore
 export const restoreStrain = async (req, res) => {
