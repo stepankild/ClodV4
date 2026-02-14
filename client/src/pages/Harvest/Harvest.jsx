@@ -28,23 +28,11 @@ const Harvest = () => {
   const [sessionLoading, setSessionLoading] = useState(false);
   const [error, setError] = useState('');
   const [plantNumber, setPlantNumber] = useState('');
-  const [scaleWeight, setScaleWeight] = useState(null);
+  const [manualWeight, setManualWeight] = useState('');
   const [recordLoading, setRecordLoading] = useState(false);
   const [errorNoteEdit, setErrorNoteEdit] = useState({ plantNumber: null, value: '' });
   const [errorNoteSaving, setErrorNoteSaving] = useState(false);
   const [completeSuccess, setCompleteSuccess] = useState(false);
-  const [fillAllLoading, setFillAllLoading] = useState(false);
-
-  // Симуляция весов: каждые 4 сек случайное значение 50–500 г
-  useEffect(() => {
-    if (!session || session.status !== 'in_progress') return;
-    const min = 50;
-    const max = 500;
-    const tick = () => setScaleWeight(Math.round(min + Math.random() * (max - min)));
-    tick();
-    const id = setInterval(tick, 4000);
-    return () => clearInterval(id);
-  }, [session?._id, session?.status]);
 
   const safeRooms = Array.isArray(rooms) ? rooms : [];
   const activeRooms = safeRooms.filter(r => r && r.isActive);
@@ -86,9 +74,6 @@ const Harvest = () => {
       }
       if (!s) s = await harvestService.createSession(roomId);
       setSession(s);
-      if (s?.status === 'in_progress' && scaleWeight == null) {
-        setScaleWeight(Math.round(50 + Math.random() * 450));
-      }
     } catch (err) {
       const msg = err.response?.data?.message || err.message || 'Ошибка сессии сбора';
       setError(msg);
@@ -97,7 +82,7 @@ const Harvest = () => {
     } finally {
       setSessionLoading(false);
     }
-  }, [scaleWeight]);
+  }, []);
 
   // Выбор комнаты по клику на карточку
   const handleSelectRoom = (roomId) => {
@@ -113,7 +98,7 @@ const Harvest = () => {
     setSelectedRoomId('');
     setSession(null);
     setError('');
-    setScaleWeight(null);
+    setManualWeight('');
     setPlantNumber('');
   };
 
@@ -130,8 +115,8 @@ const Harvest = () => {
   const handleRecordPlant = async (e) => {
     e.preventDefault();
     const num = plantNumber.trim();
-    const weight = scaleWeight != null ? scaleWeight : (session?.status === 'in_progress' ? 100 : 0);
-    if (!session || !num) return;
+    const weight = parseInt(manualWeight, 10);
+    if (!session || !num || isNaN(weight) || weight <= 0) return;
     if (session.status !== 'in_progress') return;
     try {
       setRecordLoading(true);
@@ -140,37 +125,12 @@ const Harvest = () => {
       const updated = res?.session ?? res;
       setSession(updated);
       setPlantNumber('');
+      setManualWeight('');
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка записи куста');
       console.error(err);
     } finally {
       setRecordLoading(false);
-    }
-  };
-
-  const handleFillAllPlants = async () => {
-    if (!session || session.status !== 'in_progress') return;
-    const expected = session.plantsCount ?? 0;
-    const recorded = session.plants?.length ?? 0;
-    const toAdd = expected - recorded;
-    if (toAdd <= 0) return;
-    if (!confirm(`Записать оставшиеся ${toAdd} кустов со случайным весом (80–350 г)? Только для теста.`)) return;
-    setFillAllLoading(true);
-    setError('');
-    try {
-      let updated = session;
-      for (let n = 1; n <= expected; n++) {
-        const already = updated.plants?.some(p => String(p.plantNumber) === String(n));
-        if (already) continue;
-        const weight = Math.round(80 + Math.random() * 270);
-        const res = await harvestService.addPlant(session._id, String(n), weight);
-        updated = res?.session ?? res;
-        setSession(updated);
-      }
-    } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка заполнения');
-    } finally {
-      setFillAllLoading(false);
     }
   };
 
@@ -350,7 +310,7 @@ const Harvest = () => {
         <h1 className="text-2xl font-bold text-white">
           Сбор урожая — {selectedRoom?.name || 'Комната'}
         </h1>
-        <p className="text-dark-400 mt-1">Весы (симуляция). Введите номер куста, снимите вес и запишите.</p>
+        <p className="text-dark-400 mt-1">Введите номер куста и вес, затем нажмите «Записать».</p>
       </div>
 
       {error && (
@@ -412,28 +372,23 @@ const Harvest = () => {
                 />
               </div>
               <div>
-                <label className="block text-sm text-dark-400 mb-1">Вес с весов</label>
-                <div className="w-28 h-14 flex items-center justify-center bg-dark-700 rounded-lg border border-dark-600 text-2xl font-bold text-primary-400">
-                  {scaleWeight != null ? `${scaleWeight} г` : '…'}
-                </div>
-                <p className="text-xs text-dark-500 mt-1">Обновляется каждые 4 сек (50–500 г)</p>
+                <label className="block text-sm text-dark-400 mb-1">Вес (г)</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={manualWeight}
+                  onChange={(e) => setManualWeight(e.target.value)}
+                  placeholder="250"
+                  className="w-28 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500"
+                />
               </div>
               <button
                 type="button"
                 onClick={handleRecordPlant}
-                disabled={!canDoHarvest || !plantNumber.trim() || scaleWeight == null || recordLoading}
+                disabled={!canDoHarvest || !plantNumber.trim() || !manualWeight || parseInt(manualWeight, 10) <= 0 || recordLoading}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 font-medium"
               >
                 {recordLoading ? '...' : 'Записать'}
-              </button>
-              <button
-                type="button"
-                onClick={handleFillAllPlants}
-                disabled={!canDoHarvest || fillAllLoading || (session?.plantsCount ?? 0) <= (session?.plants?.length ?? 0)}
-                className="px-4 py-2 bg-amber-600/80 text-white rounded-lg hover:bg-amber-500/80 disabled:opacity-50 font-medium text-sm"
-                title="Для теста: записать все кусты со случайным весом"
-              >
-                {fillAllLoading ? '...' : 'Заполнить все кусты (тест)'}
               </button>
             </div>
           </div>
