@@ -40,6 +40,14 @@ const userSchema = new mongoose.Schema({
   deletedAt: {
     type: Date,
     default: null
+  },
+  lastActivity: {
+    type: Date,
+    default: null
+  },
+  currentPage: {
+    type: String,
+    default: null
   }
 }, {
   timestamps: true

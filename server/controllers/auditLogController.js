@@ -40,15 +40,22 @@ export const getAuditLogs = async (req, res) => {
 // @route   GET /api/audit-logs/sessions
 export const getSessions = async (req, res) => {
   try {
-    // 1. Активные пользователи (у кого есть refreshToken)
+    const TWO_MINUTES_AGO = new Date(Date.now() - 2 * 60 * 1000);
+
+    // 1. Все пользователи с refreshToken (залогинены)
     const activeUsers = await User.find({
       refreshToken: { $ne: null },
       isActive: true,
       $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }]
-    }).select('_id name email').lean();
+    }).select('_id name email lastActivity currentPage').lean();
 
     const activeUserIds = activeUsers.map(u => u._id);
-    const activeUserIdStrings = activeUserIds.map(id => id.toString());
+
+    // Карта lastActivity для быстрого доступа
+    const activityMap = {};
+    for (const u of activeUsers) {
+      activityMap[u._id.toString()] = u.lastActivity;
+    }
 
     // 2. Последний логин каждого активного пользователя
     let activeSessions = [];
@@ -73,6 +80,7 @@ export const getSessions = async (req, res) => {
       activeSessions = activeUsers.map(u => {
         const login = loginMap[u._id.toString()];
         const parsed = parseUserAgent(login?.userAgent);
+        const isOnline = u.lastActivity && new Date(u.lastActivity) >= TWO_MINUTES_AGO;
         return {
           userId: u._id,
           name: u.name,
@@ -81,8 +89,18 @@ export const getSessions = async (req, res) => {
           ip: login?.ip || '—',
           browser: parsed.browser,
           os: parsed.os,
-          duration: login?.loginAt ? now - new Date(login.loginAt) : null
+          duration: login?.loginAt ? now - new Date(login.loginAt) : null,
+          isOnline,
+          currentPage: isOnline ? u.currentPage : null,
+          lastActivity: u.lastActivity
         };
+      });
+
+      // Сортировка: онлайн первые, потом по lastActivity
+      activeSessions.sort((a, b) => {
+        if (a.isOnline && !b.isOnline) return -1;
+        if (!a.isOnline && b.isOnline) return 1;
+        return (new Date(b.lastActivity || 0)) - (new Date(a.lastActivity || 0));
       });
     }
 
@@ -90,7 +108,7 @@ export const getSessions = async (req, res) => {
     const logins = await AuditLog.find({ action: 'auth.login' })
       .sort({ createdAt: -1 })
       .limit(50)
-      .populate('user', 'name email refreshToken')
+      .populate('user', 'name email')
       .lean();
 
     if (logins.length === 0) {
@@ -119,7 +137,8 @@ export const getSessions = async (req, res) => {
         new Date(lo.createdAt) > loginTime
       );
 
-      const isStillActive = !logout && activeUserIdStrings.includes(userId);
+      const userLastActivity = activityMap[userId];
+      const isStillActive = !logout && userLastActivity && new Date(userLastActivity) >= TWO_MINUTES_AGO;
       const logoutTime = logout ? new Date(logout.createdAt) : null;
       const duration = logoutTime
         ? logoutTime - loginTime

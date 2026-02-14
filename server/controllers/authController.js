@@ -165,6 +165,8 @@ export const logout = async (req, res) => {
     const user = await User.findById(req.user._id);
     if (user) {
       user.refreshToken = null;
+      user.lastActivity = null;
+      user.currentPage = null;
       await user.save();
       // Audit log — выход
       try {
@@ -229,6 +231,22 @@ export const changePassword = async (req, res) => {
     res.json({ message: 'Пароль успешно изменён' });
   } catch (error) {
     console.error('Change password error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Heartbeat — update user presence (lastActivity + currentPage)
+// @route   POST /api/auth/heartbeat
+export const heartbeat = async (req, res) => {
+  try {
+    const { page } = req.body;
+    await User.findByIdAndUpdate(req.user._id, {
+      lastActivity: new Date(),
+      currentPage: typeof page === 'string' ? page.slice(0, 200) : null
+    });
+    res.json({ ok: true });
+  } catch (error) {
+    console.error('Heartbeat error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authService } from '../services/authService';
 import { startProactiveRefresh, stopProactiveRefresh } from '../services/api';
+import { startHeartbeat, stopHeartbeat } from '../services/heartbeatService';
 
 const AuthContext = createContext(null);
 
@@ -33,6 +34,7 @@ export const AuthProvider = ({ children }) => {
           setUser(userData);
           localStorage.setItem('user', JSON.stringify(userData));
           startProactiveRefresh();
+          startHeartbeat();
         } catch (error) {
           console.error('Auth init: getMe failed, using cached user:', error?.message);
           // НЕ выкидываем пользователя! Если есть refreshToken —
@@ -45,6 +47,7 @@ export const AuthProvider = ({ children }) => {
             stopProactiveRefresh();
           } else {
             startProactiveRefresh();
+            startHeartbeat();
           }
         }
       }
@@ -61,11 +64,13 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('user', JSON.stringify(data.user));
     setUser(data.user);
     startProactiveRefresh();
+    startHeartbeat();
     return data.user;
   };
 
   const logout = async () => {
     stopProactiveRefresh();
+    stopHeartbeat();
     await authService.logout();
     setUser(null);
   };
