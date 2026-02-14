@@ -228,7 +228,11 @@ const Harvest = () => {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>
                   </div>
-                  <div className="text-sm text-primary-400 truncate mb-2">{r.strain || 'без сорта'}</div>
+                  <div className="text-sm text-primary-400 truncate mb-2">
+                    {r.flowerStrains?.length > 0
+                      ? r.flowerStrains.map(fs => fs.strain).filter(Boolean).join(', ') || 'без сорта'
+                      : r.strain || 'без сорта'}
+                  </div>
                   <div className="flex items-center gap-3 text-sm text-dark-400 mb-3">
                     <span>{r.plantsCount || 0} кустов</span>
                     {daysLeft != null && daysLeft >= 0 && (
@@ -343,7 +347,11 @@ const Harvest = () => {
               </div>
               <div>
                 <div className="text-dark-400">Сорт</div>
-                <div className="text-white font-medium">{session.strain || '—'}</div>
+                <div className="text-white font-medium">
+                  {selectedRoom?.flowerStrains?.length > 0
+                    ? selectedRoom.flowerStrains.map(fs => fs.strain).filter(Boolean).join(', ') || '—'
+                    : session.strain || '—'}
+                </div>
               </div>
               <div>
                 <div className="text-dark-400">Ожидается кустов</div>

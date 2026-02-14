@@ -438,10 +438,30 @@ export const mergeStrains = async (req, res) => {
       return count;
     };
 
+    // Helper: rebuild derived strain field from strains array (joins with ", ")
+    const rebuildDerivedStrain = async (collectionName, strainsField = 'strains', sep = ', ') => {
+      const docs = await db.collection(collectionName).find({
+        [`${strainsField}.0`]: { $exists: true }
+      }).toArray();
+      let count = 0;
+      for (const doc of docs) {
+        const rebuilt = doc[strainsField].map(s => s.strain).filter(Boolean).join(sep);
+        if (rebuilt && rebuilt !== doc.strain) {
+          await db.collection(collectionName).updateOne(
+            { _id: doc._id },
+            { $set: { strain: rebuilt } }
+          );
+          count++;
+        }
+      }
+      return count;
+    };
+
     // 1. CloneCut
     let cc = 0;
     cc += await updateTopLevel('clonecuts');
     cc += await updateArrayField('clonecuts', 'strains');
+    cc += await rebuildDerivedStrain('clonecuts');
     stats.collections.clonecuts = cc;
     stats.totalUpdated += cc;
 
@@ -452,6 +472,7 @@ export const mergeStrains = async (req, res) => {
     vb += await updateArrayField('vegbatches', 'diedStrains');
     vb += await updateArrayField('vegbatches', 'notGrownStrains');
     vb += await updateArrayField('vegbatches', 'sentToFlowerStrains');
+    vb += await rebuildDerivedStrain('vegbatches');
     stats.collections.vegbatches = vb;
     stats.totalUpdated += vb;
 
@@ -459,6 +480,7 @@ export const mergeStrains = async (req, res) => {
     let fr = 0;
     fr += await updateTopLevel('flowerrooms');
     fr += await updateArrayField('flowerrooms', 'flowerStrains');
+    fr += await rebuildDerivedStrain('flowerrooms', 'flowerStrains', ' / ');
     stats.collections.flowerrooms = fr;
     stats.totalUpdated += fr;
 
