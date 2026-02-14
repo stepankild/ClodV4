@@ -26,15 +26,29 @@ export const createStrain = async (req, res) => {
     const trimmed = name.trim();
 
     // Проверка дубликата (case-insensitive)
+    const nameRegex = new RegExp(`^${trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i');
     const existing = await Strain.findOne({
-      name: { $regex: new RegExp(`^${trimmed.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') },
+      name: { $regex: nameRegex },
       ...notDeleted
     });
     if (existing) {
       return res.status(400).json({ message: `Сорт «${existing.name}» уже существует` });
     }
 
-    const strain = await Strain.create({ name: trimmed });
+    // If a soft-deleted strain with same name exists, restore it instead of creating new
+    const deletedExisting = await Strain.findOne({
+      name: { $regex: nameRegex },
+      ...deletedOnly
+    });
+    let strain;
+    if (deletedExisting) {
+      deletedExisting.deletedAt = null;
+      deletedExisting.name = trimmed; // update to the exact casing provided
+      await deletedExisting.save();
+      strain = deletedExisting;
+    } else {
+      strain = await Strain.create({ name: trimmed });
+    }
     await createAuditLog(req, {
       action: 'strain.create',
       entityType: 'Strain',
