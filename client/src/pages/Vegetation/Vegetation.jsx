@@ -37,12 +37,24 @@ const getBatchTotal = (b) => {
 
 const getBatchInitialTotal = (b) => (b.initialQuantity != null && b.initialQuantity !== '') ? Number(b.initialQuantity) : getBatchTotal(b);
 
+// «Хороших» = всего − погибло − утилизировано (не выросшие остаются, их можно отправить в цвет)
 const getBatchGoodCount = (b) => {
   const total = getBatchTotal(b);
   const died = Number(b.diedCount) || 0;
-  const notGrown = Number(b.notGrownCount) || 0;
   const disposed = Number(b.disposedCount) || 0;
-  return Math.max(0, total - died - notGrown - disposed);
+  return Math.max(0, total - died - disposed);
+};
+
+const getDiedForStrain = (b, strainName) => {
+  if (!Array.isArray(b.diedStrains)) return 0;
+  const found = b.diedStrains.find(s => s.strain === strainName);
+  return found ? (Number(found.quantity) || 0) : 0;
+};
+
+const getNotGrownForStrain = (b, strainName) => {
+  if (!Array.isArray(b.notGrownStrains)) return 0;
+  const found = b.notGrownStrains.find(s => s.strain === strainName);
+  return found ? (Number(found.quantity) || 0) : 0;
 };
 
 const getBatchGoodPercent = (b) => {
@@ -207,8 +219,14 @@ const Vegetation = () => {
     const strains = getStrainsFromBatch(batch);
     const goodTotal = getBatchGoodCount(batch);
     if (strains.length > 0) {
-      setSendStrains(strains.map((s) => ({ strain: s.strain, total: s.quantity, sendQty: String(s.quantity) })));
-      const sum = strains.reduce((a, s) => a + s.quantity, 0);
+      // Доступно = всего по сорту − умерших по сорту (не выросшие можно отправить)
+      const sendList = strains.map((s) => {
+        const died = getDiedForStrain(batch, s.strain);
+        const avail = Math.max(0, s.quantity - died);
+        return { strain: s.strain, total: avail, sendQty: String(avail) };
+      });
+      setSendStrains(sendList);
+      const sum = sendList.reduce((a, s) => a + (parseInt(s.sendQty, 10) || 0), 0);
       setSendCount(sum <= goodTotal ? String(sum) : String(goodTotal));
     } else {
       setSendStrains([]);
@@ -357,8 +375,16 @@ const Vegetation = () => {
       vegDaysTarget: String(batch.vegDaysTarget ?? 21),
       sourceCloneCut: batch.sourceCloneCut?._id || batch.sourceCloneCut || '',
       notes: batch.notes || '',
-      diedCount: batch.diedCount != null ? String(batch.diedCount) : '0',
-      notGrownCount: batch.notGrownCount != null ? String(batch.notGrownCount) : '0',
+      diedStrains: getStrainsFromBatch(batch).map(s => ({
+        strain: s.strain,
+        quantity: String(getDiedForStrain(batch, s.strain) || ''),
+        _key: editFormStrainKey.current++
+      })),
+      notGrownStrains: getStrainsFromBatch(batch).map(s => ({
+        strain: s.strain,
+        quantity: String(getNotGrownForStrain(batch, s.strain) || ''),
+        _key: editFormStrainKey.current++
+      })),
       lightChanges: (() => {
         const list = (getBatchLightChanges(batch)).map((c) => ({
           date: c.date ? new Date(c.date).toISOString().slice(0, 10) : '',
@@ -417,8 +443,12 @@ const Vegetation = () => {
         vegDaysTarget: Number(editForm.vegDaysTarget) || 21,
         sourceCloneCut: editForm.sourceCloneCut || undefined,
         notes: editForm.notes.trim(),
-        diedCount: Number(editForm.diedCount) || 0,
-        notGrownCount: Number(editForm.notGrownCount) || 0,
+        diedStrains: (editForm.diedStrains || [])
+          .map(s => ({ strain: s.strain, quantity: Number(s.quantity) || 0 }))
+          .filter(s => s.quantity > 0),
+        notGrownStrains: (editForm.notGrownStrains || [])
+          .map(s => ({ strain: s.strain, quantity: Number(s.quantity) || 0 }))
+          .filter(s => s.quantity > 0),
         lightChanges: (editForm.lightChanges || [])
           .filter((c) => c && c.date)
           .map((c) => ({ date: c.date, powerPercent: c.powerPercent !== '' ? Number(c.powerPercent) : null })),
@@ -612,57 +642,45 @@ const Vegetation = () => {
                         <tr className="bg-dark-800/60">
                           <td colSpan={7} className="px-4 py-3 border-b border-dark-600">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-sm">
-                              <div>
-                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Потери</div>
-                                <div className="flex items-center gap-2">
-                                  <span className="text-dark-400 text-xs">Погибло:</span>
-                                  {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'died' ? (
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={editingLoss.value}
-                                      onChange={(e) => setEditingLoss((prev) => prev ? { ...prev, value: e.target.value } : null)}
-                                      onBlur={saveLoss}
-                                      onKeyDown={(e) => { if (e.key === 'Enter') saveLoss(); }}
-                                      autoFocus
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="w-14 px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
-                                    />
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); startEditLoss(b, 'died'); }}
-                                      className="text-dark-300 hover:text-white hover:bg-dark-700 rounded px-1 py-0.5 text-sm"
-                                      title="Нажмите, чтобы изменить"
-                                    >
-                                      {b.diedCount || 0}
-                                    </button>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-dark-400 text-xs">Не выросло:</span>
-                                  {canCreateVeg && editingLoss?.batchId === b._id && editingLoss?.field === 'notGrown' ? (
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={editingLoss.value}
-                                      onChange={(e) => setEditingLoss((prev) => prev ? { ...prev, value: e.target.value } : null)}
-                                      onBlur={saveLoss}
-                                      onKeyDown={(e) => { if (e.key === 'Enter') saveLoss(); }}
-                                      autoFocus
-                                      onClick={(e) => e.stopPropagation()}
-                                      className="w-14 px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm"
-                                    />
-                                  ) : (
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); startEditLoss(b, 'notGrown'); }}
-                                      className="text-dark-300 hover:text-white hover:bg-dark-700 rounded px-1 py-0.5 text-sm"
-                                      title="Нажмите, чтобы изменить"
-                                    >
-                                      {b.notGrownCount || 0}
-                                    </button>
-                                  )}
+                              <div className="col-span-2 md:col-span-4">
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-2">Сорта и потери</div>
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-xs">
+                                    <thead>
+                                      <tr className="text-dark-500">
+                                        <th className="text-left font-medium py-1 pr-3">Сорт</th>
+                                        <th className="text-center font-medium py-1 px-2">Всего</th>
+                                        <th className="text-center font-medium py-1 px-2">💀 Умерло</th>
+                                        <th className="text-center font-medium py-1 px-2">🌱 Не выросло</th>
+                                        <th className="text-center font-medium py-1 px-2">Доступно</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {getStrainsFromBatch(b).map((s, si) => {
+                                        const died = getDiedForStrain(b, s.strain);
+                                        const notGrown = getNotGrownForStrain(b, s.strain);
+                                        const avail = Math.max(0, s.quantity - died);
+                                        return (
+                                          <tr key={si} className="border-t border-dark-700/50">
+                                            <td className="py-1.5 pr-3 text-white">{s.strain || '—'}</td>
+                                            <td className="py-1.5 px-2 text-center text-dark-300">{s.quantity}</td>
+                                            <td className="py-1.5 px-2 text-center text-red-400">{died || '—'}</td>
+                                            <td className="py-1.5 px-2 text-center text-amber-400">{notGrown || '—'}</td>
+                                            <td className="py-1.5 px-2 text-center text-primary-400 font-medium">{avail}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                      {getStrainsFromBatch(b).length > 1 && (
+                                        <tr className="border-t border-dark-600 font-medium">
+                                          <td className="py-1.5 pr-3 text-dark-400">Итого</td>
+                                          <td className="py-1.5 px-2 text-center text-white">{getBatchTotal(b)}</td>
+                                          <td className="py-1.5 px-2 text-center text-red-400">{b.diedCount || '—'}</td>
+                                          <td className="py-1.5 px-2 text-center text-amber-400">{b.notGrownCount || '—'}</td>
+                                          <td className="py-1.5 px-2 text-center text-primary-400">{getBatchGoodCount(b)}</td>
+                                        </tr>
+                                      )}
+                                    </tbody>
+                                  </table>
                                 </div>
                               </div>
                               <div>
@@ -699,18 +717,6 @@ const Vegetation = () => {
                                 <div className="col-span-2 md:col-span-4">
                                   <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Заметки</div>
                                   <p className="text-dark-300 text-xs whitespace-pre-wrap bg-dark-700/30 rounded-lg p-2.5">{b.notes}</p>
-                                </div>
-                              )}
-                              {getStrainsFromBatch(b).length > 1 && (
-                                <div className="col-span-2 md:col-span-4">
-                                  <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Сорта</div>
-                                  <div className="flex flex-wrap gap-2">
-                                    {getStrainsFromBatch(b).map((s, i) => (
-                                      <span key={i} className="px-2 py-1 bg-dark-700 rounded text-dark-300 text-xs">
-                                        {s.strain || '?'} <span className="text-white">{s.quantity}</span>
-                                      </span>
-                                    ))}
-                                  </div>
                                 </div>
                               )}
                             </div>
@@ -969,14 +975,26 @@ const Vegetation = () => {
                 <label className="block text-xs text-dark-400 mb-1">Цель вегетации (дней)</label>
                 <input type="number" min="1" value={editForm.vegDaysTarget} onChange={(e) => setEditForm((f) => ({ ...f, vegDaysTarget: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs text-dark-400 mb-1">Погибло</label>
-                  <input type="number" min="0" value={editForm.diedCount} onChange={(e) => setEditForm((f) => ({ ...f, diedCount: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">💀 Умерло (по сортам) — нельзя отправить в цвет</label>
+                <div className="space-y-1.5">
+                  {(editForm.diedStrains || []).map((s, idx) => (
+                    <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
+                      <span className="text-dark-400 text-xs w-28 truncate">{s.strain || '—'}</span>
+                      <input type="number" min="0" value={s.quantity} onChange={(e) => setEditForm(f => ({ ...f, diedStrains: f.diedStrains.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r) }))} className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <label className="block text-xs text-dark-400 mb-1">Не выросло</label>
-                  <input type="number" min="0" value={editForm.notGrownCount} onChange={(e) => setEditForm((f) => ({ ...f, notGrownCount: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </div>
+              <div>
+                <label className="block text-xs text-dark-400 mb-2">🌱 Не выросло (по сортам) — считаются в количестве, можно отправить</label>
+                <div className="space-y-1.5">
+                  {(editForm.notGrownStrains || []).map((s, idx) => (
+                    <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
+                      <span className="text-dark-400 text-xs w-28 truncate">{s.strain || '—'}</span>
+                      <input type="number" min="0" value={s.quantity} onChange={(e) => setEditForm(f => ({ ...f, notGrownStrains: f.notGrownStrains.map((r, i) => i === idx ? { ...r, quantity: e.target.value } : r) }))} className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                    </div>
+                  ))}
                 </div>
               </div>
               <div>

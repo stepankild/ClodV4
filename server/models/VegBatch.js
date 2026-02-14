@@ -26,6 +26,14 @@ const vegBatchSchema = new mongoose.Schema({
   notes: { type: String, default: '' },
   diedCount: { type: Number, default: 0 },
   notGrownCount: { type: Number, default: 0 },
+  diedStrains: [{
+    strain: { type: String, default: '' },
+    quantity: { type: Number, default: 0 }
+  }],
+  notGrownStrains: [{
+    strain: { type: String, default: '' },
+    quantity: { type: Number, default: 0 }
+  }],
   lightChangeDate: { type: Date, default: null },
   lightPowerPercent: { type: Number, default: null },
   lightChanges: [{
