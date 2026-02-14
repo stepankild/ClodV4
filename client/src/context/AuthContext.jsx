@@ -19,18 +19,33 @@ export const AuthProvider = ({ children }) => {
   useEffect(() => {
     const initAuth = async () => {
       const savedUser = localStorage.getItem('user');
-      if (savedUser && authService.isAuthenticated()) {
+      const hasRefreshToken = !!localStorage.getItem('refreshToken');
+      if (savedUser && hasRefreshToken) {
+        // Сначала показываем кешированного пользователя (мгновенный старт)
+        try {
+          const cached = JSON.parse(savedUser);
+          setUser(cached);
+        } catch { /* bad JSON — ignore */ }
+
+        // Затем пробуем обновить данные с сервера (не блокируя UI)
         try {
           const userData = await authService.getMe();
           setUser(userData);
           localStorage.setItem('user', JSON.stringify(userData));
           startProactiveRefresh();
         } catch (error) {
-          console.error('Auth init error:', error);
-          localStorage.removeItem('accessToken');
-          localStorage.removeItem('refreshToken');
-          localStorage.removeItem('user');
-          stopProactiveRefresh();
+          console.error('Auth init: getMe failed, using cached user:', error?.message);
+          // НЕ выкидываем пользователя! Если есть refreshToken —
+          // следующий API-вызов триггернёт refresh через interceptor.
+          // Logout только если вообще нет токенов.
+          if (!localStorage.getItem('refreshToken')) {
+            setUser(null);
+            localStorage.removeItem('accessToken');
+            localStorage.removeItem('user');
+            stopProactiveRefresh();
+          } else {
+            startProactiveRefresh();
+          }
         }
       }
       setLoading(false);

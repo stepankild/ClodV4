@@ -127,18 +127,24 @@ export const refreshToken = async (req, res) => {
       const decoded = verifyRefreshToken(refreshToken);
       const user = await User.findById(decoded.userId);
 
-      if (!user || user.refreshToken !== refreshToken) {
-        return res.status(401).json({ message: 'Недействительный refresh token' });
+      if (!user) {
+        return res.status(401).json({ message: 'Пользователь не найден' });
       }
+
+      // НЕ проверяем user.refreshToken !== refreshToken:
+      // эта проверка убивала сессии при логине с другого устройства/вкладки,
+      // потому что новый login перезаписывал refreshToken в БД.
+      // Достаточно проверки подписи JWT (verifyRefreshToken выше).
 
       if (!user.isActive) {
         return res.status(401).json({ message: 'Аккаунт деактивирован' });
       }
 
+      if (user.deletedAt) {
+        return res.status(401).json({ message: 'Аккаунт удалён' });
+      }
+
       const newAccessToken = generateAccessToken(user._id);
-      // НЕ ротируем refresh token — он валиден до истечения (30d).
-      // Ротация вызывала гонку между вкладками: вкладка A обновляет токен в БД,
-      // вкладка B пытается refresh со старым токеном → 401 → logout обеих вкладок.
       res.json({
         accessToken: newAccessToken,
         refreshToken              // возвращаем тот же refresh token

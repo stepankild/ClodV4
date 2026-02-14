@@ -24,7 +24,7 @@ function decodeJwtPayload(token) {
 }
 
 /** Returns true when token will expire within `marginSec` seconds. */
-function isTokenExpiringSoon(token, marginSec = 300) {
+function isTokenExpiringSoon(token, marginSec = 3600) {
   if (!token) return true;
   const payload = decodeJwtPayload(token);
   if (!payload?.exp) return false;          // can't tell — assume valid
@@ -99,13 +99,13 @@ function startProactiveRefresh() {
   proactiveTimer = setInterval(async () => {
     const token = localStorage.getItem('accessToken');
     if (!token) return;                     // not logged in
-    if (!isTokenExpiringSoon(token, 300)) return; // still fresh (>5 min)
+    if (!isTokenExpiringSoon(token, 3600)) return; // still fresh (>1 hour)
     try {
       await serialRefresh();
     } catch {
       // refresh failed — will handle on next API call via 401 interceptor
     }
-  }, 60_000);
+  }, 600_000);  // проверяем каждые 10 мин (access token живёт 7 дней)
 }
 
 function stopProactiveRefresh() {
@@ -132,8 +132,8 @@ api.interceptors.request.use(
   async (config) => {
     let token = localStorage.getItem('accessToken');
 
-    // If token expires within 30s — refresh BEFORE sending the request
-    if (token && isTokenExpiringSoon(token, 30)) {
+    // If token expires within 60s — refresh BEFORE sending the request
+    if (token && isTokenExpiringSoon(token, 60)) {
       try {
         token = await serialRefresh();
       } catch {
