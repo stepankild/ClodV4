@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { authService } from '../services/authService';
+import { startProactiveRefresh, stopProactiveRefresh } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -23,11 +24,13 @@ export const AuthProvider = ({ children }) => {
           const userData = await authService.getMe();
           setUser(userData);
           localStorage.setItem('user', JSON.stringify(userData));
+          startProactiveRefresh();
         } catch (error) {
           console.error('Auth init error:', error);
           localStorage.removeItem('accessToken');
           localStorage.removeItem('refreshToken');
           localStorage.removeItem('user');
+          stopProactiveRefresh();
         }
       }
       setLoading(false);
@@ -42,10 +45,12 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem('refreshToken', data.refreshToken);
     localStorage.setItem('user', JSON.stringify(data.user));
     setUser(data.user);
+    startProactiveRefresh();
     return data.user;
   };
 
   const logout = async () => {
+    stopProactiveRefresh();
     await authService.logout();
     setUser(null);
   };
