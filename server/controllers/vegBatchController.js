@@ -67,13 +67,12 @@ const reduceStrainsBySent = (doc, newSentToFlowerStrains, oldSentStrains) => {
   }
 };
 
-// Остаток в бэтче (хороших): всего − погибло − не выросло − утилизировано
+// Остаток в бэтче (доступных): всего − погибло − утилизировано (не выросшие остаются доступны)
 const getDocRemainder = (doc) => {
   const total = getDocTotal(doc);
   const died = parseInt(doc.diedCount, 10) || 0;
-  const notGrown = parseInt(doc.notGrownCount, 10) || 0;
   const disposed = parseInt(doc.disposedCount, 10) || 0;
-  return Math.max(0, total - died - notGrown - disposed);
+  return Math.max(0, total - died - disposed);
 };
 
 // @desc    Get veg batches (in veg only or by flower room)
@@ -217,8 +216,19 @@ export const updateVegBatch = async (req, res) => {
     }
     if (transplantedToFlowerAt !== undefined) doc.transplantedToFlowerAt = transplantedToFlowerAt ? new Date(transplantedToFlowerAt) : null;
     if (notes !== undefined) doc.notes = String(notes).trim();
-    if (diedCount !== undefined) doc.diedCount = parseInt(diedCount, 10) >= 0 ? parseInt(diedCount, 10) : 0;
-    if (notGrownCount !== undefined) doc.notGrownCount = parseInt(notGrownCount, 10) >= 0 ? parseInt(notGrownCount, 10) : 0;
+    const { diedStrains: reqDiedStrains, notGrownStrains: reqNotGrownStrains } = req.body;
+    if (reqDiedStrains !== undefined && Array.isArray(reqDiedStrains)) {
+      doc.diedStrains = reqDiedStrains.filter(s => s && (s.strain || s.quantity > 0)).map(s => ({ strain: String(s.strain || '').trim(), quantity: Math.max(0, parseInt(s.quantity, 10) || 0) }));
+      doc.diedCount = doc.diedStrains.reduce((sum, s) => sum + s.quantity, 0);
+    } else if (diedCount !== undefined) {
+      doc.diedCount = parseInt(diedCount, 10) >= 0 ? parseInt(diedCount, 10) : 0;
+    }
+    if (reqNotGrownStrains !== undefined && Array.isArray(reqNotGrownStrains)) {
+      doc.notGrownStrains = reqNotGrownStrains.filter(s => s && (s.strain || s.quantity > 0)).map(s => ({ strain: String(s.strain || '').trim(), quantity: Math.max(0, parseInt(s.quantity, 10) || 0) }));
+      doc.notGrownCount = doc.notGrownStrains.reduce((sum, s) => sum + s.quantity, 0);
+    } else if (notGrownCount !== undefined) {
+      doc.notGrownCount = parseInt(notGrownCount, 10) >= 0 ? parseInt(notGrownCount, 10) : 0;
+    }
     if (lightChanges !== undefined && Array.isArray(lightChanges)) {
       doc.lightChanges = lightChanges
         .filter((c) => c && c.date)
