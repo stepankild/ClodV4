@@ -243,6 +243,12 @@ export const quickAddTask = async (req, res) => {
       } else {
         taskData.title = 'Подрезка';
       }
+    } else if (type === 'net') {
+      taskData.title = 'Натяжка сетки';
+      if (description && description.trim()) {
+        taskData.description = description.trim();
+        taskData.title = `Сетка: ${description.trim()}`;
+      }
     } else if (type === 'custom') {
       if (description && description.trim()) {
         taskData.title = description.trim();
