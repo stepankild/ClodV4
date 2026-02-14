@@ -114,7 +114,7 @@ export const getArchiveStats = async (req, res) => {
 
     // Статистика по сортам
     const strainStats = await CycleArchive.aggregate([
-      { $match: dateFilter },
+      { $match: { $and: [dateFilter, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] } },
       {
         $group: {
           _id: '$strain',
@@ -126,8 +126,7 @@ export const getArchiveStats = async (req, res) => {
           avgDays: { $avg: '$actualDays' }
         }
       },
-      { $sort: { totalWeight: -1 } },
-      { $limit: 10 }
+      { $sort: { totalWeight: -1 } }
     ]);
 
     // Статистика по месяцам (для графика)

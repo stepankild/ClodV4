@@ -500,72 +500,65 @@ const Statistics = () => {
         </div>
       )}
 
-      {/* Сводка по ферме — 6 основных + 2 best */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-          <div className="text-dark-400 text-sm font-medium">Всего циклов</div>
+      {/* Сводка по ферме — 2 ряда по 4 */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Всего циклов</div>
           <div className="text-2xl font-bold text-white mt-1">{formatNum(total.totalCycles)}</div>
         </div>
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-          <div className="text-dark-400 text-sm font-medium">Урожай (сухой)</div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Урожай (сухой)</div>
           <div className="text-2xl font-bold text-green-400 mt-1">
-            {formatNum(total.totalDryWeight)}<span className="text-sm"> г</span>
+            {formatNum(total.totalDryWeight)}<span className="text-sm ml-1">г</span>
           </div>
         </div>
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-          <div className="text-dark-400 text-sm font-medium">Сред. г/куст</div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Сред. г/куст</div>
           <div className="text-2xl font-bold text-blue-400 mt-1">
             {avgGpp != null ? avgGpp : '—'}
           </div>
         </div>
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-          <div className="text-dark-400 text-sm font-medium">Сред. г/ватт</div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Сред. г/ватт</div>
           <div className="text-2xl font-bold text-amber-400 mt-1">
             {avgGpw != null && avgGpw > 0 ? avgGpw : '—'}
           </div>
         </div>
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-          <div className="text-dark-400 text-sm font-medium">Сред. цикл</div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Сред. цикл</div>
           <div className="text-2xl font-bold text-white mt-1">
             {avgCycleDays != null ? `${avgCycleDays} дн.` : '—'}
           </div>
         </div>
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-          <div className="text-dark-400 text-sm font-medium">Циклов/год</div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">Циклов/год ({safeRooms.length} комн.)</div>
           <div className="text-2xl font-bold text-primary-400 mt-1">
             {cyclesPerYearFarm != null ? `~${Math.round(cyclesPerYearFarm)}` : '—'}
           </div>
-          <p className="text-dark-500 text-xs mt-1">
-            {safeRooms.length} комн.
-          </p>
         </div>
-        {/* Best strain card */}
-        <div className="bg-dark-800 rounded-xl border border-emerald-800/40 p-5">
-          <div className="text-dark-400 text-sm font-medium">🏆 Лучший сорт</div>
+        <div className="bg-dark-800 rounded-xl border border-emerald-800/40 p-4">
+          <div className="text-dark-400 text-xs font-medium">🏆 Лучший сорт</div>
           {bestStrain ? (
             <>
-              <div className="text-lg font-bold text-emerald-400 mt-1 truncate" title={bestStrain._id}>
+              <div className="text-xl font-bold text-emerald-400 mt-1 truncate" title={bestStrain._id}>
                 {bestStrain._id || '—'}
               </div>
-              <p className="text-dark-500 text-xs mt-1">
-                {roundTo(bestStrain.avgGramsPerPlant, 1)} г/куст
-              </p>
+              <p className="text-dark-500 text-xs mt-0.5">{roundTo(bestStrain.avgGramsPerPlant, 1)} г/куст</p>
             </>
           ) : (
             <div className="text-2xl font-bold text-dark-500 mt-1">—</div>
           )}
         </div>
-        {/* Best room card */}
-        <div className="bg-dark-800 rounded-xl border border-indigo-800/40 p-5">
-          <div className="text-dark-400 text-sm font-medium">🏆 Лучшая комната</div>
+        <div className="bg-dark-800 rounded-xl border border-indigo-800/40 p-4">
+          <div className="text-dark-400 text-xs font-medium">🏆 Лучшая комната</div>
           {bestRoomObj && bestRoomEntry ? (
             <>
-              <div className="text-lg font-bold text-indigo-400 mt-1 truncate" title={bestRoomObj.name}>
+              <div className="text-xl font-bold text-indigo-400 mt-1 truncate" title={bestRoomObj.name}>
                 {bestRoomObj.name}
               </div>
-              <p className="text-dark-500 text-xs mt-1">
-                {formatNum(Math.round(bestRoomEntry.totalWeight / bestRoomEntry.cycles))} г/цикл
-              </p>
+              <p className="text-dark-500 text-xs mt-0.5">{formatNum(Math.round(bestRoomEntry.totalWeight / bestRoomEntry.cycles))} г/цикл</p>
             </>
           ) : (
             <div className="text-2xl font-bold text-dark-500 mt-1">—</div>
@@ -609,14 +602,18 @@ const Statistics = () => {
         </div>
       )}
 
-      {/* Сорта — таблица + pie chart */}
-      {byStrain.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-          <div className="lg:col-span-2 bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
-            <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">
-              По сортам
-              <span className="text-dark-500 text-sm font-normal ml-2">клик для детальной статистики</span>
-            </h2>
+      {/* Сорта — таблица на всю ширину */}
+      <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden mb-8">
+        <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">
+          По сортам
+          {byStrain.length > 0 && (
+            <span className="text-dark-500 text-sm font-normal ml-2">клик для детальной статистики</span>
+          )}
+        </h2>
+        {byStrain.length === 0 ? (
+          <div className="px-4 py-8 text-center text-dark-500">Нет данных по сортам за выбранный период</div>
+        ) : (
+          <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-dark-900">
@@ -667,36 +664,36 @@ const Statistics = () => {
                 </tbody>
               </table>
             </div>
-          </div>
 
-          {/* Pie chart по сортам */}
-          {strainPieData.length > 0 && (
-            <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-              <h2 className="text-lg font-semibold text-white mb-4">Распределение урожая</h2>
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie
-                    data={strainPieData}
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={100}
-                    innerRadius={50}
-                    paddingAngle={2}
-                    dataKey="value"
-                    label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                    labelLine={{ stroke: '#6b7280' }}
-                  >
-                    {strainPieData.map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={ChartTooltipStyle} formatter={(v) => [`${v} г`, 'Сухой вес']} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </div>
-      )}
+            {/* Pie chart — под таблицей */}
+            {strainPieData.length > 1 && (
+              <div className="border-t border-dark-700 p-5">
+                <h3 className="text-sm font-semibold text-white mb-3">Распределение урожая</h3>
+                <ResponsiveContainer width="100%" height={250}>
+                  <PieChart>
+                    <Pie
+                      data={strainPieData}
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={90}
+                      innerRadius={45}
+                      paddingAngle={2}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                      labelLine={{ stroke: '#6b7280' }}
+                    >
+                      {strainPieData.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip contentStyle={ChartTooltipStyle} formatter={(v) => [`${v} г`, 'Сухой вес']} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </>
+        )}
+      </div>
 
       {/* По комнатам */}
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden mb-8">
