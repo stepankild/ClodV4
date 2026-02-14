@@ -492,7 +492,13 @@ export const mergeStrains = async (req, res) => {
     // Soft-delete merged strains from Strain library (keep target, case-insensitive)
     const strainRegexFilters = patterns.map(p => ({ name: { $regex: p } }));
     const deletedStrains = await Strain.updateMany(
-      { $and: [{ $or: strainRegexFilters }, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] },
+      {
+        $and: [
+          { $or: strainRegexFilters },
+          { name: { $ne: target } },
+          { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }
+        ]
+      },
       { $set: { deletedAt: new Date() } }
     );
 
