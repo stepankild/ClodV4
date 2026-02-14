@@ -122,11 +122,26 @@ const Overview = () => {
 
   // Overdue clone cuts
   const safeVegBatches = Array.isArray(vegBatches) ? vegBatches : [];
+  const safeCloneCuts = Array.isArray(cloneCuts) ? cloneCuts : [];
+
+  // Найти актуальный клон-бэтч для комнаты: самый свежий по cutDate,
+  // чья дата нарезки в пределах ±60 дней от расчётной даты нарезки для текущего цикла
+  const findCurrentCut = (room) => {
+    const cutDate = getCutDateForRoom(room);
+    const roomCuts = safeCloneCuts
+      .filter(c => String(c.room?._id || c.room || '') === String(room._id))
+      .sort((a, b) => new Date(b.cutDate) - new Date(a.cutDate));
+    if (!cutDate || roomCuts.length === 0) return roomCuts[0] || null;
+    const target = new Date(cutDate).getTime();
+    const margin = 60 * 24 * 60 * 60 * 1000; // ±60 дней
+    return roomCuts.find(c => Math.abs(new Date(c.cutDate).getTime() - target) <= margin) || null;
+  };
+
   safeRooms.forEach(room => {
     const cutDate = getCutDateForRoom(room);
     if (!cutDate) return;
     const daysUntil = getDaysUntilCut(cutDate);
-    const cut = (Array.isArray(cloneCuts) ? cloneCuts : []).find(c => c.room?._id === room._id || c.room === room._id);
+    const cut = findCurrentCut(room);
     const isDone = cut?.isDone ?? false;
     const hasTransplanted = cut && safeVegBatches.some(
       b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id)
@@ -251,7 +266,7 @@ const Overview = () => {
         {safeRooms.map((room) => {
           const cutDate = getCutDateForRoom(room);
           const daysUntilCut = cutDate ? getDaysUntilCut(cutDate) : null;
-          const cut = (Array.isArray(cloneCuts) ? cloneCuts : []).find(c => c.room?._id === room._id || c.room === room._id);
+          const cut = findCurrentCut(room);
           const hasTransplantedRoom = cut && safeVegBatches.some(
             b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id)
           );
