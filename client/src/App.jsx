@@ -17,6 +17,7 @@ import Statistics from './pages/Statistics/Statistics';
 import AuditLog from './pages/AuditLog/AuditLog';
 import Trash from './pages/Trash/Trash';
 import Trim from './pages/Trim/Trim';
+import Strains from './pages/Strains/Strains';
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -83,6 +84,7 @@ function App() {
             </ProtectedRoute>
           }
         />
+        <Route path="/strains" element={<Strains />} />
         <Route path="/admin/users" element={<Navigate to="/workers" replace />} />
       </Route>
 

@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
 import { vegBatchService } from '../../services/vegBatchService';
+import StrainSelect from '../../components/StrainSelect';
 
 const WEEKS_BEFORE = 4;
 const DAYS_OFFSET = WEEKS_BEFORE * 7;
@@ -852,12 +853,10 @@ const Clones = () => {
                   {(modalStrains || []).map((s, idx) => (
                     <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
                       <span className="text-dark-500 text-xs w-12 shrink-0">{idx + 1}.</span>
-                      <input
-                        type="text"
+                      <StrainSelect
                         value={s.strain}
-                        onChange={(e) => updateEditStrainRow(idx, 'strain', e.target.value)}
-                        placeholder="Сорт"
-                        className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                        onChange={(val) => updateEditStrainRow(idx, 'strain', val)}
+                        className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm"
                       />
                       <input
                         type="number"
@@ -1037,12 +1036,10 @@ const Clones = () => {
                 <div className="space-y-2">
                   {(createBatchForm.strains || []).map((s, idx) => (
                     <div key={idx} className="flex items-center gap-2">
-                      <input
-                        type="text"
+                      <StrainSelect
                         value={s.strain}
-                        onChange={(e) => updateCreateBatchStrainRow(idx, 'strain', e.target.value)}
-                        placeholder="Сорт"
-                        className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                        onChange={(val) => updateCreateBatchStrainRow(idx, 'strain', val)}
+                        className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm"
                       />
                       <input
                         type="number"
@@ -1110,7 +1107,7 @@ const Clones = () => {
                 <div className="space-y-2">
                   {(orderForm.strains || []).map((s, idx) => (
                     <div key={idx} className="flex items-center gap-2">
-                      <input type="text" value={s.strain} onChange={(e) => updateOrderFormStrainRow(idx, 'strain', e.target.value)} placeholder="Сорт" className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <StrainSelect value={s.strain} onChange={(val) => updateOrderFormStrainRow(idx, 'strain', val)} className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm" />
                       <input type="number" min="0" value={s.quantity} onChange={(e) => updateOrderFormStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                       {(orderForm.strains || []).length > 1 && (
                         <button type="button" onClick={() => removeOrderFormStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>
@@ -1153,7 +1150,7 @@ const Clones = () => {
                 <div className="space-y-2">
                   {(orderModalStrains || []).map((s, idx) => (
                     <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
-                      <input type="text" value={s.strain} onChange={(e) => updateOrderEditStrainRow(idx, 'strain', e.target.value)} placeholder="Сорт" className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <StrainSelect value={s.strain} onChange={(val) => updateOrderEditStrainRow(idx, 'strain', val)} className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm" />
                       <input type="number" min="0" value={s.quantity} onChange={(e) => updateOrderEditStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                       {(orderModalStrains || []).length > 1 && (
                         <button type="button" onClick={() => removeOrderEditStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>
