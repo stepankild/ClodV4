@@ -34,5 +34,10 @@ export const strainService = {
   async migrate() {
     const response = await api.post('/strains/migrate');
     return response.data;
+  },
+
+  async merge(sourceNames, targetName) {
+    const response = await api.post('/strains/merge', { sourceNames, targetName });
+    return response.data;
   }
 };
