@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { vegBatchService } from '../../services/vegBatchService';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
+import StrainSelect from '../../components/StrainSelect';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -840,12 +841,10 @@ const Vegetation = () => {
                 <div className="space-y-2">
                   {(form.strains || []).map((s, idx) => (
                     <div key={idx} className="flex items-center gap-2">
-                      <input
-                        type="text"
+                      <StrainSelect
                         value={s.strain}
-                        onChange={(e) => updateFormStrainRow(idx, 'strain', e.target.value)}
-                        placeholder="Сорт"
-                        className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                        onChange={(val) => updateFormStrainRow(idx, 'strain', val)}
+                        className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm"
                       />
                       <input
                         type="number"
@@ -953,7 +952,7 @@ const Vegetation = () => {
                 <div className="space-y-2">
                   {(editForm.strains || []).map((s, idx) => (
                     <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
-                      <input type="text" value={s.strain} onChange={(e) => updateEditStrainRow(idx, 'strain', e.target.value)} placeholder="Сорт" className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <StrainSelect value={s.strain} onChange={(val) => updateEditStrainRow(idx, 'strain', val)} className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm" />
                       <input type="number" min="0" value={s.quantity} onChange={(e) => updateEditStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                       {(editForm.strains || []).length > 1 && <button type="button" onClick={() => removeEditStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>}
                     </div>

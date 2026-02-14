@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import RoomMap from '../../components/RoomMap/RoomMap';
+import StrainSelect from '../../components/StrainSelect';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -698,11 +699,10 @@ export default function ActiveRooms() {
                   </div>
                   <div>
                     <label className="block text-xs text-dark-400 mb-1">Сорт</label>
-                    <input
-                      type="text"
+                    <StrainSelect
                       value={editForm.strain}
-                      onChange={e => setEditForm(f => ({ ...f, strain: e.target.value }))}
-                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                      onChange={(val) => setEditForm(f => ({ ...f, strain: val }))}
+                      className="w-full px-3 py-2 rounded-lg text-sm"
                     />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -858,12 +858,10 @@ export default function ActiveRooms() {
                     <div className="space-y-2">
                       {computeStrainRanges(startForm.flowerStrains).map((fs, idx) => (
                         <div key={idx} className="flex items-center gap-2">
-                          <input
-                            type="text"
+                          <StrainSelect
                             value={startForm.flowerStrains[idx].strain}
-                            onChange={e => updateFlowerStrain(idx, 'strain', e.target.value)}
-                            placeholder="Сорт"
-                            className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                            onChange={(val) => updateFlowerStrain(idx, 'strain', val)}
+                            className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm"
                           />
                           <input
                             type="number"
@@ -1476,12 +1474,10 @@ export default function ActiveRooms() {
               </div>
               <div>
                 <label className="block text-xs text-dark-400 mb-1">Сорт</label>
-                <input
-                  type="text"
+                <StrainSelect
                   value={planForm.strain}
-                  onChange={e => setPlanForm(f => ({ ...f, strain: e.target.value }))}
-                  className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
-                  placeholder="Название сорта"
+                  onChange={(val) => setPlanForm(f => ({ ...f, strain: val }))}
+                  className="w-full px-3 py-2 rounded-lg text-sm"
                 />
               </div>
               <div>
