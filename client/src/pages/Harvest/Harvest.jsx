@@ -277,25 +277,56 @@ const Harvest = () => {
         </div>
       )}
 
-      {/* Выбор комнаты */}
-      <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 mb-6">
-        <h2 className="text-lg font-semibold text-white mb-4">Комната</h2>
-        <select
-          value={selectedRoomId}
-          onChange={(e) => setSelectedRoomId(e.target.value)}
-          className="px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white focus:ring-2 focus:ring-primary-500 min-w-[200px]"
-        >
-          <option value="">Выберите комнату</option>
-          {activeRooms.map((r) => (
-            <option key={r._id} value={r._id}>
-              {r.name} — {r.strain || 'без сорта'} ({r.plantsCount} кустов)
-            </option>
-          ))}
-        </select>
-        {activeRooms.length === 0 && (
-          <p className="text-dark-400 mt-2 text-sm">Нет активных комнат. Запустите цикл в комнате на главной.</p>
-        )}
-      </div>
+      {/* Выбор комнаты — кнопки-карточки с прогресс-баром */}
+      {activeRooms.length > 0 && (
+        <div className="mb-6">
+          <h2 className="text-lg font-semibold text-white mb-3">Выберите комнату</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+            {activeRooms.map((r) => {
+              const isSelected = selectedRoomId === r._id;
+              const progress = r.progress ?? 0;
+              const day = r.currentDay ?? 0;
+              const total = r.floweringDays ?? 0;
+              const progressColor = progress >= 95 ? 'bg-red-500' : progress >= 80 ? 'bg-yellow-500' : 'bg-primary-500';
+              const borderColor = isSelected
+                ? 'border-primary-500 ring-2 ring-primary-500/30'
+                : progress >= 95 ? 'border-red-700/50 hover:border-red-600/70'
+                : progress >= 80 ? 'border-yellow-700/50 hover:border-yellow-600/70'
+                : 'border-dark-600 hover:border-dark-500';
+              return (
+                <button
+                  key={r._id}
+                  type="button"
+                  onClick={() => setSelectedRoomId(r._id)}
+                  className={`text-left bg-dark-800 rounded-xl p-3 border ${borderColor} transition-all`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-white font-semibold text-sm truncate">{r.name}</span>
+                    {isSelected && <span className="w-2 h-2 rounded-full bg-primary-500 shrink-0" />}
+                  </div>
+                  <div className="text-xs text-primary-400 truncate mb-1.5">{r.strain || 'без сорта'}</div>
+                  <div className="text-xs text-dark-400 mb-1">
+                    {r.plantsCount || 0} кустов
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden mb-1">
+                    <div
+                      className={`h-full ${progressColor} rounded-full transition-all`}
+                      style={{ width: `${Math.min(progress, 100)}%` }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs">
+                    <span className="text-dark-500">День {day}/{total}</span>
+                    <span className={`font-medium ${progress >= 95 ? 'text-red-400' : progress >= 80 ? 'text-yellow-400' : 'text-primary-400'}`}>
+                      {progress}%
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {sessionLoading && selectedRoomId && (
         <div className="flex items-center justify-center py-8">
