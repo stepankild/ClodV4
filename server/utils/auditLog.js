@@ -1,4 +1,5 @@
 import AuditLog from '../models/AuditLog.js';
+import { getClientIp } from './getClientIp.js';
 
 /**
  * Создать запись в логе действий. Вызывать после успешного изменения данных.
@@ -14,7 +15,7 @@ export async function createAuditLog(req, opts) {
       entityType: opts.entityType || '',
       entityId: opts.entityId ?? null,
       details: opts.details || {},
-      ip: req.ip || req.connection?.remoteAddress || '',
+      ip: getClientIp(req),
       userAgent: req.get?.('user-agent') || ''
     });
   } catch (err) {

@@ -39,6 +39,18 @@ const formatDuration = (ms) => {
   return parts.join(' ') || '< 1м';
 };
 
+const timeAgo = (date) => {
+  if (!date) return '—';
+  const diff = Date.now() - new Date(date).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'только что';
+  if (mins < 60) return `${mins} мин назад`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} ч назад`;
+  const days = Math.floor(hours / 24);
+  return `${days} дн назад`;
+};
+
 // Все действия с описаниями и цветами
 const ACTION_LABELS = {
   // Авторизация
@@ -418,13 +430,22 @@ const AuditLog = () => {
                           </div>
                         )}
                         <div className="space-y-1 text-xs">
+                          {!s.isOnline && s.lastActivity && (
+                            <div className="flex justify-between">
+                              <span className="text-dark-500">Был(а)</span>
+                              <span className="text-yellow-500/80">{timeAgo(s.lastActivity)}</span>
+                            </div>
+                          )}
                           <div className="flex justify-between">
                             <span className="text-dark-500">Вход</span>
                             <span className="text-dark-300">{formatDateShort(s.loginAt)}</span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-dark-500">IP</span>
-                            <span className="text-dark-300 font-mono">{s.ip}</span>
+                            <span className="text-dark-300 font-mono">
+                              {s.ip}
+                              {s.country && <span className="ml-1.5 text-dark-500">{s.country}</span>}
+                            </span>
                           </div>
                           <div className="flex justify-between">
                             <span className="text-dark-500">Браузер</span>
@@ -487,7 +508,10 @@ const AuditLog = () => {
                             <td className={`px-4 py-2.5 text-xs font-medium ${h.isActive ? 'text-green-400' : 'text-dark-300'}`}>
                               {formatDuration(h.duration)}
                             </td>
-                            <td className="px-4 py-2.5 text-dark-400 text-xs font-mono">{h.ip}</td>
+                            <td className="px-4 py-2.5 text-dark-400 text-xs font-mono">
+                              {h.ip}
+                              {h.country && <span className="ml-1 text-dark-500 font-sans">{h.country}</span>}
+                            </td>
                             <td className="px-4 py-2.5 text-dark-400 text-xs">{h.browser} · {h.os}</td>
                           </tr>
                         ))
