@@ -30,4 +30,18 @@ router.get('/me', protect, getMe);
 
 router.post('/heartbeat', protect, heartbeat);
 
+// Temporary diagnostic endpoint — check real IP headers
+import { getClientIp } from '../utils/getClientIp.js';
+router.get('/ip-debug', protect, (req, res) => {
+  res.json({
+    getClientIp: getClientIp(req),
+    reqIp: req.ip,
+    xForwardedFor: req.headers['x-forwarded-for'] || null,
+    xRealIp: req.headers['x-real-ip'] || null,
+    cfConnectingIp: req.headers['cf-connecting-ip'] || null,
+    remoteAddress: req.connection?.remoteAddress || null,
+    allHeaders: req.headers
+  });
+});
+
 export default router;
