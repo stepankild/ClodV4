@@ -454,7 +454,8 @@ export const getSessions = async (req, res) => {
 
     const sessions = await HarvestSession.find(query)
       .sort({ startedAt: -1 })
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .populate('plants.recordedBy', 'name');
     res.json(sessions);
   } catch (error) {
     console.error('Get sessions error:', error);

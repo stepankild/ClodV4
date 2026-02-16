@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import { harvestService } from '../../services/harvestService';
 import HarvestRoomMap from '../../components/RoomMap/HarvestRoomMap';
+import HarvestHistory from './HarvestHistory';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -259,6 +260,9 @@ const Harvest = () => {
             })}
           </div>
         )}
+
+        {/* Harvest history */}
+        <HarvestHistory />
       </div>
     );
   }
