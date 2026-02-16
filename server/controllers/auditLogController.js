@@ -199,7 +199,14 @@ export const getSessions = async (req, res) => {
       h.country = geo ? `${geo.countryCode}` : null;
     }
 
-    res.json({ activeSessions, loginHistory });
+    // DEBUG: include diagnostic info about IPs
+    const _debug = {
+      realIp,
+      sampleRawIps: sampleIps,
+      sampleFixedIps: sampleIps.map(fixIp),
+      privateIpRegex: PRIVATE_IP_RE.source,
+    };
+    res.json({ activeSessions, loginHistory, _debug });
   } catch (error) {
     console.error('Get sessions error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
