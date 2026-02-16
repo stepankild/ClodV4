@@ -46,6 +46,7 @@ export const upsertCloneCut = async (req, res) => {
         strains: normalizedStrains,
         strain: derivedStrain,
         quantity: derivedQuantity,
+        initialQuantity: derivedQuantity,
         isDone: Boolean(isDone),
         notes: notes != null ? String(notes).trim() : ''
       });
@@ -75,9 +76,13 @@ export const upsertCloneCut = async (req, res) => {
     let action = 'clone_cut.upsert';
     if (doc) {
       Object.assign(doc, data);
+      // Обновляем initialQuantity только если оно ещё не установлено (первое создание)
+      if (doc.initialQuantity == null) {
+        doc.initialQuantity = derivedQuantity;
+      }
       await doc.save();
     } else {
-      doc = await CloneCut.create({ ...data, room: roomId });
+      doc = await CloneCut.create({ ...data, initialQuantity: derivedQuantity, room: roomId });
       action = 'clone_cut.create';
     }
     await doc.populate('room', 'name roomNumber');

@@ -261,23 +261,19 @@ export const harvestAndArchive = async (req, res) => {
         notes: vegBatch.notes || ''
       };
 
-      // Количество клонов для этого цикла: sentToFlowerCount > initialQuantity > vegBatch.quantity
-      const cycleCloneCount = vegBatch.sentToFlowerCount
-        || vegBatch.initialQuantity
-        || vegBatch.quantity
-        || 0;
-      const cycleCloneStrains = (vegBatch.sentToFlowerStrains?.length > 0)
-        ? vegBatch.sentToFlowerStrains
-        : vegBatch.strains || [];
-
       // Получаем данные клонов из источника веги
       if (vegBatch.sourceCloneCut) {
         const cloneCut = await CloneCut.findById(vegBatch.sourceCloneCut);
         if (cloneCut) {
+          // Количество изначально нарезанных клонов
+          const originalCutQuantity = cloneCut.initialQuantity
+            || (cloneCut.quantity + (vegBatch.initialQuantity || vegBatch.quantity || 0))
+            || cloneCut.quantity
+            || 0;
           cloneData = {
             cutDate: cloneCut.cutDate,
-            quantity: cycleCloneCount || cloneCut.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
-            strains: cycleCloneStrains.length > 0 ? cycleCloneStrains : (cloneCut.strains || []),
+            quantity: originalCutQuantity,
+            strains: cloneCut.strains || [],
             notes: cloneCut.notes || ''
           };
         }
@@ -285,8 +281,8 @@ export const harvestAndArchive = async (req, res) => {
         // Если нет прямой связи, берём из самой веги
         cloneData = {
           cutDate: vegBatch.cutDate,
-          quantity: cycleCloneCount || vegBatch.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
-          strains: cycleCloneStrains,
+          quantity: vegBatch.initialQuantity || vegBatch.quantity || 0,
+          strains: vegBatch.strains || [],
           notes: ''
         };
       }
@@ -451,12 +447,22 @@ export const harvestAndArchive = async (req, res) => {
 // @route   PUT /api/archive/:id
 export const updateArchive = async (req, res) => {
   try {
-    const { harvestData, issues, notes } = req.body;
+    const { harvestData, cloneData, issues, notes } = req.body;
 
     const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!archive) {
       return res.status(404).json({ message: 'Архив не найден' });
+    }
+
+    // Обновление данных клонов
+    if (cloneData) {
+      if (!archive.cloneData) archive.cloneData = {};
+      if (cloneData.quantity !== undefined) archive.cloneData.quantity = cloneData.quantity;
+      if (cloneData.strains !== undefined) archive.cloneData.strains = cloneData.strains;
+      if (cloneData.cutDate !== undefined) archive.cloneData.cutDate = cloneData.cutDate;
+      if (cloneData.notes !== undefined) archive.cloneData.notes = cloneData.notes;
+      archive.markModified('cloneData');
     }
 
     if (harvestData) {
