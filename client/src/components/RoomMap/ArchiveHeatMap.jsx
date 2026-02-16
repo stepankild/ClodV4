@@ -3,7 +3,7 @@
  * Процентильная система цвета: чем тяжелее куст — тем зеленее.
  * Статистика по рядам, сравнение рядов, общая статистика.
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -71,6 +71,50 @@ function getHeatColor(weight, sortedWeights) {
     bg: `hsl(${h}, ${s}%, ${l}%)`,
     border: `hsl(${h}, ${s}%, ${l + 14}%)`,
     text: `hsl(${h}, ${s - 10}%, ${l + 55}%)`,
+  };
+}
+
+/** Deviation-based colour: green ±15%, red below, blue above */
+function getDeviationColor(weight, reference) {
+  if (!weight || !reference || reference <= 0) {
+    return { bg: 'hsl(0, 0%, 18%)', border: 'hsl(0, 0%, 28%)', text: 'hsl(0, 0%, 55%)' };
+  }
+
+  const deviation = (weight - reference) / reference;
+
+  if (Math.abs(deviation) <= 0.15) {
+    // GREEN ZONE: within ±15% of reference
+    const intensity = 1 - Math.abs(deviation) / 0.15;
+    const l = 22 + Math.round((1 - intensity) * 6);
+    return {
+      bg:     `hsl(140, 70%, ${l}%)`,
+      border: `hsl(140, 70%, ${l + 14}%)`,
+      text:   `hsl(140, 60%, ${l + 55}%)`,
+    };
+  }
+
+  if (deviation < -0.15) {
+    // RED ZONE: below reference by more than 15%
+    const t = Math.min((Math.abs(deviation) - 0.15) / 0.85, 1);
+    const h = Math.round(30 * (1 - t));
+    const s = Math.round(65 + t * 20);
+    const l = Math.round(24 - t * 4);
+    return {
+      bg:     `hsl(${h}, ${s}%, ${l}%)`,
+      border: `hsl(${h}, ${s}%, ${l + 14}%)`,
+      text:   `hsl(${h}, ${s - 10}%, ${l + 55}%)`,
+    };
+  }
+
+  // BLUE ZONE: above reference by more than 15%
+  const t = Math.min((deviation - 0.15) / 0.85, 1);
+  const h = Math.round(200 + t * 20);
+  const s = Math.round(60 + t * 20);
+  const l = Math.round(24 + t * 4);
+  return {
+    bg:     `hsl(${h}, ${s}%, ${l}%)`,
+    border: `hsl(${h}, ${s}%, ${l + 14}%)`,
+    text:   `hsl(${h}, ${s - 10}%, ${l + 55}%)`,
   };
 }
 
@@ -268,10 +312,62 @@ export default function ArchiveHeatMap({ harvestMapData }) {
     return { posMap: pm, sortedWeights: sw, globalStats: gs, rowStatsArr: rsa, strainBreakdown: sb, histogram: hist };
   }, [customRows, plants]);
 
+  // ── Color mode state ──
+  const [colorMode, setColorMode] = useState(0);
+  const [customRef, setCustomRef] = useState('');
+
+  const COLOR_MODES = [
+    { id: 0, label: 'Процентиль' },
+    { id: 1, label: 'ø Ряда' },
+    { id: 2, label: 'ø Комнаты' },
+    { id: 3, label: 'Свой вес' },
+  ];
+
+  function getCellColor(weight, rowIndex) {
+    switch (colorMode) {
+      case 1: return getDeviationColor(weight, rowStatsArr[rowIndex]?.stats?.avg);
+      case 2: return getDeviationColor(weight, globalStats.avg);
+      case 3: {
+        const ref = parseFloat(customRef);
+        return getDeviationColor(weight, isNaN(ref) || ref <= 0 ? null : ref);
+      }
+      default: return getHeatColor(weight, sortedWeights);
+    }
+  }
+
   if (!customRows.length || !plants.length) return null;
 
   return (
     <div className="space-y-4">
+      {/* ── Color mode selector ── */}
+      <div className="flex flex-wrap items-center gap-2">
+        {COLOR_MODES.map(m => (
+          <button
+            key={m.id}
+            onClick={() => setColorMode(m.id)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+              colorMode === m.id
+                ? 'bg-primary-900/50 text-primary-400 ring-1 ring-primary-500/30'
+                : 'bg-dark-700/50 text-dark-400 hover:text-dark-200'
+            }`}
+          >
+            {m.label}
+          </button>
+        ))}
+
+        {colorMode === 3 && (
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={customRef}
+            onChange={(e) => setCustomRef(e.target.value)}
+            placeholder="Целевой вес (г)"
+            className="w-36 px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder:text-dark-500 focus:outline-none focus:ring-1 focus:ring-primary-500/50"
+          />
+        )}
+      </div>
+
       {/* ── Heat map grid ── */}
       <div className="flex gap-3 overflow-x-auto pb-2">
         {customRows.map((row, rowIdx) => {
@@ -318,7 +414,7 @@ export default function ArchiveHeatMap({ harvestMapData }) {
                       );
                     }
 
-                    const color = getHeatColor(plant.wetWeight, sortedWeights);
+                    const color = getCellColor(plant.wetWeight, rowIdx);
                     return (
                       <div
                         key={posIdx}
@@ -360,23 +456,49 @@ export default function ArchiveHeatMap({ harvestMapData }) {
         })}
       </div>
 
-      {/* ── Gradient legend ── */}
+      {/* ── Legend ── */}
       {sortedWeights.length > 1 && (
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] text-dark-400 whitespace-nowrap">{globalStats.min}г</span>
-            <div
-              className="flex-1 h-3 rounded-full"
-              style={{
-                background: 'linear-gradient(to right, hsl(0,85%,20%), hsl(25,85%,24%), hsl(50,80%,26%), hsl(85,75%,24%), hsl(140,70%,22%))'
-              }}
-            />
-            <span className="text-[10px] text-dark-400 whitespace-nowrap">{globalStats.max}г</span>
+        colorMode === 0 ? (
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] text-dark-400 whitespace-nowrap">{globalStats.min}г</span>
+              <div
+                className="flex-1 h-3 rounded-full"
+                style={{
+                  background: 'linear-gradient(to right, hsl(0,85%,20%), hsl(25,85%,24%), hsl(50,80%,26%), hsl(85,75%,24%), hsl(140,70%,22%))'
+                }}
+              />
+              <span className="text-[10px] text-dark-400 whitespace-nowrap">{globalStats.max}г</span>
+            </div>
+            <div className="flex justify-center">
+              <span className="text-[10px] text-dark-500">лёгкий → тяжёлый</span>
+            </div>
           </div>
-          <div className="flex justify-center">
-            <span className="text-[10px] text-dark-500">лёгкий → тяжёлый</span>
+        ) : (
+          <div className="space-y-1">
+            <div className="flex items-center gap-1">
+              <div className="flex-1 h-3 rounded-l-full" style={{
+                background: 'linear-gradient(to right, hsl(0,85%,20%), hsl(30,65%,24%))'
+              }} />
+              <div className="flex-1 h-3" style={{ background: 'hsl(140,70%,22%)' }} />
+              <div className="flex-1 h-3 rounded-r-full" style={{
+                background: 'linear-gradient(to right, hsl(200,60%,24%), hsl(220,80%,28%))'
+              }} />
+            </div>
+            <div className="flex justify-between text-[10px] text-dark-500 px-1">
+              <span>Ниже нормы</span>
+              <span>±15% нормы</span>
+              <span>Выше нормы</span>
+            </div>
+            <div className="flex justify-center">
+              <span className="text-[10px] text-dark-400">
+                {colorMode === 1 && 'Ориентир: среднее по ряду'}
+                {colorMode === 2 && `Ориентир: ${globalStats.avg}г (ø комнаты)`}
+                {colorMode === 3 && `Ориентир: ${customRef || '—'}г (ручной)`}
+              </span>
+            </div>
           </div>
-        </div>
+        )
       )}
 
       {/* ── Strain breakdown ── */}
