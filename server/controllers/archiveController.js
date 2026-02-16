@@ -112,15 +112,30 @@ export const getArchiveStats = async (req, res) => {
       }
     ]);
 
-    // Статистика по сортам
+    // Статистика по сортам (unwind по массиву strains, чтобы мультисортовые циклы считались отдельно)
     const strainStats = await CycleArchive.aggregate([
       { $match: { $and: [dateFilter, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] } },
+      // Добавляем поле strainsArr: используем массив strains если он есть и не пуст, иначе берём единичный strain
+      {
+        $addFields: {
+          strainsArr: {
+            $cond: {
+              if: { $and: [{ $isArray: '$strains' }, { $gt: [{ $size: '$strains' }, 0] }] },
+              then: '$strains',
+              else: [{ $ifNull: ['$strain', '—'] }]
+            }
+          }
+        }
+      },
+      // Считаем количество сортов для пропорционального деления веса
+      { $addFields: { strainCount: { $size: '$strainsArr' } } },
+      { $unwind: '$strainsArr' },
       {
         $group: {
-          _id: '$strain',
+          _id: '$strainsArr',
           cycles: { $sum: 1 },
-          totalWeight: { $sum: '$harvestData.dryWeight' },
-          avgWeight: { $avg: '$harvestData.dryWeight' },
+          totalWeight: { $sum: { $divide: [{ $ifNull: ['$harvestData.dryWeight', 0] }, '$strainCount'] } },
+          avgWeight: { $avg: { $divide: [{ $ifNull: ['$harvestData.dryWeight', 0] }, '$strainCount'] } },
           avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
           avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
           avgDays: { $avg: '$actualDays' }
@@ -780,14 +795,27 @@ export const getRoomDetailStats = async (req, res) => {
       else if (avgLast < avgFirst * 0.9) trend = 'down';
     }
 
-    // By strain breakdown
+    // By strain breakdown (unwind strains array for multi-strain cycles)
     const byStrain = await CycleArchive.aggregate([
       { $match: baseMatch },
       {
+        $addFields: {
+          strainsArr: {
+            $cond: {
+              if: { $and: [{ $isArray: '$strains' }, { $gt: [{ $size: '$strains' }, 0] }] },
+              then: '$strains',
+              else: [{ $ifNull: ['$strain', '—'] }]
+            }
+          }
+        }
+      },
+      { $addFields: { strainCount: { $size: '$strainsArr' } } },
+      { $unwind: '$strainsArr' },
+      {
         $group: {
-          _id: '$strain',
+          _id: '$strainsArr',
           cycles: { $sum: 1 },
-          totalWeight: { $sum: '$harvestData.dryWeight' },
+          totalWeight: { $sum: { $divide: [{ $ifNull: ['$harvestData.dryWeight', 0] }, '$strainCount'] } },
           avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
           avgDays: { $avg: '$actualDays' }
         }
