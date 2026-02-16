@@ -222,8 +222,7 @@ const AuditLog = () => {
       const data = await auditLogService.getSessions();
       setSessions({
         activeSessions: Array.isArray(data.activeSessions) ? data.activeSessions : [],
-        loginHistory: Array.isArray(data.loginHistory) ? data.loginHistory : [],
-        _debug: data._debug || null
+        loginHistory: Array.isArray(data.loginHistory) ? data.loginHistory : []
       });
     } catch (err) {
       if (!silent) setSessionsError(err.response?.data?.message || err.message || 'Ошибка загрузки сессий');
@@ -400,13 +399,6 @@ const AuditLog = () => {
                     </svg>
                   </button>
                 </h2>
-
-                {/* DEBUG: IP diagnostic info — remove after fix */}
-                {sessions._debug && (
-                  <div className="bg-yellow-900/20 border border-yellow-700/50 rounded-lg p-3 mb-3 text-xs font-mono text-yellow-300 whitespace-pre-wrap">
-                    {JSON.stringify(sessions._debug, null, 2)}
-                  </div>
-                )}
 
                 {sessions.activeSessions.length === 0 ? (
                   <div className="bg-dark-800 rounded-xl border border-dark-700 p-8 text-center text-dark-500">

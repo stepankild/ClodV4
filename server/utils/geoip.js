@@ -6,8 +6,8 @@
 const cache = new Map();           // ip → { country, countryCode }
 const CACHE_TTL = 24 * 60 * 60_000; // 24 hours
 
-// Private / local IPs — skip lookup
-const PRIVATE_RE = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|fc|fd|fe80)/;
+// Private / local / CGN IPs — skip lookup
+const PRIVATE_RE = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|::1|fc|fd|fe80)/;
 
 /**
  * Resolve IP → { country, countryCode } or null.
