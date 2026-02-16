@@ -514,15 +514,15 @@ export default function Archives() {
                     )}
                   </div>
 
-                  {/* Quality + expand */}
+                  {/* Quality + detail link + expand */}
                   <div className="flex items-center gap-2 shrink-0">
                     <QualityDot quality={a.harvestData?.quality} />
                     <Link
                       to={`/archive/${a._id}`}
                       onClick={(e) => e.stopPropagation()}
-                      className="text-dark-500 hover:text-primary-400 text-xs transition"
+                      className="px-2.5 py-1 bg-primary-600/20 border border-primary-500/30 text-primary-400 hover:bg-primary-600/30 hover:text-primary-300 rounded-md text-xs font-medium transition"
                     >
-                      →
+                      Подробнее
                     </Link>
                     <svg
                       className={`w-4 h-4 text-dark-600 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -586,9 +586,9 @@ export default function Archives() {
                       <div className="mt-3">
                         <Link
                           to={`/archive/${a._id}`}
-                          className="text-primary-400 hover:text-primary-300 text-xs"
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary-600/20 border border-primary-500/30 text-primary-400 hover:bg-primary-600/30 hover:text-primary-300 rounded-lg text-xs font-medium transition"
                         >
-                          Подробнее →
+                          Открыть полный отчёт →
                         </Link>
                       </div>
                     </div>
