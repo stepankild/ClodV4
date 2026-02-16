@@ -145,9 +145,11 @@ const cycleArchiveSchema = new mongoose.Schema({
   // Данные о веге
   vegData: {
     transplantedToVegAt: Date,  // Когда пересадили в вегу
+    vegPlantsCount: Number,      // Сколько кустов ушло на вегу
     vegDaysTarget: Number,       // Планируемые дни веги
     vegDaysActual: Number,       // Фактические дни веги
     transplantedToFlowerAt: Date, // Когда пересадили на цвет
+    flowerPlantsCount: Number,   // Сколько кустов ушло на цвет
     notes: String
   },
   // Все выполненные задачи за цикл

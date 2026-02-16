@@ -286,7 +286,10 @@ export default function ArchiveDetail() {
                 <TimelineItem
                   date={veg.transplantedToVegAt}
                   label="Пересадка на вегу"
-                  description={veg.vegDaysTarget ? `План: ${veg.vegDaysTarget} дней` : null}
+                  description={[
+                    veg.vegPlantsCount ? `${veg.vegPlantsCount} кустов` : null,
+                    veg.vegDaysTarget ? `План: ${veg.vegDaysTarget} дней` : null
+                  ].filter(Boolean).join(' · ') || null}
                   icon="🌱"
                   color="green"
                 />
@@ -295,7 +298,10 @@ export default function ArchiveDetail() {
                 <TimelineItem
                   date={veg.transplantedToFlowerAt}
                   label="Пересадка на цвет"
-                  description={veg.vegDaysActual ? `Вега: ${veg.vegDaysActual} дней` : null}
+                  description={[
+                    veg.flowerPlantsCount ? `${veg.flowerPlantsCount} кустов` : null,
+                    veg.vegDaysActual ? `Вега: ${veg.vegDaysActual} дней` : null
+                  ].filter(Boolean).join(' · ') || null}
                   icon="🌸"
                   color="yellow"
                 />
@@ -504,7 +510,13 @@ export default function ArchiveDetail() {
             <Section title="Вегетация" icon="🌱">
               <div className="space-y-3">
                 <InfoRow label="Начало веги" value={formatDate(veg.transplantedToVegAt)} />
+                {veg.vegPlantsCount > 0 && (
+                  <InfoRow label="Кустов на вегу" value={`${veg.vegPlantsCount} шт`} />
+                )}
                 <InfoRow label="На цвет" value={formatDate(veg.transplantedToFlowerAt)} />
+                {veg.flowerPlantsCount > 0 && (
+                  <InfoRow label="Кустов на цвет" value={`${veg.flowerPlantsCount} шт`} highlight color="text-primary-400" />
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <InfoRow label="План" value={`${veg.vegDaysTarget || '—'} дней`} />
                   <InfoRow

@@ -255,9 +255,11 @@ export const harvestAndArchive = async (req, res) => {
 
       vegData = {
         transplantedToVegAt: vegBatch.transplantedToVegAt,
+        vegPlantsCount: vegBatch.initialQuantity || vegBatch.quantity || 0,
         vegDaysTarget: vegBatch.vegDaysTarget,
         vegDaysActual,
         transplantedToFlowerAt: vegBatch.transplantedToFlowerAt,
+        flowerPlantsCount: vegBatch.sentToFlowerCount || 0,
         notes: vegBatch.notes || ''
       };
 
