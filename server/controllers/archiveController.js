@@ -867,3 +867,49 @@ export const restoreArchive = async (req, res) => {
     res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
   }
 };
+
+// @desc    One-time migration: fix cloneData.quantity in existing archives
+// @route   POST /api/archive/fix-clone-counts
+export const fixCloneCounts = async (req, res) => {
+  try {
+    const archives = await CycleArchive.find({
+      cloneData: { $ne: null },
+      ...notDeleted
+    }).lean();
+
+    const results = [];
+    let fixed = 0;
+
+    for (const arc of archives) {
+      if (!arc.room) continue;
+
+      const veg = await VegBatch.findOne({ flowerRoom: arc.room })
+        .sort({ transplantedToFlowerAt: -1 })
+        .lean();
+
+      if (!veg) {
+        results.push({ room: arc.roomName, strain: arc.strain, status: 'no vegbatch' });
+        continue;
+      }
+
+      const correctCount = veg.sentToFlowerCount || veg.initialQuantity || veg.quantity || 0;
+      const correctStrains = (veg.sentToFlowerStrains?.length > 0) ? veg.sentToFlowerStrains : veg.strains || [];
+      const oldCount = arc.cloneData?.quantity;
+
+      if (correctCount && correctCount !== oldCount) {
+        const update = { 'cloneData.quantity': correctCount };
+        if (correctStrains.length > 0) update['cloneData.strains'] = correctStrains;
+        await CycleArchive.updateOne({ _id: arc._id }, { $set: update });
+        results.push({ room: arc.roomName, strain: arc.strain, old: oldCount, new: correctCount });
+        fixed++;
+      } else {
+        results.push({ room: arc.roomName, strain: arc.strain, count: oldCount, status: 'ok' });
+      }
+    }
+
+    res.json({ total: archives.length, fixed, results });
+  } catch (error) {
+    console.error('Fix clone counts error:', error);
+    res.status(500).json({ message: 'Ошибка миграции' });
+  }
+};

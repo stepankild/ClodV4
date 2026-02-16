@@ -10,7 +10,8 @@ import {
   updateArchive,
   deleteArchive,
   restoreArchive,
-  getRoomLogs
+  getRoomLogs,
+  fixCloneCounts
 } from '../controllers/archiveController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -33,5 +34,8 @@ router.post('/deleted/:id/restore', checkPermission('archive:delete'), restoreAr
 router.post('/harvest/:roomId', checkPermission('harvest:complete'), harvestAndArchive);
 router.put('/:id', checkPermission('archive:edit'), updateArchive);
 router.delete('/:id', checkPermission('archive:delete'), deleteArchive);
+
+// One-time migration
+router.post('/fix-clone-counts', checkPermission('archive:edit'), fixCloneCounts);
 
 export default router;
