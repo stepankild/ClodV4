@@ -868,10 +868,12 @@ export const restoreArchive = async (req, res) => {
   }
 };
 
-// @desc    One-time migration: fix cloneData.quantity in existing archives
+// @desc    Diagnose + fix cloneData.quantity in existing archives
 // @route   POST /api/archive/fix-clone-counts
 export const fixCloneCounts = async (req, res) => {
   try {
+    const { action } = req.body || {}; // action: 'diagnose' | 'fix'
+
     const archives = await CycleArchive.find({
       cloneData: { $ne: null },
       ...notDeleted
@@ -892,22 +894,44 @@ export const fixCloneCounts = async (req, res) => {
         continue;
       }
 
-      const correctCount = veg.sentToFlowerCount || veg.initialQuantity || veg.quantity || 0;
-      const correctStrains = (veg.sentToFlowerStrains?.length > 0) ? veg.sentToFlowerStrains : veg.strains || [];
-      const oldCount = arc.cloneData?.quantity;
+      // Диагностика — показать все возможные источники
+      const diag = {
+        room: arc.roomName,
+        strain: arc.strain,
+        archivePlantsCount: arc.plantsCount,
+        archiveCloneQty: arc.cloneData?.quantity,
+        veg: {
+          sentToFlowerCount: veg.sentToFlowerCount,
+          initialQuantity: veg.initialQuantity,
+          quantity: veg.quantity,
+          sentToFlowerStrains: veg.sentToFlowerStrains,
+          strains: veg.strains
+        }
+      };
 
-      if (correctCount && correctCount !== oldCount) {
-        const update = { 'cloneData.quantity': correctCount };
-        if (correctStrains.length > 0) update['cloneData.strains'] = correctStrains;
-        await CycleArchive.updateOne({ _id: arc._id }, { $set: update });
-        results.push({ room: arc.roomName, strain: arc.strain, old: oldCount, new: correctCount });
-        fixed++;
-      } else {
-        results.push({ room: arc.roomName, strain: arc.strain, count: oldCount, status: 'ok' });
+      if (veg.sourceCloneCut) {
+        const cc = await CloneCut.findById(veg.sourceCloneCut).lean();
+        diag.cloneCut = cc ? { quantity: cc.quantity, strains: cc.strains } : 'not found';
       }
+
+      if (action === 'fix') {
+        // Для клонов: берём plantsCount архива как самый надёжный источник
+        const correctCount = arc.plantsCount || veg.sentToFlowerCount || veg.initialQuantity || veg.quantity || 0;
+        const oldCount = arc.cloneData?.quantity;
+
+        if (correctCount && correctCount !== oldCount) {
+          await CycleArchive.updateOne({ _id: arc._id }, { $set: { 'cloneData.quantity': correctCount } });
+          diag.fixedTo = correctCount;
+          fixed++;
+        } else {
+          diag.status = 'already correct';
+        }
+      }
+
+      results.push(diag);
     }
 
-    res.json({ total: archives.length, fixed, results });
+    res.json({ total: archives.length, fixed, action: action || 'diagnose', results });
   } catch (error) {
     console.error('Fix clone counts error:', error);
     res.status(500).json({ message: 'Ошибка миграции' });
