@@ -4,8 +4,9 @@ import { parseUserAgent } from '../utils/parseUserAgent.js';
 import { geoipBatch } from '../utils/geoip.js';
 import { getClientIp } from '../utils/getClientIp.js';
 
-// Check if an IP is private/internal (not useful for GeoIP)
-const PRIVATE_IP_RE = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|::ffff:10\.|::ffff:172\.|::ffff:192\.168\.|fc|fd|fe80)/;
+// Check if an IP is private/internal/CGN (not useful for GeoIP)
+// Covers: 127.x, 10.x, 172.16-31.x, 192.168.x, 100.64-127.x (CGN RFC6598), IPv6 loopback/private
+const PRIVATE_IP_RE = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.|::1|::ffff:(10\.|172\.|192\.168\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)|fc|fd|fe80)/;
 
 // @desc    Get audit logs (paginated, filter by user, action, date)
 // @route   GET /api/audit-logs
@@ -174,10 +175,6 @@ export const getSessions = async (req, res) => {
       return ip;
     };
 
-    // DEBUG: log sample IPs to identify format stored in old audit entries
-    const sampleIps = activeSessions.slice(0, 3).map(s => s.ip);
-    console.log('[DEBUG getSessions] realIp:', realIp, '| sample session IPs:', sampleIps, '| fixIp test:', sampleIps.map(ip => ({ raw: ip, fixed: fixIp(ip) })));
-
     for (const s of activeSessions) { s.ip = fixIp(s.ip); }
     for (const h of loginHistory) { h.ip = fixIp(h.ip); }
 
@@ -199,14 +196,7 @@ export const getSessions = async (req, res) => {
       h.country = geo ? `${geo.countryCode}` : null;
     }
 
-    // DEBUG: include diagnostic info about IPs
-    const _debug = {
-      realIp,
-      sampleRawIps: sampleIps,
-      sampleFixedIps: sampleIps.map(fixIp),
-      privateIpRegex: PRIVATE_IP_RE.source,
-    };
-    res.json({ activeSessions, loginHistory, _debug });
+    res.json({ activeSessions, loginHistory });
   } catch (error) {
     console.error('Get sessions error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
