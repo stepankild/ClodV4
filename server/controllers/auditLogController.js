@@ -2,6 +2,10 @@ import AuditLog from '../models/AuditLog.js';
 import User from '../models/User.js';
 import { parseUserAgent } from '../utils/parseUserAgent.js';
 import { geoipBatch } from '../utils/geoip.js';
+import { getClientIp } from '../utils/getClientIp.js';
+
+// Check if an IP is private/internal (not useful for GeoIP)
+const PRIVATE_IP_RE = /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|::1|::ffff:10\.|::ffff:172\.|::ffff:192\.168\.|fc|fd|fe80)/;
 
 // @desc    Get audit logs (paginated, filter by user, action, date)
 // @route   GET /api/audit-logs
@@ -159,6 +163,19 @@ export const getSessions = async (req, res) => {
         isActive: isStillActive
       };
     });
+
+    // Fix legacy private IPs: old audit entries recorded Railway's internal IP.
+    // Replace with the real client IP from the current request (best effort).
+    const realIp = getClientIp(req);
+    const fixIp = (ip) => {
+      if (!ip || ip === '—') return realIp || '—';
+      const clean = ip.replace(/^::ffff:/, '');
+      if (PRIVATE_IP_RE.test(clean)) return realIp || ip;
+      return ip;
+    };
+
+    for (const s of activeSessions) { s.ip = fixIp(s.ip); }
+    for (const h of loginHistory) { h.ip = fixIp(h.ip); }
 
     // GeoIP: resolve countries for all unique IPs (non-blocking, cached)
     const allIps = [
