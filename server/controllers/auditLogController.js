@@ -174,6 +174,10 @@ export const getSessions = async (req, res) => {
       return ip;
     };
 
+    // DEBUG: log sample IPs to identify format stored in old audit entries
+    const sampleIps = activeSessions.slice(0, 3).map(s => s.ip);
+    console.log('[DEBUG getSessions] realIp:', realIp, '| sample session IPs:', sampleIps, '| fixIp test:', sampleIps.map(ip => ({ raw: ip, fixed: fixIp(ip) })));
+
     for (const s of activeSessions) { s.ip = fixIp(s.ip); }
     for (const h of loginHistory) { h.ip = fixIp(h.ip); }
 
