@@ -13,6 +13,7 @@ const cloneCutSchema = new mongoose.Schema({
   }],
   strain: { type: String, default: '' },
   quantity: { type: Number, default: 0 },
+  initialQuantity: { type: Number, default: null },
   isDone: { type: Boolean, default: false },
   notes: { type: String, default: '' },
   deletedAt: { type: Date, default: null }

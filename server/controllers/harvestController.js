@@ -274,30 +274,26 @@ export const completeSession = async (req, res) => {
           notes: vegBatch.notes || ''
         };
 
-        // Количество клонов для этого цикла: sentToFlowerCount > initialQuantity > vegBatch.quantity
-        const cycleCloneCount = vegBatch.sentToFlowerCount
-          || vegBatch.initialQuantity
-          || vegBatch.quantity
-          || 0;
-        const cycleCloneStrains = (vegBatch.sentToFlowerStrains?.length > 0)
-          ? vegBatch.sentToFlowerStrains
-          : vegBatch.strains || [];
-
         if (vegBatch.sourceCloneCut) {
           const cloneCut = await CloneCut.findById(vegBatch.sourceCloneCut);
           if (cloneCut) {
+            // Количество изначально нарезанных клонов
+            const originalCutQuantity = cloneCut.initialQuantity
+              || (cloneCut.quantity + (vegBatch.initialQuantity || vegBatch.quantity || 0))
+              || cloneCut.quantity
+              || 0;
             cloneData = {
               cutDate: cloneCut.cutDate,
-              quantity: cycleCloneCount || cloneCut.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
-              strains: cycleCloneStrains.length > 0 ? cycleCloneStrains : (cloneCut.strains || []),
+              quantity: originalCutQuantity,
+              strains: cloneCut.strains || [],
               notes: cloneCut.notes || ''
             };
           }
         } else {
           cloneData = {
             cutDate: vegBatch.cutDate,
-            quantity: cycleCloneCount || vegBatch.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
-            strains: cycleCloneStrains,
+            quantity: vegBatch.initialQuantity || vegBatch.quantity || 0,
+            strains: vegBatch.strains || [],
             notes: ''
           };
         }
