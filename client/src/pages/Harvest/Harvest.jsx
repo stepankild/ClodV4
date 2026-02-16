@@ -124,7 +124,7 @@ const Harvest = () => {
       const res = await harvestService.addPlant(session._id, num, weight);
       const updated = res?.session ?? res;
       setSession(updated);
-      setPlantNumber('');
+      setPlantNumber(String(parseInt(num, 10) + 1));
       setManualWeight('');
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка записи куста');
