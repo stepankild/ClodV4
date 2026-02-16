@@ -455,6 +455,12 @@ const AuditLog = () => {
                             <span className="text-dark-500">Сессия</span>
                             <span className={`font-medium ${s.isOnline ? 'text-green-400' : 'text-dark-300'}`}>{formatDuration(s.duration)}</span>
                           </div>
+                          {s.totalTime > 0 && (
+                            <div className="flex justify-between">
+                              <span className="text-dark-500">Всего в системе</span>
+                              <span className="text-primary-400 font-medium">{formatDuration(s.totalTime)}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}

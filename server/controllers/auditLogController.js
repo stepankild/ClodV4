@@ -165,6 +165,54 @@ export const getSessions = async (req, res) => {
       };
     });
 
+    // 6. Total time spent per user (all sessions ever)
+    const allUserIds = [...new Set([
+      ...activeSessions.map(s => s.userId?.toString()),
+      ...loginHistory.map(h => h.userId)
+    ].filter(Boolean))];
+
+    if (allUserIds.length > 0) {
+      // Get ALL logins and logouts for these users
+      const [allLogins, allLogouts] = await Promise.all([
+        AuditLog.find({ action: 'auth.login', user: { $in: allUserIds } })
+          .sort({ createdAt: 1 }).select('user createdAt').lean(),
+        AuditLog.find({ action: 'auth.logout', user: { $in: allUserIds } })
+          .sort({ createdAt: 1 }).select('user createdAt').lean(),
+      ]);
+
+      // For each user, pair logins with logouts and sum durations
+      const totalTimeMap = {};
+      for (const uid of allUserIds) {
+        const uLogins = allLogins.filter(l => l.user?.toString() === uid);
+        const uLogouts = allLogouts.filter(l => l.user?.toString() === uid);
+        let total = 0;
+        for (const login of uLogins) {
+          const loginTime = new Date(login.createdAt);
+          // Find next logout after this login
+          const logout = uLogouts.find(lo => new Date(lo.createdAt) > loginTime);
+          if (logout) {
+            total += new Date(logout.createdAt) - loginTime;
+            // Remove used logout so it's not matched again
+            const idx = uLogouts.indexOf(logout);
+            uLogouts.splice(idx, 1);
+          } else {
+            // No logout — if user is currently active, count up to now
+            const la = activityMap[uid];
+            if (la && new Date(la) >= TWO_MINUTES_AGO) {
+              total += now - loginTime;
+            }
+            // else: session ended without logout (browser closed), skip
+          }
+        }
+        totalTimeMap[uid] = total;
+      }
+
+      // Attach to activeSessions and loginHistory
+      for (const s of activeSessions) {
+        s.totalTime = totalTimeMap[s.userId?.toString()] || 0;
+      }
+    }
+
     // Fix legacy private IPs: old audit entries recorded Railway's internal IP.
     // Replace with the real client IP from the current request (best effort).
     const realIp = getClientIp(req);
