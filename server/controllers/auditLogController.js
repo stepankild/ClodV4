@@ -180,28 +180,40 @@ export const getSessions = async (req, res) => {
           .sort({ createdAt: 1 }).select('user createdAt').lean(),
       ]);
 
-      // For each user, pair logins with logouts and sum durations
+      // For each user, pair logins with logouts and sum durations.
+      // Session without logout ends at: next login, or max 8h, or now (if last & online).
+      const MAX_SESSION_MS = 8 * 60 * 60_000; // 8 hours cap for orphan sessions
       const totalTimeMap = {};
       for (const uid of allUserIds) {
         const uLogins = allLogins.filter(l => l.user?.toString() === uid);
-        const uLogouts = allLogouts.filter(l => l.user?.toString() === uid);
+        const uLogouts = [...allLogouts.filter(l => l.user?.toString() === uid)];
         let total = 0;
-        for (const login of uLogins) {
-          const loginTime = new Date(login.createdAt);
-          // Find next logout after this login
-          const logout = uLogouts.find(lo => new Date(lo.createdAt) > loginTime);
-          if (logout) {
-            total += new Date(logout.createdAt) - loginTime;
-            // Remove used logout so it's not matched again
-            const idx = uLogouts.indexOf(logout);
-            uLogouts.splice(idx, 1);
-          } else {
-            // No logout — if user is currently active, count up to now
+        for (let i = 0; i < uLogins.length; i++) {
+          const loginTime = new Date(uLogins[i].createdAt);
+          const nextLoginTime = i < uLogins.length - 1
+            ? new Date(uLogins[i + 1].createdAt)
+            : null;
+
+          // Find next logout after this login (but before next login if exists)
+          const logoutIdx = uLogouts.findIndex(lo => {
+            const loTime = new Date(lo.createdAt);
+            return loTime > loginTime && (!nextLoginTime || loTime <= nextLoginTime);
+          });
+
+          if (logoutIdx !== -1) {
+            total += new Date(uLogouts[logoutIdx].createdAt) - loginTime;
+            uLogouts.splice(logoutIdx, 1);
+          } else if (!nextLoginTime) {
+            // Last login, no logout — if online now, count to now
             const la = activityMap[uid];
             if (la && new Date(la) >= TWO_MINUTES_AGO) {
-              total += now - loginTime;
+              total += Math.min(now - loginTime, MAX_SESSION_MS);
             }
-            // else: session ended without logout (browser closed), skip
+            // else: closed without logout, skip
+          } else {
+            // No logout but there's a next login — cap at next login or 8h
+            const gap = nextLoginTime - loginTime;
+            total += Math.min(gap, MAX_SESSION_MS);
           }
         }
         totalTimeMap[uid] = total;
