@@ -274,21 +274,30 @@ export const completeSession = async (req, res) => {
           notes: vegBatch.notes || ''
         };
 
+        // Количество клонов для этого цикла: sentToFlowerCount > initialQuantity > vegBatch.quantity
+        const cycleCloneCount = vegBatch.sentToFlowerCount
+          || vegBatch.initialQuantity
+          || vegBatch.quantity
+          || 0;
+        const cycleCloneStrains = (vegBatch.sentToFlowerStrains?.length > 0)
+          ? vegBatch.sentToFlowerStrains
+          : vegBatch.strains || [];
+
         if (vegBatch.sourceCloneCut) {
           const cloneCut = await CloneCut.findById(vegBatch.sourceCloneCut);
           if (cloneCut) {
             cloneData = {
               cutDate: cloneCut.cutDate,
-              quantity: cloneCut.quantity || cloneCut.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
-              strains: cloneCut.strains || [],
+              quantity: cycleCloneCount || cloneCut.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
+              strains: cycleCloneStrains.length > 0 ? cycleCloneStrains : (cloneCut.strains || []),
               notes: cloneCut.notes || ''
             };
           }
         } else {
           cloneData = {
             cutDate: vegBatch.cutDate,
-            quantity: vegBatch.quantity || vegBatch.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
-            strains: vegBatch.strains || [],
+            quantity: cycleCloneCount || vegBatch.strains?.reduce((sum, s) => sum + (s.quantity || 0), 0) || 0,
+            strains: cycleCloneStrains,
             notes: ''
           };
         }
