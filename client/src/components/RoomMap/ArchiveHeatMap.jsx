@@ -205,6 +205,7 @@ export default function ArchiveHeatMap({ harvestMapData }) {
     sortedWeights,
     globalStats,
     rowStatsArr,
+    strainBreakdown,
     histogram,
   } = useMemo(() => {
     const pm = {};
@@ -223,6 +224,26 @@ export default function ArchiveHeatMap({ harvestMapData }) {
         stats: calcStats(rw),
       };
     });
+
+    // Strain breakdown — count plants and sum weight per strain
+    const strainMap = {};
+    plants.forEach(p => {
+      const s = p.strain || 'Без сорта';
+      if (!strainMap[s]) strainMap[s] = { count: 0, totalWeight: 0, weights: [] };
+      strainMap[s].count++;
+      if (p.wetWeight > 0) {
+        strainMap[s].totalWeight += p.wetWeight;
+        strainMap[s].weights.push(p.wetWeight);
+      }
+    });
+    const sb = Object.entries(strainMap)
+      .map(([name, data]) => ({
+        name,
+        count: data.count,
+        totalWeight: data.totalWeight,
+        avgWeight: data.weights.length ? Math.round(data.totalWeight / data.weights.length) : 0,
+      }))
+      .sort((a, b) => b.count - a.count);
 
     // Histogram (5 buckets)
     const hist = { buckets: [], maxBucket: 0 };
@@ -244,7 +265,7 @@ export default function ArchiveHeatMap({ harvestMapData }) {
       hist.maxBucket = Math.max(...bkts.map(b => b.count));
     }
 
-    return { posMap: pm, sortedWeights: sw, globalStats: gs, rowStatsArr: rsa, histogram: hist };
+    return { posMap: pm, sortedWeights: sw, globalStats: gs, rowStatsArr: rsa, strainBreakdown: sb, histogram: hist };
   }, [customRows, plants]);
 
   if (!customRows.length || !plants.length) return null;
@@ -354,6 +375,32 @@ export default function ArchiveHeatMap({ harvestMapData }) {
           </div>
           <div className="flex justify-center">
             <span className="text-[10px] text-dark-500">лёгкий → тяжёлый</span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Strain breakdown ── */}
+      {strainBreakdown.length > 1 && (
+        <div className="space-y-1.5">
+          <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+            <span className="text-base">🌿</span> По сортам
+          </h4>
+          <div className="flex flex-wrap gap-2">
+            {strainBreakdown.map((s, i) => (
+              <div
+                key={i}
+                className="bg-dark-700/50 rounded-lg px-3 py-1.5 flex items-baseline gap-2"
+              >
+                <span className="text-white text-xs font-medium">{s.name}</span>
+                <span className="text-dark-400 text-[10px]">{s.count} кустов</span>
+                {s.avgWeight > 0 && (
+                  <span className="text-dark-500 text-[10px]">ø {s.avgWeight}г</span>
+                )}
+                {s.totalWeight > 0 && (
+                  <span className="text-dark-500 text-[10px]">Σ{s.totalWeight}г</span>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       )}
