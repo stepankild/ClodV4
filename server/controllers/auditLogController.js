@@ -1,6 +1,7 @@
 import AuditLog from '../models/AuditLog.js';
 import User from '../models/User.js';
 import { parseUserAgent } from '../utils/parseUserAgent.js';
+import { geoipBatch } from '../utils/geoip.js';
 
 // @desc    Get audit logs (paginated, filter by user, action, date)
 // @route   GET /api/audit-logs
@@ -158,6 +159,24 @@ export const getSessions = async (req, res) => {
         isActive: isStillActive
       };
     });
+
+    // GeoIP: resolve countries for all unique IPs (non-blocking, cached)
+    const allIps = [
+      ...activeSessions.map(s => s.ip),
+      ...loginHistory.map(h => h.ip)
+    ].filter(ip => ip && ip !== '—');
+
+    const geoMap = await geoipBatch(allIps);
+
+    // Attach country to sessions
+    for (const s of activeSessions) {
+      const geo = geoMap.get(s.ip);
+      s.country = geo ? `${geo.countryCode}` : null;
+    }
+    for (const h of loginHistory) {
+      const geo = geoMap.get(h.ip);
+      h.country = geo ? `${geo.countryCode}` : null;
+    }
 
     res.json({ activeSessions, loginHistory });
   } catch (error) {

@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Role from '../models/Role.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import AuditLog from '../models/AuditLog.js';
+import { getClientIp } from '../utils/getClientIp.js';
 
 // @desc    Register new user (requires admin approval)
 // @route   POST /api/auth/register
@@ -91,7 +92,7 @@ export const login = async (req, res) => {
         entityType: 'User',
         entityId: user._id,
         details: { email: user.email },
-        ip: req.ip || req.connection?.remoteAddress || '',
+        ip: getClientIp(req),
         userAgent: req.get?.('user-agent') || ''
       });
     } catch (_) { /* не блокируем логин из-за ошибки лога */ }
@@ -176,7 +177,7 @@ export const logout = async (req, res) => {
           entityType: 'User',
           entityId: user._id,
           details: { email: user.email },
-          ip: req.ip || req.connection?.remoteAddress || '',
+          ip: getClientIp(req),
           userAgent: req.get?.('user-agent') || ''
         });
       } catch (_) {}
@@ -223,7 +224,7 @@ export const changePassword = async (req, res) => {
         entityType: 'User',
         entityId: user._id,
         details: { email: user.email },
-        ip: req.ip || req.connection?.remoteAddress || '',
+        ip: getClientIp(req),
         userAgent: req.get?.('user-agent') || ''
       });
     } catch (_) {}
