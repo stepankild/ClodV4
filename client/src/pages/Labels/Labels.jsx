@@ -29,26 +29,25 @@ function migrateLayout(layout) {
   return { customRows: [], plantPositions: [] };
 }
 
-// ── Label presets ──
-const PRESETS = [
-  { name: '24/page (65x35mm)', cols: 3, labelW: 65, labelH: 35 },
-  { name: '14/page (95x20mm) — bracelet', cols: 2, labelW: 95, labelH: 20 },
-  { name: '10/page (190x27mm) — wide', cols: 1, labelW: 190, labelH: 27 },
-  { name: '7/page (190x38mm) — large', cols: 1, labelW: 190, labelH: 38 },
-  { name: 'Custom', cols: 0, labelW: 0, labelH: 0 },
+// ── Sheet sizes ──
+const SHEET_SIZES = [
+  { name: 'A4', w: 210, h: 297 },
+  { name: 'A5', w: 148, h: 210 },
+  { name: 'Letter', w: 216, h: 279 },
 ];
 
-const PAGE_H = 297;
 const MARGIN = 5;
 const GAP = 2;
 
-function calcLayout(cols, labelH) {
-  const rows = Math.floor((PAGE_H - MARGIN * 2 + GAP) / (labelH + GAP));
-  return { rows, perPage: cols * rows };
+function calcFromSheet(sheetW, sheetH, cols, count) {
+  const rows = Math.ceil(count / cols);
+  const labelW = Math.floor((sheetW - MARGIN * 2 - GAP * (cols - 1)) / cols);
+  const labelH = Math.floor((sheetH - MARGIN * 2 - GAP * (rows - 1)) / rows);
+  return { labelW, labelH, rows, perPage: cols * rows };
 }
 
 // ── PDF generation ──
-async function generateLabelsPDF(room, plants, { cols, labelW, labelH }) {
+async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, sheetH, perPage }) {
   const [{ jsPDF }, { RobotoRegular }, { RobotoBold }, JsBarcodeModule] = await Promise.all([
     import('jspdf'),
     import('../../fonts/Roboto-Regular'),
@@ -57,14 +56,12 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH }) {
   ]);
   const JsBarcode = JsBarcodeModule.default || JsBarcodeModule;
 
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: [sheetW, sheetH] });
   doc.addFileToVFS('Roboto-Regular.ttf', RobotoRegular);
   doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
   doc.addFileToVFS('Roboto-Bold.ttf', RobotoBold);
   doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
   doc.setFont('Roboto', 'normal');
-
-  const { perPage } = calcLayout(cols, labelH);
   const PAD = 2;
   const startDateStr = formatDateShort(room.startDate);
   const harvestDateStr = formatDateShort(room.expectedHarvestDate);
@@ -150,17 +147,22 @@ const Labels = () => {
   const [selectedPlants, setSelectedPlants] = useState(new Set());
   const [generating, setGenerating] = useState(false);
 
-  // Label format
-  const [presetIdx, setPresetIdx] = useState(1);
-  const [customCols, setCustomCols] = useState(2);
-  const [customW, setCustomW] = useState(95);
-  const [customH, setCustomH] = useState(20);
+  // Label format — sheet-based
+  const [sheetIdx, setSheetIdx] = useState(0); // A4 default
+  const [sheetW, setSheetW] = useState(SHEET_SIZES[0].w);
+  const [sheetH, setSheetH] = useState(SHEET_SIZES[0].h);
+  const [cols, setCols] = useState(1);
+  const [countPerSheet, setCountPerSheet] = useState(10);
 
-  const isCustom = presetIdx === PRESETS.length - 1;
-  const activeCols = isCustom ? customCols : PRESETS[presetIdx].cols;
-  const activeLabelW = isCustom ? customW : PRESETS[presetIdx].labelW;
-  const activeLabelH = isCustom ? customH : PRESETS[presetIdx].labelH;
-  const layout = calcLayout(activeCols, activeLabelH);
+  const handleSheetChange = (idx) => {
+    setSheetIdx(idx);
+    if (idx < SHEET_SIZES.length) {
+      setSheetW(SHEET_SIZES[idx].w);
+      setSheetH(SHEET_SIZES[idx].h);
+    }
+  };
+
+  const layout = calcFromSheet(sheetW, sheetH, cols, countPerSheet);
 
   useEffect(() => { loadRooms(); }, []);
 
@@ -258,7 +260,10 @@ const Labels = () => {
     const plants = allPlants.filter(p => selectedPlants.has(p.number));
     try {
       setGenerating(true);
-      await generateLabelsPDF(selectedRoom, plants, { cols: activeCols, labelW: activeLabelW, labelH: activeLabelH });
+      await generateLabelsPDF(selectedRoom, plants, {
+        cols, labelW: layout.labelW, labelH: layout.labelH,
+        sheetW, sheetH, perPage: layout.perPage
+      });
     } catch (err) { console.error(err); setError('Ошибка генерации PDF'); }
     finally { setGenerating(false); }
   };
@@ -388,43 +393,64 @@ const Labels = () => {
 
         {/* Label format settings */}
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-4">
-          <div className="text-xs text-dark-400 font-medium mb-3">Формат этикетки</div>
+          <div className="text-xs text-dark-400 font-medium mb-3">Настройки печати</div>
+
+          {/* Sheet size */}
           <div className="flex flex-wrap gap-2 mb-3">
-            {PRESETS.map((p, i) => (
-              <button key={i} onClick={() => setPresetIdx(i)}
+            {SHEET_SIZES.map((s, i) => (
+              <button key={i} onClick={() => handleSheetChange(i)}
                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition border ${
-                  presetIdx === i
+                  sheetIdx === i
                     ? 'bg-primary-600/30 border-primary-500/50 text-primary-300'
                     : 'bg-dark-700 border-dark-600 text-dark-400 hover:border-dark-500'
-                }`}>{p.name}</button>
+                }`}>{s.name} ({s.w}x{s.h})</button>
             ))}
+            <button onClick={() => handleSheetChange(SHEET_SIZES.length)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition border ${
+                sheetIdx >= SHEET_SIZES.length
+                  ? 'bg-primary-600/30 border-primary-500/50 text-primary-300'
+                  : 'bg-dark-700 border-dark-600 text-dark-400 hover:border-dark-500'
+              }`}>Свой размер</button>
           </div>
-          {isCustom && (
-            <div className="flex flex-wrap gap-4 items-end">
-              <label className="text-xs">
-                <span className="text-dark-400 block mb-1">Колонок</span>
-                <input type="number" min={1} max={5} value={customCols}
-                  onChange={e => setCustomCols(Math.max(1, Math.min(5, +e.target.value || 1)))}
-                  className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-              </label>
-              <label className="text-xs">
-                <span className="text-dark-400 block mb-1">Ширина (мм)</span>
-                <input type="number" min={20} max={200} value={customW}
-                  onChange={e => setCustomW(Math.max(20, Math.min(200, +e.target.value || 20)))}
-                  className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-              </label>
-              <label className="text-xs">
-                <span className="text-dark-400 block mb-1">Высота (мм)</span>
-                <input type="number" min={10} max={100} value={customH}
-                  onChange={e => setCustomH(Math.max(10, Math.min(100, +e.target.value || 10)))}
-                  className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-              </label>
-            </div>
-          )}
-          <div className="mt-2 text-xs text-dark-500">
-            {activeCols} col x {layout.rows} rows = <span className="text-dark-300 font-medium">{layout.perPage} шт/стр</span>
-            <span className="ml-3">({activeLabelW}x{activeLabelH} мм)</span>
-            {selectedPlants.size > 0 && <span className="ml-3">= {Math.ceil(selectedPlants.size / layout.perPage)} стр.</span>}
+
+          <div className="flex flex-wrap gap-4 items-end">
+            {sheetIdx >= SHEET_SIZES.length && (
+              <>
+                <label className="text-xs">
+                  <span className="text-dark-400 block mb-1">Ширина листа (мм)</span>
+                  <input type="number" min={50} max={500} value={sheetW}
+                    onChange={e => setSheetW(Math.max(50, Math.min(500, +e.target.value || 50)))}
+                    className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                </label>
+                <label className="text-xs">
+                  <span className="text-dark-400 block mb-1">Высота листа (мм)</span>
+                  <input type="number" min={50} max={500} value={sheetH}
+                    onChange={e => setSheetH(Math.max(50, Math.min(500, +e.target.value || 50)))}
+                    className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                </label>
+              </>
+            )}
+            <label className="text-xs">
+              <span className="text-dark-400 block mb-1">Колонок</span>
+              <input type="number" min={1} max={5} value={cols}
+                onChange={e => setCols(Math.max(1, Math.min(5, +e.target.value || 1)))}
+                className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+            </label>
+            <label className="text-xs">
+              <span className="text-dark-400 block mb-1">Браслетов на лист</span>
+              <input type="number" min={1} max={50} value={countPerSheet}
+                onChange={e => setCountPerSheet(Math.max(1, Math.min(50, +e.target.value || 1)))}
+                className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+            </label>
+          </div>
+
+          <div className="mt-3 text-xs text-dark-500">
+            Размер этикетки: <span className="text-dark-300 font-medium">{layout.labelW}x{layout.labelH} мм</span>
+            <span className="mx-2">|</span>
+            {cols} x {layout.rows} = <span className="text-dark-300 font-medium">{layout.perPage} шт/лист</span>
+            {selectedPlants.size > 0 && (
+              <span className="ml-2">= {Math.ceil(selectedPlants.size / layout.perPage)} лист.</span>
+            )}
           </div>
         </div>
 
