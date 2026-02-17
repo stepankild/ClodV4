@@ -83,40 +83,56 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
     doc.rect(x, y, labelW, labelH);
     doc.setLineDashPattern([], 0);
 
+    // Barcode — always centered
+    const canvas = document.createElement('canvas');
+    JsBarcode(canvas, String(plant.number), {
+      format: 'CODE128', width: 2, height: 50,
+      displayValue: true, fontSize: 14, margin: 2, font: 'monospace'
+    });
+    const barcodeDataUrl = canvas.toDataURL('image/png');
+
     if (isTiny) {
+      // Single-row: text left, barcode center, #N right
       const textY = y + labelH / 2 + 1;
+      const barcodeW = Math.min(35, labelW * 0.3);
+      const barcodeH = labelH - PAD * 2;
+      const barcodeX = x + (labelW - barcodeW) / 2;
+
       doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
-      const roomLabel = `Room: ${room.name}`;
-      doc.text(roomLabel, x + PAD, textY);
-      const roomW = doc.getTextWidth(roomLabel) + 2;
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
-      doc.text(`${plant.strain || room.strain || ''} | ${startDateStr} - ${harvestDateStr}`, x + PAD + roomW, textY);
+      doc.text(`Room: ${room.name}`, x + PAD, textY - 2);
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(5.5); doc.setTextColor(80, 80, 80);
+      doc.text(`${plant.strain || room.strain || ''} | ${startDateStr}-${harvestDateStr}`, x + PAD, textY + 2);
+
+      doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD, barcodeW, barcodeH);
+
       doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
       const numText = `#${plant.number}`;
-      const barcodeW = Math.min(35, labelW * 0.25);
-      const barcodeX = x + labelW - PAD - barcodeW;
-      doc.text(numText, barcodeX - doc.getTextWidth(numText) - 3, textY);
-      const canvas = document.createElement('canvas');
-      JsBarcode(canvas, String(plant.number), { format: 'CODE128', width: 1, height: 30, displayValue: false, margin: 1 });
-      doc.addImage(canvas.toDataURL('image/png'), 'PNG', barcodeX, y + PAD, barcodeW, labelH - PAD * 2);
+      doc.text(numText, x + labelW - PAD - doc.getTextWidth(numText), textY);
+
     } else if (isCompact) {
-      const barcodeW = Math.min(40, labelW * 0.3);
-      const textAreaW = labelW - barcodeW - PAD * 2 - 2;
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+      // Bracelet: text left, barcode centered, #N top-right
+      const barcodeW = Math.min(45, labelW * 0.3);
+      const barcodeH = labelH - PAD * 2;
+      const barcodeX = x + (labelW - barcodeW) / 2;
+
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
       doc.text(`Room: ${room.name || '—'}`, x + PAD, y + PAD + 4);
-      const numLabel = `#${plant.number}`;
-      doc.text(numLabel, x + PAD + textAreaW - doc.getTextWidth(numLabel), y + PAD + 4);
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(6.5); doc.setTextColor(80, 80, 80);
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
       let st = plant.strain || room.strain || '—';
-      if (doc.getTextWidth(st) > textAreaW) { while (doc.getTextWidth(st + '..') > textAreaW && st.length > 5) st = st.slice(0, -1); st += '..'; }
+      const maxStW = barcodeX - x - PAD * 2;
+      if (doc.getTextWidth(st) > maxStW) { while (doc.getTextWidth(st + '..') > maxStW && st.length > 5) st = st.slice(0, -1); st += '..'; }
       doc.text(st, x + PAD, y + PAD + 8.5);
-      doc.setFontSize(6);
+      doc.setFontSize(5.5);
       doc.text(`${startDateStr} - ${harvestDateStr}`, x + PAD, y + PAD + 12.5);
-      const barcodeX = x + labelW - PAD - barcodeW;
-      const canvas = document.createElement('canvas');
-      JsBarcode(canvas, String(plant.number), { format: 'CODE128', width: 1, height: 40, displayValue: true, fontSize: 12, margin: 2, font: 'monospace' });
-      doc.addImage(canvas.toDataURL('image/png'), 'PNG', barcodeX, y + PAD, barcodeW, labelH - PAD * 2);
+
+      doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD, barcodeW, barcodeH);
+
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+      const numLabel = `#${plant.number}`;
+      doc.text(numLabel, x + labelW - PAD - doc.getTextWidth(numLabel), y + PAD + 4);
+
     } else {
+      // Standard: text top, barcode centered below
       doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
       doc.text(`Room: ${room.name || '—'}`, x + PAD, y + PAD + 3.5);
       const pl = `#${plant.number}`;
@@ -128,10 +144,11 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       if (doc.getTextWidth(st) > maxTW) { while (doc.getTextWidth(st + '...') > maxTW && st.length > 10) st = st.slice(0, -1); st += '...'; }
       doc.text(st, x + PAD, y + PAD + 12);
       doc.text(`Harvest: ${harvestDateStr}`, x + PAD, y + PAD + 16);
-      const barcodeW = labelW - PAD * 2 - 4;
-      const canvas = document.createElement('canvas');
-      JsBarcode(canvas, String(plant.number), { format: 'CODE128', width: 2, height: 40, displayValue: true, fontSize: 14, margin: 2, font: 'monospace' });
-      doc.addImage(canvas.toDataURL('image/png'), 'PNG', x + (labelW - barcodeW) / 2, y + PAD + 18, barcodeW, Math.max(labelH - 22 - PAD, 8));
+
+      const barcodeW = Math.min(labelW - PAD * 2 - 4, labelW * 0.6);
+      const barcodeH = Math.max(labelH - 22 - PAD, 8);
+      const barcodeX = x + (labelW - barcodeW) / 2;
+      doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD + 18, barcodeW, barcodeH);
     }
   }
 
