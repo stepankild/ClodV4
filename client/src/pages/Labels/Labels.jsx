@@ -1,13 +1,54 @@
 import { useState, useEffect, useMemo } from 'react';
 import { roomService } from '../../services/roomService';
+import { STRAIN_COLORS } from '../../components/RoomMap/PlantCell';
 
-const formatDate = (date) => {
+const formatDateShort = (date) => {
   if (!date) return '—';
-  return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return new Date(date).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: '2-digit' });
 };
 
+// ── Helpers ──
+function getStrainForPlant(plantNumber, flowerStrains) {
+  if (!flowerStrains || !plantNumber) return null;
+  const idx = flowerStrains.findIndex(
+    fs => plantNumber >= fs.startNumber && plantNumber <= fs.endNumber
+  );
+  if (idx === -1) return null;
+  return { ...flowerStrains[idx], strainIndex: idx };
+}
+
+function migrateLayout(layout) {
+  if (!layout) return { customRows: [], plantPositions: [] };
+  if (layout.customRows?.length > 0) {
+    const rows = layout.customRows.map(r => ({
+      name: r.name || '', cols: r.cols || 4, rows: r.rows || 1,
+      fillDirection: r.fillDirection || layout.fillDirection || 'topDown'
+    }));
+    return { customRows: rows, plantPositions: layout.plantPositions || [] };
+  }
+  return { customRows: [], plantPositions: [] };
+}
+
+// ── Label presets ──
+const PRESETS = [
+  { name: '24/page (65x35mm)', cols: 3, labelW: 65, labelH: 35 },
+  { name: '14/page (95x20mm) — bracelet', cols: 2, labelW: 95, labelH: 20 },
+  { name: '10/page (190x27mm) — wide', cols: 1, labelW: 190, labelH: 27 },
+  { name: '7/page (190x38mm) — large', cols: 1, labelW: 190, labelH: 38 },
+  { name: 'Custom', cols: 0, labelW: 0, labelH: 0 },
+];
+
+const PAGE_H = 297;
+const MARGIN = 5;
+const GAP = 2;
+
+function calcLayout(cols, labelH) {
+  const rows = Math.floor((PAGE_H - MARGIN * 2 + GAP) / (labelH + GAP));
+  return { rows, perPage: cols * rows };
+}
+
 // ── PDF generation ──
-async function generateLabelsPDF(room, plants) {
+async function generateLabelsPDF(room, plants, { cols, labelW, labelH }) {
   const [{ jsPDF }, { RobotoRegular }, { RobotoBold }, JsBarcodeModule] = await Promise.all([
     import('jspdf'),
     import('../../fonts/Roboto-Regular'),
@@ -17,97 +58,86 @@ async function generateLabelsPDF(room, plants) {
   const JsBarcode = JsBarcodeModule.default || JsBarcodeModule;
 
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-
-  // Cyrillic fonts
   doc.addFileToVFS('Roboto-Regular.ttf', RobotoRegular);
   doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
   doc.addFileToVFS('Roboto-Bold.ttf', RobotoBold);
   doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
   doc.setFont('Roboto', 'normal');
 
-  // Layout: 3 cols × 8 rows = 24 per page
-  const PAGE_W = 210;
-  const PAGE_H = 297;
-  const MARGIN = 7;
-  const COL_GAP = 2;
-  const ROW_GAP = 2;
-  const COLS = 3;
-  const ROWS = 8;
-  const LABEL_W = (PAGE_W - MARGIN * 2 - COL_GAP * (COLS - 1)) / COLS; // ~64.7mm
-  const LABEL_H = (PAGE_H - MARGIN * 2 - ROW_GAP * (ROWS - 1)) / ROWS; // ~33.6mm
-  const PER_PAGE = COLS * ROWS;
+  const { perPage } = calcLayout(cols, labelH);
   const PAD = 2;
-
-  const startDateStr = formatDate(room.startDate);
-  const harvestDateStr = formatDate(room.expectedHarvestDate);
+  const startDateStr = formatDateShort(room.startDate);
+  const harvestDateStr = formatDateShort(room.expectedHarvestDate);
+  const isCompact = labelH < 25;
+  const isTiny = labelH < 18;
 
   for (let i = 0; i < plants.length; i++) {
-    if (i > 0 && i % PER_PAGE === 0) doc.addPage();
-
-    const idx = i % PER_PAGE;
-    const col = idx % COLS;
-    const row = Math.floor(idx / COLS);
-    const x = MARGIN + col * (LABEL_W + COL_GAP);
-    const y = MARGIN + row * (LABEL_H + ROW_GAP);
-
+    if (i > 0 && i % perPage === 0) doc.addPage();
+    const idx = i % perPage;
+    const col = idx % cols;
+    const row = Math.floor(idx / cols);
+    const x = MARGIN + col * (labelW + GAP);
+    const y = MARGIN + row * (labelH + GAP);
     const plant = plants[i];
 
-    // Dashed border for cutting
+    // Dashed cutting border
     doc.setDrawColor(180, 180, 180);
     doc.setLineDashPattern([1.5, 1.5], 0);
-    doc.rect(x, y, LABEL_W, LABEL_H);
+    doc.rect(x, y, labelW, labelH);
     doc.setLineDashPattern([], 0);
 
-    // Line 1: Room name (left) + Plant number (right)
-    doc.setFont('Roboto', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(30, 30, 30);
-    doc.text(room.name || 'Комната', x + PAD, y + PAD + 3.5);
-    const plantLabel = `#${plant.number}`;
-    const labelWidth = doc.getTextWidth(plantLabel);
-    doc.text(plantLabel, x + LABEL_W - PAD - labelWidth, y + PAD + 3.5);
-
-    // Line 2: Start date
-    doc.setFont('Roboto', 'normal');
-    doc.setFontSize(7);
-    doc.setTextColor(80, 80, 80);
-    doc.text(`Старт: ${startDateStr}`, x + PAD, y + PAD + 8);
-
-    // Line 3: Strain
-    let strainText = `Сорт: ${plant.strain || room.strain || '—'}`;
-    const maxTextW = LABEL_W - PAD * 2;
-    if (doc.getTextWidth(strainText) > maxTextW) {
-      while (doc.getTextWidth(strainText + '...') > maxTextW && strainText.length > 10) {
-        strainText = strainText.slice(0, -1);
-      }
-      strainText += '...';
+    if (isTiny) {
+      const textY = y + labelH / 2 + 1;
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
+      doc.text(room.name, x + PAD, textY);
+      const roomW = doc.getTextWidth(room.name) + 2;
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
+      doc.text(`${plant.strain || room.strain || ''} | ${startDateStr} - ${harvestDateStr}`, x + PAD + roomW, textY);
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
+      const numText = `#${plant.number}`;
+      const barcodeW = Math.min(35, labelW * 0.25);
+      const barcodeX = x + labelW - PAD - barcodeW;
+      doc.text(numText, barcodeX - doc.getTextWidth(numText) - 3, textY);
+      const canvas = document.createElement('canvas');
+      JsBarcode(canvas, String(plant.number), { format: 'CODE128', width: 1, height: 30, displayValue: false, margin: 1 });
+      doc.addImage(canvas.toDataURL('image/png'), 'PNG', barcodeX, y + PAD, barcodeW, labelH - PAD * 2);
+    } else if (isCompact) {
+      const barcodeW = Math.min(40, labelW * 0.3);
+      const textAreaW = labelW - barcodeW - PAD * 2 - 2;
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+      doc.text(room.name || 'Room', x + PAD, y + PAD + 4);
+      const numLabel = `#${plant.number}`;
+      doc.text(numLabel, x + PAD + textAreaW - doc.getTextWidth(numLabel), y + PAD + 4);
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(6.5); doc.setTextColor(80, 80, 80);
+      let st = plant.strain || room.strain || '—';
+      if (doc.getTextWidth(st) > textAreaW) { while (doc.getTextWidth(st + '..') > textAreaW && st.length > 5) st = st.slice(0, -1); st += '..'; }
+      doc.text(st, x + PAD, y + PAD + 8.5);
+      doc.setFontSize(6);
+      doc.text(`${startDateStr} - ${harvestDateStr}`, x + PAD, y + PAD + 12.5);
+      const barcodeX = x + labelW - PAD - barcodeW;
+      const canvas = document.createElement('canvas');
+      JsBarcode(canvas, String(plant.number), { format: 'CODE128', width: 1, height: 40, displayValue: true, fontSize: 12, margin: 2, font: 'monospace' });
+      doc.addImage(canvas.toDataURL('image/png'), 'PNG', barcodeX, y + PAD, barcodeW, labelH - PAD * 2);
+    } else {
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
+      doc.text(room.name || 'Room', x + PAD, y + PAD + 3.5);
+      const pl = `#${plant.number}`;
+      doc.text(pl, x + labelW - PAD - doc.getTextWidth(pl), y + PAD + 3.5);
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
+      doc.text(`Start: ${startDateStr}`, x + PAD, y + PAD + 8);
+      const maxTW = labelW - PAD * 2;
+      let st = `Strain: ${plant.strain || room.strain || '—'}`;
+      if (doc.getTextWidth(st) > maxTW) { while (doc.getTextWidth(st + '...') > maxTW && st.length > 10) st = st.slice(0, -1); st += '...'; }
+      doc.text(st, x + PAD, y + PAD + 12);
+      doc.text(`Harvest: ${harvestDateStr}`, x + PAD, y + PAD + 16);
+      const barcodeW = labelW - PAD * 2 - 4;
+      const canvas = document.createElement('canvas');
+      JsBarcode(canvas, String(plant.number), { format: 'CODE128', width: 2, height: 40, displayValue: true, fontSize: 14, margin: 2, font: 'monospace' });
+      doc.addImage(canvas.toDataURL('image/png'), 'PNG', x + (labelW - barcodeW) / 2, y + PAD + 18, barcodeW, Math.max(labelH - 22 - PAD, 8));
     }
-    doc.text(strainText, x + PAD, y + PAD + 12);
-
-    // Line 4: Expected harvest
-    doc.text(`Урожай: ${harvestDateStr}`, x + PAD, y + PAD + 16);
-
-    // Barcode
-    const canvas = document.createElement('canvas');
-    JsBarcode(canvas, String(plant.number), {
-      format: 'CODE128',
-      width: 2,
-      height: 40,
-      displayValue: true,
-      fontSize: 14,
-      margin: 2,
-      font: 'monospace'
-    });
-    const barcodeDataUrl = canvas.toDataURL('image/png');
-    const barcodeW = LABEL_W - PAD * 2 - 4;
-    const barcodeH = 12;
-    const barcodeX = x + (LABEL_W - barcodeW) / 2;
-    const barcodeY = y + PAD + 18;
-    doc.addImage(barcodeDataUrl, 'PNG', barcodeX, barcodeY, barcodeW, barcodeH);
   }
 
-  const blobUrl = doc.output('bloburl');
-  window.open(blobUrl, '_blank');
+  window.open(doc.output('bloburl'), '_blank');
 }
 
 // ── Component ──
@@ -119,30 +149,32 @@ const Labels = () => {
   const [selectedPlants, setSelectedPlants] = useState(new Set());
   const [generating, setGenerating] = useState(false);
 
+  // Label format
+  const [presetIdx, setPresetIdx] = useState(1);
+  const [customCols, setCustomCols] = useState(2);
+  const [customW, setCustomW] = useState(95);
+  const [customH, setCustomH] = useState(20);
+
+  const isCustom = presetIdx === PRESETS.length - 1;
+  const activeCols = isCustom ? customCols : PRESETS[presetIdx].cols;
+  const activeLabelW = isCustom ? customW : PRESETS[presetIdx].labelW;
+  const activeLabelH = isCustom ? customH : PRESETS[presetIdx].labelH;
+  const layout = calcLayout(activeCols, activeLabelH);
+
   useEffect(() => { loadRooms(); }, []);
 
   const loadRooms = async () => {
     try {
-      setLoading(true);
-      setError('');
+      setLoading(true); setError('');
       const data = await roomService.getRooms();
       setRooms(Array.isArray(data) ? data : []);
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Ошибка загрузки');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  const activeRooms = useMemo(() =>
-    rooms.filter(r => r.isActive && r.flowerStrains?.length > 0),
-    [rooms]
-  );
-
-  const selectedRoom = useMemo(() =>
-    rooms.find(r => r._id === selectedRoomId) || null,
-    [rooms, selectedRoomId]
-  );
+  const activeRooms = useMemo(() => rooms.filter(r => r.isActive && r.flowerStrains?.length > 0), [rooms]);
+  const selectedRoom = useMemo(() => rooms.find(r => r._id === selectedRoomId) || null, [rooms, selectedRoomId]);
 
   const allPlants = useMemo(() => {
     if (!selectedRoom?.flowerStrains) return [];
@@ -150,48 +182,64 @@ const Labels = () => {
     selectedRoom.flowerStrains.forEach(fs => {
       const start = fs.startNumber ?? 1;
       const end = fs.endNumber ?? (start + (fs.quantity || 1) - 1);
-      for (let n = start; n <= end; n++) {
-        result.push({ number: n, strain: fs.strain });
-      }
+      for (let n = start; n <= end; n++) result.push({ number: n, strain: fs.strain });
     });
     return result;
   }, [selectedRoom]);
 
-  // Group plants by strain
   const plantsByStrain = useMemo(() => {
     const groups = {};
-    allPlants.forEach(p => {
-      const key = p.strain || '—';
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(p);
-    });
+    allPlants.forEach(p => { const k = p.strain || '—'; if (!groups[k]) groups[k] = []; groups[k].push(p); });
     return groups;
   }, [allPlants]);
+
+  // Room layout data
+  const roomLayout = useMemo(() => {
+    if (!selectedRoom?.roomLayout) return null;
+    const migrated = migrateLayout(selectedRoom.roomLayout);
+    if (migrated.customRows.length === 0) return null;
+    return migrated;
+  }, [selectedRoom]);
+
+  const positionMap = useMemo(() => {
+    if (!roomLayout) return {};
+    const m = {};
+    roomLayout.plantPositions.forEach(p => { m[`${p.row}:${p.position}`] = p.plantNumber; });
+    return m;
+  }, [roomLayout]);
+
+  // Plants grouped by room row
+  const plantsByRow = useMemo(() => {
+    if (!roomLayout) return {};
+    const groups = {};
+    roomLayout.customRows.forEach((_, rowIdx) => { groups[rowIdx] = []; });
+    roomLayout.plantPositions.forEach(p => {
+      if (groups[p.row]) groups[p.row].push(p.plantNumber);
+    });
+    return groups;
+  }, [roomLayout]);
 
   const selectAll = () => setSelectedPlants(new Set(allPlants.map(p => p.number)));
   const deselectAll = () => setSelectedPlants(new Set());
 
   const togglePlant = (num) => {
-    setSelectedPlants(prev => {
-      const next = new Set(prev);
-      next.has(num) ? next.delete(num) : next.add(num);
-      return next;
-    });
+    setSelectedPlants(prev => { const n = new Set(prev); n.has(num) ? n.delete(num) : n.add(num); return n; });
   };
 
   const toggleStrain = (strain) => {
     const plants = plantsByStrain[strain] || [];
-    const allSelected = plants.every(p => selectedPlants.has(p.number));
-    setSelectedPlants(prev => {
-      const next = new Set(prev);
-      plants.forEach(p => allSelected ? next.delete(p.number) : next.add(p.number));
-      return next;
-    });
+    const allSel = plants.every(p => selectedPlants.has(p.number));
+    setSelectedPlants(prev => { const n = new Set(prev); plants.forEach(p => allSel ? n.delete(p.number) : n.add(p.number)); return n; });
+  };
+
+  const toggleRow = (rowIdx) => {
+    const nums = plantsByRow[rowIdx] || [];
+    const allSel = nums.every(n => selectedPlants.has(n));
+    setSelectedPlants(prev => { const next = new Set(prev); nums.forEach(n => allSel ? next.delete(n) : next.add(n)); return next; });
   };
 
   const handleSelectRoom = (roomId) => {
     setSelectedRoomId(roomId);
-    // Auto-select all plants
     const room = rooms.find(r => r._id === roomId);
     if (room?.flowerStrains) {
       const nums = new Set();
@@ -209,33 +257,25 @@ const Labels = () => {
     const plants = allPlants.filter(p => selectedPlants.has(p.number));
     try {
       setGenerating(true);
-      await generateLabelsPDF(selectedRoom, plants);
-    } catch (err) {
-      console.error(err);
-      setError('Ошибка генерации PDF');
-    } finally {
-      setGenerating(false);
-    }
+      await generateLabelsPDF(selectedRoom, plants, { cols: activeCols, labelW: activeLabelW, labelH: activeLabelH });
+    } catch (err) { console.error(err); setError('Ошибка генерации PDF'); }
+    finally { setGenerating(false); }
   };
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500" />
-      </div>
-    );
+    return <div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-500" /></div>;
   }
 
-  // ═══ Screen 2: Room selected — plant selection ═══
+  // ═══ Screen 2: Room selected ═══
   if (selectedRoom) {
+    const flowerStrains = selectedRoom.flowerStrains || [];
+
     return (
       <div>
         {/* Header */}
         <div className="mb-6">
-          <button
-            onClick={() => { setSelectedRoomId(null); setSelectedPlants(new Set()); }}
-            className="text-dark-400 hover:text-white text-sm mb-2 flex items-center gap-1 transition"
-          >
+          <button onClick={() => { setSelectedRoomId(null); setSelectedPlants(new Set()); }}
+            className="text-dark-400 hover:text-white text-sm mb-2 flex items-center gap-1 transition">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
@@ -245,12 +285,145 @@ const Labels = () => {
         </div>
 
         {/* Room info */}
-        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-6">
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-4">
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <span className="text-dark-400">Сорт: <span className="text-white">{selectedRoom.strain || selectedRoom.cycleName || '—'}</span></span>
-            <span className="text-dark-400">Старт: <span className="text-white">{formatDate(selectedRoom.startDate)}</span></span>
-            <span className="text-dark-400">Урожай: <span className="text-white">{formatDate(selectedRoom.expectedHarvestDate)}</span></span>
+            <span className="text-dark-400">Старт: <span className="text-white">{formatDateShort(selectedRoom.startDate)}</span></span>
+            <span className="text-dark-400">Урожай: <span className="text-white">{formatDateShort(selectedRoom.expectedHarvestDate)}</span></span>
             <span className="text-dark-400">Кустов: <span className="text-white">{allPlants.length}</span></span>
+          </div>
+        </div>
+
+        {/* Room map visualization */}
+        {roomLayout && roomLayout.customRows.length > 0 && (
+          <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-4">
+            <div className="text-xs text-dark-400 font-medium mb-3">Карта комнаты — выбор по рядам</div>
+            <div className="flex gap-3 overflow-x-auto pb-2">
+              {roomLayout.customRows.map((row, rowIdx) => {
+                const cols = row.cols || 1;
+                const rowsCount = row.rows || 1;
+                const rowPlants = plantsByRow[rowIdx] || [];
+                const allRowSelected = rowPlants.length > 0 && rowPlants.every(n => selectedPlants.has(n));
+                const someRowSelected = rowPlants.some(n => selectedPlants.has(n));
+
+                return (
+                  <div key={rowIdx} className="flex flex-col items-center shrink-0">
+                    {/* Row header with select toggle */}
+                    <button
+                      onClick={() => toggleRow(rowIdx)}
+                      className="flex items-center gap-1.5 mb-1.5 group"
+                    >
+                      <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition ${
+                        allRowSelected ? 'bg-primary-500 border-primary-500' : someRowSelected ? 'border-primary-500' : 'border-dark-500 group-hover:border-dark-400'
+                      }`}>
+                        {allRowSelected && (
+                          <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                        {!allRowSelected && someRowSelected && <div className="w-2 h-0.5 bg-primary-500 rounded" />}
+                      </div>
+                      <span className="text-xs text-dark-400 font-medium whitespace-nowrap group-hover:text-dark-300 transition">
+                        {row.name || `Ряд ${rowIdx + 1}`}
+                      </span>
+                      <span className="text-[10px] text-dark-600">({rowPlants.length})</span>
+                    </button>
+
+                    {/* Mini grid */}
+                    <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+                      {Array.from({ length: rowsCount }, (_, rIdx) =>
+                        Array.from({ length: cols }, (_, cIdx) => {
+                          const posIdx = rIdx * cols + cIdx;
+                          const plantNumber = positionMap[`${rowIdx}:${posIdx}`];
+                          const strain = plantNumber ? getStrainForPlant(plantNumber, flowerStrains) : null;
+                          const isSelected = plantNumber && selectedPlants.has(plantNumber);
+                          const color = strain ? STRAIN_COLORS[strain.strainIndex % STRAIN_COLORS.length] : null;
+
+                          if (!plantNumber) {
+                            return (
+                              <div key={posIdx}
+                                className="w-8 h-8 border border-dashed border-dark-700 rounded flex items-center justify-center text-dark-700 text-[8px]">
+                                —
+                              </div>
+                            );
+                          }
+
+                          return (
+                            <button key={posIdx} onClick={() => togglePlant(plantNumber)}
+                              className={`w-8 h-8 rounded flex items-center justify-center text-[10px] font-bold transition border ${
+                                isSelected
+                                  ? `${color?.bg || 'bg-primary-500/20'} ${color?.border || 'border-primary-500'} ${color?.text || 'text-primary-400'} ring-1 ring-white/30`
+                                  : 'bg-dark-700/50 border-dark-600 text-dark-500 hover:border-dark-500'
+                              }`}
+                              title={`#${plantNumber} — ${strain?.strain || '?'}`}
+                            >
+                              {plantNumber}
+                            </button>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Strain legend */}
+            {flowerStrains.length > 1 && (
+              <div className="flex flex-wrap gap-3 mt-3 pt-2 border-t border-dark-700">
+                {flowerStrains.map((fs, idx) => {
+                  const color = STRAIN_COLORS[idx % STRAIN_COLORS.length];
+                  return (
+                    <div key={idx} className="flex items-center gap-1.5">
+                      <div className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
+                      <span className="text-xs text-dark-400">{fs.strain} ({fs.quantity})</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Label format settings */}
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-4">
+          <div className="text-xs text-dark-400 font-medium mb-3">Формат этикетки</div>
+          <div className="flex flex-wrap gap-2 mb-3">
+            {PRESETS.map((p, i) => (
+              <button key={i} onClick={() => setPresetIdx(i)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition border ${
+                  presetIdx === i
+                    ? 'bg-primary-600/30 border-primary-500/50 text-primary-300'
+                    : 'bg-dark-700 border-dark-600 text-dark-400 hover:border-dark-500'
+                }`}>{p.name}</button>
+            ))}
+          </div>
+          {isCustom && (
+            <div className="flex flex-wrap gap-4 items-end">
+              <label className="text-xs">
+                <span className="text-dark-400 block mb-1">Колонок</span>
+                <input type="number" min={1} max={5} value={customCols}
+                  onChange={e => setCustomCols(Math.max(1, Math.min(5, +e.target.value || 1)))}
+                  className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </label>
+              <label className="text-xs">
+                <span className="text-dark-400 block mb-1">Ширина (мм)</span>
+                <input type="number" min={20} max={200} value={customW}
+                  onChange={e => setCustomW(Math.max(20, Math.min(200, +e.target.value || 20)))}
+                  className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </label>
+              <label className="text-xs">
+                <span className="text-dark-400 block mb-1">Высота (мм)</span>
+                <input type="number" min={10} max={100} value={customH}
+                  onChange={e => setCustomH(Math.max(10, Math.min(100, +e.target.value || 10)))}
+                  className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+              </label>
+            </div>
+          )}
+          <div className="mt-2 text-xs text-dark-500">
+            {activeCols} col x {layout.rows} rows = <span className="text-dark-300 font-medium">{layout.perPage} шт/стр</span>
+            <span className="ml-3">({activeLabelW}x{activeLabelH} мм)</span>
+            {selectedPlants.size > 0 && <span className="ml-3">= {Math.ceil(selectedPlants.size / layout.perPage)} стр.</span>}
           </div>
         </div>
 
@@ -263,15 +436,12 @@ const Labels = () => {
             Снять все
           </button>
           <div className="flex-1" />
-          <button
-            onClick={handlePrint}
-            disabled={selectedPlants.size === 0 || generating}
+          <button onClick={handlePrint} disabled={selectedPlants.size === 0 || generating}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-2 ${
               selectedPlants.size === 0 || generating
                 ? 'bg-dark-700 text-dark-500 cursor-not-allowed'
                 : 'bg-primary-600 hover:bg-primary-500 text-white'
-            }`}
-          >
+            }`}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
@@ -280,53 +450,34 @@ const Labels = () => {
         </div>
 
         {error && (
-          <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-4">
-            {error}
-          </div>
+          <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-4">{error}</div>
         )}
 
         {/* Plant list grouped by strain */}
         <div className="space-y-4">
           {Object.entries(plantsByStrain).map(([strain, plants]) => {
-            const allStrainSelected = plants.every(p => selectedPlants.has(p.number));
-            const someSelected = plants.some(p => selectedPlants.has(p.number));
+            const allSel = plants.every(p => selectedPlants.has(p.number));
+            const someSel = plants.some(p => selectedPlants.has(p.number));
             return (
               <div key={strain} className="bg-dark-800 rounded-xl border border-dark-700 p-4">
-                {/* Strain header */}
-                <button
-                  onClick={() => toggleStrain(strain)}
-                  className="flex items-center gap-3 w-full text-left mb-3"
-                >
+                <button onClick={() => toggleStrain(strain)} className="flex items-center gap-3 w-full text-left mb-3">
                   <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition ${
-                    allStrainSelected ? 'bg-primary-500 border-primary-500' : someSelected ? 'border-primary-500' : 'border-dark-500'
+                    allSel ? 'bg-primary-500 border-primary-500' : someSel ? 'border-primary-500' : 'border-dark-500'
                   }`}>
-                    {allStrainSelected && (
-                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                      </svg>
-                    )}
-                    {!allStrainSelected && someSelected && (
-                      <div className="w-2.5 h-0.5 bg-primary-500 rounded" />
-                    )}
+                    {allSel && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                    {!allSel && someSel && <div className="w-2.5 h-0.5 bg-primary-500 rounded" />}
                   </div>
                   <span className="text-white font-medium">{strain}</span>
                   <span className="text-dark-500 text-sm">({plants.length} шт, №{plants[0].number}–{plants[plants.length - 1].number})</span>
                 </button>
-
-                {/* Plant checkboxes */}
                 <div className="flex flex-wrap gap-1.5">
                   {plants.map(p => (
-                    <button
-                      key={p.number}
-                      onClick={() => togglePlant(p.number)}
+                    <button key={p.number} onClick={() => togglePlant(p.number)}
                       className={`w-10 h-8 rounded text-xs font-medium transition border ${
                         selectedPlants.has(p.number)
                           ? 'bg-primary-600/30 border-primary-500/50 text-primary-300'
                           : 'bg-dark-700 border-dark-600 text-dark-400 hover:border-dark-500'
-                      }`}
-                    >
-                      {p.number}
-                    </button>
+                      }`}>{p.number}</button>
                   ))}
                 </div>
               </div>
@@ -344,16 +495,12 @@ const Labels = () => {
         <h1 className="text-2xl font-bold text-white">Печать этикеток</h1>
         <p className="text-dark-400 mt-1 text-sm">Выберите комнату для генерации этикеток со штрихкодами</p>
       </div>
-
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex flex-wrap items-center gap-3">
           <span>{error}</span>
-          <button type="button" onClick={() => { setError(''); loadRooms(); }} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">
-            Повторить
-          </button>
+          <button type="button" onClick={() => { setError(''); loadRooms(); }} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">Повторить</button>
         </div>
       )}
-
       {activeRooms.length === 0 ? (
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-8 text-center">
           <p className="text-dark-400">Нет активных комнат с пронумерованными кустами</p>
@@ -365,11 +512,8 @@ const Labels = () => {
             const totalPlants = room.flowerStrains.reduce((s, fs) => s + (fs.quantity || 0), 0);
             const strainNames = room.flowerStrains.map(fs => fs.strain).filter(Boolean);
             return (
-              <button
-                key={room._id}
-                onClick={() => handleSelectRoom(room._id)}
-                className="bg-dark-800 rounded-xl border border-dark-700 p-5 text-left hover:border-primary-700/50 transition group"
-              >
+              <button key={room._id} onClick={() => handleSelectRoom(room._id)}
+                className="bg-dark-800 rounded-xl border border-dark-700 p-5 text-left hover:border-primary-700/50 transition group">
                 <div className="flex items-center justify-between mb-2">
                   <span className="text-white font-semibold group-hover:text-primary-400 transition">{room.name}</span>
                   <span className="inline-flex items-center gap-1.5 text-xs">
@@ -378,15 +522,9 @@ const Labels = () => {
                   </span>
                 </div>
                 <div className="space-y-1 text-sm">
-                  <div className="text-dark-400">
-                    Сорт: <span className="text-dark-300">{strainNames.join(', ') || room.strain || '—'}</span>
-                  </div>
-                  <div className="text-dark-400">
-                    Кустов: <span className="text-dark-300">{totalPlants}</span>
-                  </div>
-                  <div className="text-dark-400">
-                    Старт: <span className="text-dark-300">{formatDate(room.startDate)}</span>
-                  </div>
+                  <div className="text-dark-400">Сорт: <span className="text-dark-300">{strainNames.join(', ') || room.strain || '—'}</span></div>
+                  <div className="text-dark-400">Кустов: <span className="text-dark-300">{totalPlants}</span></div>
+                  <div className="text-dark-400">Старт: <span className="text-dark-300">{formatDateShort(room.startDate)}</span></div>
                 </div>
               </button>
             );
