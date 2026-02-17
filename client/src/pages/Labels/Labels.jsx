@@ -89,8 +89,9 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH }) {
     if (isTiny) {
       const textY = y + labelH / 2 + 1;
       doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
-      doc.text(room.name, x + PAD, textY);
-      const roomW = doc.getTextWidth(room.name) + 2;
+      const roomLabel = `Room: ${room.name}`;
+      doc.text(roomLabel, x + PAD, textY);
+      const roomW = doc.getTextWidth(roomLabel) + 2;
       doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
       doc.text(`${plant.strain || room.strain || ''} | ${startDateStr} - ${harvestDateStr}`, x + PAD + roomW, textY);
       doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
@@ -105,7 +106,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH }) {
       const barcodeW = Math.min(40, labelW * 0.3);
       const textAreaW = labelW - barcodeW - PAD * 2 - 2;
       doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
-      doc.text(room.name || 'Room', x + PAD, y + PAD + 4);
+      doc.text(`Room: ${room.name || '—'}`, x + PAD, y + PAD + 4);
       const numLabel = `#${plant.number}`;
       doc.text(numLabel, x + PAD + textAreaW - doc.getTextWidth(numLabel), y + PAD + 4);
       doc.setFont('Roboto', 'normal'); doc.setFontSize(6.5); doc.setTextColor(80, 80, 80);
@@ -120,7 +121,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH }) {
       doc.addImage(canvas.toDataURL('image/png'), 'PNG', barcodeX, y + PAD, barcodeW, labelH - PAD * 2);
     } else {
       doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
-      doc.text(room.name || 'Room', x + PAD, y + PAD + 3.5);
+      doc.text(`Room: ${room.name || '—'}`, x + PAD, y + PAD + 3.5);
       const pl = `#${plant.number}`;
       doc.text(pl, x + labelW - PAD - doc.getTextWidth(pl), y + PAD + 3.5);
       doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
