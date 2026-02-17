@@ -192,6 +192,22 @@ const Overview = () => {
     }
   });
 
+  // Rooms missing lamp data
+  const roomsMissingLamps = safeRooms.filter(r =>
+    !r.lighting?.lampCount || !r.lighting?.lampWattage
+  );
+  if (roomsMissingLamps.length > 0) {
+    const names = roomsMissingLamps.map(r => r.name).join(', ');
+    alerts.push({
+      type: 'warning',
+      icon: '💡',
+      text: roomsMissingLamps.length === 1
+        ? `${names}: не указаны лампы (кол-во / мощность)`
+        : `Не указаны лампы (кол-во / мощность): ${names}`,
+      link: '/active'
+    });
+  }
+
   // Overdue pending tasks
   const today = new Date();
   today.setHours(0, 0, 0, 0);
