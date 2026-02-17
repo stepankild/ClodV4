@@ -194,7 +194,7 @@ const Overview = () => {
 
   // Rooms missing lamp data
   const roomsMissingLamps = safeRooms.filter(r =>
-    !r.lighting?.lampCount || !r.lighting?.lampWattage
+    r.isActive && (!r.lighting?.lampCount || !r.lighting?.lampWattage)
   );
   if (roomsMissingLamps.length > 0) {
     const names = roomsMissingLamps.map(r => r.name).join(', ');
