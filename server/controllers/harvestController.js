@@ -218,6 +218,30 @@ export const completeSession = async (req, res) => {
     await session.save();
 
     const room = await FlowerRoom.findById(session.room);
+
+    // Тестовая комната — сбросить без архивации
+    if (room && room.isActive && room.isTestRoom) {
+      // Soft-delete задач текущего цикла
+      const deleteTaskQuery = { room: room._id, deletedAt: null };
+      if (room.currentCycleId) deleteTaskQuery.cycleId = room.currentCycleId;
+      await RoomTask.updateMany(deleteTaskQuery, { $set: { deletedAt: new Date() } });
+
+      // Сброс комнаты БЕЗ архива, БЕЗ RoomLog, БЕЗ totalCycles++
+      room.cycleName = '';
+      room.strain = '';
+      room.plantsCount = 0;
+      room.startDate = null;
+      room.expectedHarvestDate = null;
+      room.notes = '';
+      room.isActive = false;
+      room.currentCycleId = null;
+      if (room.roomLayout) room.roomLayout.plantPositions = [];
+      if (room.flowerStrains) room.flowerStrains = [];
+      await room.save();
+
+      return res.json(session);
+    }
+
     if (room && room.isActive) {
       // Защита от дублей: если архив с этой комнатой и startDate уже создан — пропускаем
       const existingArchive = await CycleArchive.findOne({
