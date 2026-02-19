@@ -39,6 +39,8 @@ const Harvest = () => {
   const [errorNoteSaving, setErrorNoteSaving] = useState(false);
   const [completeSuccess, setCompleteSuccess] = useState(false);
   const [scanFlash, setScanFlash] = useState(false);
+  const [duplicateError, setDuplicateError] = useState(null); // { plantNumber } — блокирующая ошибка дубля
+  const [successMsg, setSuccessMsg] = useState(null); // { plantNumber, weight } — уведомление об успешной записи
   const autoRecordRef = useRef(false);
 
   const safeRooms = Array.isArray(rooms) ? rooms : [];
@@ -130,10 +132,8 @@ const Harvest = () => {
     const harvestedPlants = new Set((session.plants || []).map(p => p.plantNumber));
 
     if (harvestedPlants.has(num)) {
-      // Куст уже записан — показать предупреждение
-      setError(`Куст #${num} уже записан!`);
-      setScanFlash(true);
-      setTimeout(() => setScanFlash(false), 1500);
+      // Куст уже записан — блокирующая ошибка (нужно нажать ОК)
+      setDuplicateError({ plantNumber: num });
       return;
     }
 
@@ -162,6 +162,7 @@ const Harvest = () => {
 
   const handleRecordPlant = async (e, overridePlantNumber) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (duplicateError) return; // Блокировка пока не закрыта ошибка дубля
     const num = (overridePlantNumber || plantNumber).toString().trim();
     // Если вес не введён вручную — берём с весов автоматически
     const weight = manualWeight
@@ -169,6 +170,14 @@ const Harvest = () => {
       : (scaleConnected && scaleWeight != null ? scaleWeight : NaN);
     if (!session || !num || isNaN(weight) || weight <= 0) return;
     if (session.status !== 'in_progress') return;
+
+    // Проверка дубля на клиенте перед отправкой
+    const harvestedPlants = new Set((session.plants || []).map(p => p.plantNumber));
+    if (harvestedPlants.has(parseInt(num, 10))) {
+      setDuplicateError({ plantNumber: parseInt(num, 10) });
+      return;
+    }
+
     try {
       setRecordLoading(true);
       setError('');
@@ -177,6 +186,9 @@ const Harvest = () => {
       setSession(updated);
       setPlantNumber('');
       setManualWeight('');
+      // Уведомление об успешной записи
+      setSuccessMsg({ plantNumber: num, weight });
+      setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка записи куста');
       console.error(err);
@@ -392,6 +404,43 @@ const Harvest = () => {
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6">
           {error}
+        </div>
+      )}
+
+      {/* Блокирующая ошибка дубля — нужно нажать ОК */}
+      {duplicateError && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-dark-800 border-2 border-red-600 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-red-600/20 flex items-center justify-center shrink-0">
+                <svg className="w-7 h-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-lg">Куст уже записан!</h3>
+                <p className="text-red-400 text-sm mt-1">Куст <span className="font-bold text-white">#{duplicateError.plantNumber}</span> уже есть в этой сессии сбора.</p>
+              </div>
+            </div>
+            <button
+              onClick={() => { setDuplicateError(null); setPlantNumber(''); }}
+              className="w-full px-4 py-3 bg-red-600 hover:bg-red-500 text-white rounded-xl font-bold text-lg transition"
+            >
+              ОК
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Уведомление об успешной записи */}
+      {successMsg && (
+        <div className="fixed bottom-6 right-6 z-40 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-[slideUp_0.3s_ease-out]">
+          <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="font-medium">
+            Куст #{successMsg.plantNumber} записан — {successMsg.weight} г
+          </span>
         </div>
       )}
 
