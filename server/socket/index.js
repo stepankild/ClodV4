@@ -37,15 +37,16 @@ export function initializeSocket(httpServer, allowedOrigins) {
     const { apiKey, deviceType, token } = socket.handshake.auth;
 
     // Raspberry Pi — проверка SCALE_API_KEY
-    if (deviceType === 'scale') {
+    // Принимаем deviceType 'pi' (новый) и 'scale' (обратная совместимость)
+    if (deviceType === 'pi' || deviceType === 'scale') {
       const serverKey = process.env.SCALE_API_KEY;
       if (!serverKey) {
-        console.warn('SCALE_API_KEY not set — scale connections rejected');
+        console.warn('SCALE_API_KEY not set — Pi connections rejected');
         return next(new Error('Scale API key not configured on server'));
       }
       if (apiKey === serverKey) {
-        socket.data.deviceType = 'scale';
-        socket.data.label = 'RaspberryPi-Scale';
+        socket.data.deviceType = 'pi';
+        socket.data.label = 'RaspberryPi';
         return next();
       }
       return next(new Error('Invalid scale API key'));
@@ -75,8 +76,8 @@ export function initializeSocket(httpServer, allowedOrigins) {
   io.on('connection', (socket) => {
     const { deviceType } = socket.data;
 
-    if (deviceType === 'scale') {
-      handleScaleConnection(io, socket);
+    if (deviceType === 'pi') {
+      handlePiConnection(io, socket);
     } else if (deviceType === 'browser') {
       handleBrowserConnection(io, socket);
     }
@@ -86,9 +87,9 @@ export function initializeSocket(httpServer, allowedOrigins) {
   return io;
 }
 
-// ── Raspberry Pi (scale) подключение ──
-function handleScaleConnection(io, socket) {
-  console.log(`Scale connected: ${socket.id}`);
+// ── Raspberry Pi подключение (весы + сканер) ──
+function handlePiConnection(io, socket) {
+  console.log(`Pi connected: ${socket.id}`);
 
   // Если уже была другая scale подключена — отключаем старую
   if (scaleState.socketId && scaleState.socketId !== socket.id) {
@@ -127,9 +128,19 @@ function handleScaleConnection(io, socket) {
     console.warn('Scale error:', data?.message || data);
   });
 
+  // Получение скана штрихкода от Pi
+  socket.on('barcode:scan', (data) => {
+    const { barcode } = data;
+    if (barcode) {
+      console.log(`Barcode scanned: ${barcode}`);
+      // Broadcast всем браузерам
+      socket.broadcast.emit('barcode:scan', { barcode });
+    }
+  });
+
   // Отключение Pi
   socket.on('disconnect', (reason) => {
-    console.log(`Scale disconnected: ${socket.id} (${reason})`);
+    console.log(`Pi disconnected: ${socket.id} (${reason})`);
     if (scaleState.socketId === socket.id) {
       scaleState.connected = false;
       scaleState.socketId = null;

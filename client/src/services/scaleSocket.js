@@ -4,7 +4,7 @@ let socket = null;
 let listeners = new Set();
 
 /**
- * Подключиться к Socket.io серверу для получения данных с весов.
+ * Подключиться к Socket.io серверу для получения данных с весов и сканера штрихкодов.
  * Использует JWT из localStorage для аутентификации.
  */
 export function connectScale() {
@@ -34,6 +34,10 @@ export function connectScale() {
     listeners.forEach(cb => cb('status', data));
   });
 
+  socket.on('barcode:scan', (data) => {
+    listeners.forEach(cb => cb('barcode', data));
+  });
+
   socket.on('connect', () => {
     listeners.forEach(cb => cb('socketConnected', {}));
   });
@@ -60,7 +64,7 @@ export function disconnectScale() {
 /**
  * Подписаться на события весов.
  * @param {Function} callback - (event, data) => void
- *   event: 'weight' | 'status' | 'socketConnected' | 'socketDisconnected'
+ *   event: 'weight' | 'status' | 'barcode' | 'socketConnected' | 'socketDisconnected'
  * @returns {Function} unsubscribe
  */
 export function onScaleEvent(callback) {

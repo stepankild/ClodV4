@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import { harvestService } from '../../services/harvestService';
 import { useScale } from '../../hooks/useScale';
+import { useBarcode } from '../../hooks/useBarcode';
 import HarvestRoomMap from '../../components/RoomMap/HarvestRoomMap';
 import HarvestHistory from './HarvestHistory';
 
@@ -21,6 +22,7 @@ const Harvest = () => {
   const { hasPermission } = useAuth();
   const canDoHarvest = hasPermission && hasPermission('harvest:record');
   const { weight: scaleWeight, unit: scaleUnit, stable: scaleStable, scaleConnected, socketConnected } = useScale();
+  const { lastBarcode, scanTime } = useBarcode();
 
   const [searchParams] = useSearchParams();
   const roomIdFromUrl = searchParams.get('roomId') || '';
@@ -36,6 +38,8 @@ const Harvest = () => {
   const [errorNoteEdit, setErrorNoteEdit] = useState({ plantNumber: null, value: '' });
   const [errorNoteSaving, setErrorNoteSaving] = useState(false);
   const [completeSuccess, setCompleteSuccess] = useState(false);
+  const [scanFlash, setScanFlash] = useState(false);
+  const autoRecordRef = useRef(false);
 
   const safeRooms = Array.isArray(rooms) ? rooms : [];
   const activeRooms = safeRooms.filter(r => r && r.isActive);
@@ -115,9 +119,50 @@ const Harvest = () => {
     }
   }, [roomIdFromUrl, rooms]);
 
-  const handleRecordPlant = async (e) => {
-    e.preventDefault();
-    const num = plantNumber.trim();
+  // Обработка скана штрихкода
+  useEffect(() => {
+    if (!lastBarcode || !scanTime || !session || session.status !== 'in_progress') return;
+
+    const num = parseInt(lastBarcode, 10);
+    if (isNaN(num) || num <= 0) return;
+
+    // Получить записанные кусты
+    const harvestedPlants = new Set((session.plants || []).map(p => p.plantNumber));
+
+    if (harvestedPlants.has(num)) {
+      // Куст уже записан — показать предупреждение
+      setError(`Куст #${num} уже записан!`);
+      setScanFlash(true);
+      setTimeout(() => setScanFlash(false), 1500);
+      return;
+    }
+
+    // Заполнить номер
+    setPlantNumber(String(num));
+    setError('');
+
+    // Авто-запись: если вес стабильный и > 0
+    if (scaleConnected && scaleWeight != null && scaleWeight > 0) {
+      // Небольшая задержка чтобы state обновился
+      autoRecordRef.current = true;
+    }
+
+    // Визуальный feedback
+    setScanFlash(true);
+    setTimeout(() => setScanFlash(false), 1500);
+  }, [scanTime]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Авто-запись после скана (когда plantNumber обновился)
+  useEffect(() => {
+    if (autoRecordRef.current && plantNumber) {
+      autoRecordRef.current = false;
+      handleRecordPlant(null, plantNumber);
+    }
+  }, [plantNumber]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleRecordPlant = async (e, overridePlantNumber) => {
+    if (e && e.preventDefault) e.preventDefault();
+    const num = (overridePlantNumber || plantNumber).toString().trim();
     // Если вес не введён вручную — берём с весов автоматически
     const weight = manualWeight
       ? parseInt(manualWeight, 10)
@@ -130,7 +175,7 @@ const Harvest = () => {
       const res = await harvestService.addPlant(session._id, num, weight);
       const updated = res?.session ?? res;
       setSession(updated);
-      setPlantNumber(String(parseInt(num, 10) + 1));
+      setPlantNumber('');
       setManualWeight('');
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка записи куста');
@@ -413,7 +458,9 @@ const Harvest = () => {
                   value={plantNumber}
                   onChange={(e) => setPlantNumber(e.target.value)}
                   placeholder="1"
-                  className="w-28 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500"
+                  className={`w-28 px-3 py-2 bg-dark-700 border rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500 transition-colors duration-300 ${
+                    scanFlash ? 'border-green-500 ring-2 ring-green-500/50' : 'border-dark-600'
+                  }`}
                 />
               </div>
               <div>

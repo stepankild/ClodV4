@@ -21,7 +21,7 @@ import time
 
 
 class ScaleReader:
-    def __init__(self, port='/dev/ttyUSB0', baudrate=9600, timeout=1):
+    def __init__(self, port='/dev/ttyUSB0', baudrate=9600, timeout=0.1):
         self.port = port
         self.baudrate = baudrate
         self.timeout = timeout
@@ -70,6 +70,10 @@ class ScaleReader:
             return None
 
         try:
+            # Сбросить накопившиеся старые данные — читать только свежее
+            if self.serial_conn.in_waiting > 100:
+                self.serial_conn.reset_input_buffer()
+
             line = self.serial_conn.readline().decode('ascii', errors='ignore').strip()
             if not line:
                 return None

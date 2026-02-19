@@ -1,13 +1,14 @@
 [Unit]
-Description=Farm Scale Client (Ohaus R31P3 → Server)
+Description=Farm Pi Client (Scale + Barcode Scanner → Server)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=stepan
+SupplementaryGroups=input
 WorkingDirectory=/home/stepan/pi-scale-client
-ExecStart=/home/stepan/pi-scale-client/venv/bin/python scale_client.py
+ExecStart=/home/stepan/pi-scale-client/venv/bin/python pi_client.py
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
