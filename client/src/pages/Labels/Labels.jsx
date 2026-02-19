@@ -84,39 +84,40 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
     doc.setLineDashPattern([], 0);
 
     // Barcode — always centered
+    // Barcode canvas — компактный, не растянутый
     const canvas = document.createElement('canvas');
     JsBarcode(canvas, String(plant.number), {
-      format: 'CODE128', width: 2, height: 50,
-      displayValue: true, fontSize: 14, margin: 2, font: 'monospace'
+      format: 'CODE128', width: 1.5, height: 30,
+      displayValue: false, margin: 1
     });
     const barcodeDataUrl = canvas.toDataURL('image/png');
 
     if (isTiny) {
-      // Single-row: text left, barcode center, #N right
+      // Single-row: text left, barcode center, #N right (labelH < 18mm)
       const textY = y + labelH / 2 + 1;
-      const barcodeW = Math.min(35, labelW * 0.3);
-      const barcodeH = labelH - PAD * 2;
+      const barcodeW = Math.min(25, labelW * 0.2);
+      const barcodeH = labelH - PAD * 2 - 2;
       const barcodeX = x + (labelW - barcodeW) / 2;
 
       doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
-      doc.text(`Room: ${room.name}`, x + PAD, textY - 2);
+      doc.text(`${room.name}`, x + PAD, textY - 2);
       doc.setFont('Roboto', 'normal'); doc.setFontSize(5.5); doc.setTextColor(80, 80, 80);
-      doc.text(`${plant.strain || room.strain || ''} | ${startDateStr}-${harvestDateStr}`, x + PAD, textY + 2);
+      doc.text(`${plant.strain || room.strain || ''} | ${startDateStr}`, x + PAD, textY + 2);
 
-      doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD, barcodeW, barcodeH);
+      doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD + 1, barcodeW, barcodeH);
 
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(30, 30, 30);
       const numText = `#${plant.number}`;
       doc.text(numText, x + labelW - PAD - doc.getTextWidth(numText), textY);
 
     } else if (isCompact) {
-      // Bracelet: text left, barcode centered, #N top-right
-      const barcodeW = Math.min(45, labelW * 0.3);
-      const barcodeH = labelH - PAD * 2;
-      const barcodeX = x + (labelW - barcodeW) / 2;
+      // Bracelet: text left, barcode right-center, #N top-right (labelH < 25mm)
+      const barcodeW = Math.min(30, labelW * 0.2);
+      const barcodeH = labelH - PAD * 2 - 2;
+      const barcodeX = x + labelW - PAD - barcodeW - 25; // справа от центра, перед #N
 
       doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
-      doc.text(`Room: ${room.name || '—'}`, x + PAD, y + PAD + 4);
+      doc.text(`${room.name || '—'}`, x + PAD, y + PAD + 4);
       doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
       let st = plant.strain || room.strain || '—';
       const maxStW = barcodeX - x - PAD * 2;
@@ -125,30 +126,61 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       doc.setFontSize(5.5);
       doc.text(`${startDateStr} - ${harvestDateStr}`, x + PAD, y + PAD + 12.5);
 
-      doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD, barcodeW, barcodeH);
+      doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD + 1, barcodeW, barcodeH);
 
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(30, 30, 30);
       const numLabel = `#${plant.number}`;
-      doc.text(numLabel, x + labelW - PAD - doc.getTextWidth(numLabel), y + PAD + 4);
+      doc.text(numLabel, x + labelW - PAD - doc.getTextWidth(numLabel), y + labelH / 2 + 2);
 
     } else {
-      // Standard: text top, barcode centered below
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
-      doc.text(`Room: ${room.name || '—'}`, x + PAD, y + PAD + 3.5);
-      const pl = `#${plant.number}`;
-      doc.text(pl, x + labelW - PAD - doc.getTextWidth(pl), y + PAD + 3.5);
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
-      doc.text(`Start: ${startDateStr}`, x + PAD, y + PAD + 8);
-      const maxTW = labelW - PAD * 2;
-      let st = `Strain: ${plant.strain || room.strain || '—'}`;
-      if (doc.getTextWidth(st) > maxTW) { while (doc.getTextWidth(st + '...') > maxTW && st.length > 10) st = st.slice(0, -1); st += '...'; }
-      doc.text(st, x + PAD, y + PAD + 12);
-      doc.text(`Harvest: ${harvestDateStr}`, x + PAD, y + PAD + 16);
+      // Bracelet/standard: text left, compact barcode center-right, #N far right
+      // Для A4 1x10 (200x26mm) — всё в одну линию как браслет
+      const isBracelet = labelH < 35;
 
-      const barcodeW = Math.min(labelW - PAD * 2 - 4, labelW * 0.6);
-      const barcodeH = Math.max(labelH - 22 - PAD, 8);
-      const barcodeX = x + (labelW - barcodeW) / 2;
-      doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD + 18, barcodeW, barcodeH);
+      if (isBracelet) {
+        // Одна строка: инфо слева | штрихкод по центру | #N справа
+        const barcodeW = Math.min(35, labelW * 0.2);
+        const barcodeH = labelH - PAD * 2 - 4;
+        const barcodeX = x + (labelW - barcodeW) / 2;
+
+        // Текст слева — две строки
+        doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
+        doc.text(`${room.name || '—'}`, x + PAD, y + PAD + 5);
+        doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
+        let st = plant.strain || room.strain || '—';
+        const maxStW = barcodeX - x - PAD * 2;
+        if (doc.getTextWidth(st) > maxStW) { while (doc.getTextWidth(st + '..') > maxStW && st.length > 5) st = st.slice(0, -1); st += '..'; }
+        doc.text(st, x + PAD, y + PAD + 10);
+        doc.setFontSize(5.5);
+        doc.text(`${startDateStr} — ${harvestDateStr}`, x + PAD, y + PAD + 14.5);
+
+        // Штрихкод по центру — компактный
+        doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD + 1, barcodeW, barcodeH);
+
+        // Номер справа — крупный
+        doc.setFont('Roboto', 'bold'); doc.setFontSize(14); doc.setTextColor(30, 30, 30);
+        const numLabel = `#${plant.number}`;
+        doc.text(numLabel, x + labelW - PAD - doc.getTextWidth(numLabel), y + labelH / 2 + 3);
+
+      } else {
+        // Большие этикетки: текст сверху, штрихкод по центру снизу
+        doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
+        doc.text(`${room.name || '—'}`, x + PAD, y + PAD + 3.5);
+        const pl = `#${plant.number}`;
+        doc.text(pl, x + labelW - PAD - doc.getTextWidth(pl), y + PAD + 3.5);
+        doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
+        doc.text(`Старт: ${startDateStr}`, x + PAD, y + PAD + 8);
+        const maxTW = labelW - PAD * 2;
+        let st = plant.strain || room.strain || '—';
+        if (doc.getTextWidth(st) > maxTW) { while (doc.getTextWidth(st + '...') > maxTW && st.length > 10) st = st.slice(0, -1); st += '...'; }
+        doc.text(st, x + PAD, y + PAD + 12);
+        doc.text(`Урожай: ${harvestDateStr}`, x + PAD, y + PAD + 16);
+
+        const barcodeW = Math.min(50, labelW * 0.35);
+        const barcodeH = Math.max(labelH - 22 - PAD, 8);
+        const barcodeX = x + (labelW - barcodeW) / 2;
+        doc.addImage(barcodeDataUrl, 'PNG', barcodeX, y + PAD + 18, barcodeW, barcodeH);
+      }
     }
   }
 
