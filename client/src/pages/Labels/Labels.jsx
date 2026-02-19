@@ -285,7 +285,12 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
     }
   }
 
-  window.open(doc.output('bloburl'), '_blank');
+  const blobUrl = doc.output('bloburl');
+  const win = window.open(blobUrl, '_blank');
+  if (!win) {
+    // Попап-блокер — скачать как файл
+    doc.save(`labels-${plants.length}.pdf`);
+  }
 }
 
 // ── Component ──
@@ -424,7 +429,7 @@ const Labels = () => {
         sheetW, sheetH, perPage: layout.perPage,
         marginLR: layout.marginLR, marginTB: layout.marginTB, gap: layout.gap
       });
-    } catch (err) { console.error(err); setError('Ошибка генерации PDF'); }
+    } catch (err) { console.error('PDF generation error:', err); setError(`Ошибка генерации PDF: ${err.message || err}`); }
     finally { setGenerating(false); }
   };
 
