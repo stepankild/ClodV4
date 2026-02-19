@@ -16,6 +16,14 @@ const harvestSessionSchema = new mongoose.Schema({
     enum: ['in_progress', 'completed'],
     default: 'in_progress'
   },
+  crew: [{
+    user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    role: {
+      type: String,
+      enum: ['cutting', 'room', 'carrying', 'weighing', 'hooks', 'hanging', 'observer']
+    },
+    joinedAt: { type: Date, default: Date.now }
+  }],
   plants: [{
     plantNumber: { type: Number, required: true },
     strain: { type: String, default: '' },

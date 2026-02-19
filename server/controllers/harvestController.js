@@ -6,8 +6,11 @@ import RoomTask from '../models/RoomTask.js';
 import RoomLog from '../models/RoomLog.js';
 import VegBatch from '../models/VegBatch.js';
 import CloneCut from '../models/CloneCut.js';
+import User from '../models/User.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { getScaleState } from '../socket/index.js';
+
+const VALID_CREW_ROLES = ['cutting', 'room', 'carrying', 'weighing', 'hooks', 'hanging', 'observer'];
 
 // @desc    Получить текущее состояние весов (in-memory из Socket.io)
 // @route   GET /api/harvest/scale
@@ -48,6 +51,7 @@ export const getSessionByRoom = async (req, res) => {
       return res.status(200).json(null);
     }
     await session.populate('plants.recordedBy', 'name email');
+    await session.populate('crew.user', 'name email');
     res.json(session);
   } catch (error) {
     console.error('Get harvest session error:', error);
@@ -110,7 +114,7 @@ export const createSession = async (req, res) => {
 export const addPlant = async (req, res) => {
   try {
     const { sessionId } = req.params;
-    const { plantNumber, wetWeight } = req.body;
+    const { plantNumber, wetWeight, overrideWorkerId } = req.body;
 
     if (plantNumber == null || wetWeight == null) {
       return res.status(400).json({ message: 'Укажите номер куста и вес (plantNumber, wetWeight)' });
@@ -155,12 +159,18 @@ export const addPlant = async (req, res) => {
       strainForPlant = room.strain;
     }
 
+    // Определить кто записывает: overrideWorkerId (планшет) или req.user._id (телефон)
+    let recorderId = req.user._id;
+    if (overrideWorkerId && mongoose.Types.ObjectId.isValid(overrideWorkerId)) {
+      recorderId = overrideWorkerId;
+    }
+
     session.plants.push({
       plantNumber: num,
       strain: strainForPlant,
       wetWeight: weight,
       recordedAt: new Date(),
-      recordedBy: req.user._id
+      recordedBy: recorderId
     });
     await session.save();
     await session.populate('plants.recordedBy', 'name email');
@@ -504,6 +514,172 @@ export const completeSession = async (req, res) => {
   } catch (error) {
     console.error('Complete session error:', error);
     res.status(500).json({ message: error.message || 'Ошибка сервера' });
+  }
+};
+
+// @desc    Получить список работников (для выбора в dropdown на планшете)
+// @route   GET /api/harvest/workers
+export const getWorkers = async (req, res) => {
+  try {
+    const workers = await User.find({ isActive: true, deletedAt: null })
+      .select('name email')
+      .sort({ name: 1 });
+    res.json(workers);
+  } catch (error) {
+    console.error('Get workers error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Присоединиться к сессии сбора с ролью
+// @route   POST /api/harvest/session/:sessionId/join
+export const joinSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { role } = req.body;
+
+    if (!role || !VALID_CREW_ROLES.includes(role)) {
+      return res.status(400).json({ message: `Некорректная роль. Допустимые: ${VALID_CREW_ROLES.join(', ')}` });
+    }
+
+    const session = await HarvestSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+    }
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ message: 'Сессия уже завершена' });
+    }
+
+    const userId = req.user._id.toString();
+
+    // Роль weighing — максимум 1 человек
+    if (role === 'weighing') {
+      const currentWeigher = session.crew.find(
+        c => c.role === 'weighing' && c.user.toString() !== userId
+      );
+      if (currentWeigher) {
+        // Заполнить имя текущего взвешивающего
+        await session.populate('crew.user', 'name');
+        const weigherEntry = session.crew.find(c => c.role === 'weighing' && c.user._id.toString() !== userId);
+        const weigherName = weigherEntry?.user?.name || 'Кто-то';
+        return res.status(409).json({
+          message: `Роль «Взвешивание» уже занята: ${weigherName}`,
+          currentWeigher: { userId: currentWeigher.user.toString(), name: weigherName }
+        });
+      }
+    }
+
+    // Удалить предыдущую роль этого пользователя (если есть)
+    session.crew = session.crew.filter(c => c.user.toString() !== userId);
+
+    // Добавить с новой ролью
+    session.crew.push({
+      user: req.user._id,
+      role,
+      joinedAt: new Date()
+    });
+
+    await session.save();
+    await session.populate('crew.user', 'name email');
+
+    // Broadcast crew update через Socket.io
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('harvest:crew_update', {
+        sessionId: session._id.toString(),
+        crew: session.crew
+      });
+    }
+
+    res.json({ crew: session.crew });
+  } catch (error) {
+    console.error('Join session error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Принудительно заменить взвешивающего (если роль занята)
+// @route   POST /api/harvest/session/:sessionId/force-join
+export const forceJoinSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { role } = req.body;
+
+    if (!role || !VALID_CREW_ROLES.includes(role)) {
+      return res.status(400).json({ message: `Некорректная роль` });
+    }
+
+    const session = await HarvestSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+    }
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ message: 'Сессия уже завершена' });
+    }
+
+    const userId = req.user._id.toString();
+
+    // Удалить текущего человека с этой ролью (если weighing)
+    if (role === 'weighing') {
+      session.crew = session.crew.filter(c => c.role !== 'weighing');
+    }
+
+    // Удалить предыдущую роль этого пользователя
+    session.crew = session.crew.filter(c => c.user.toString() !== userId);
+
+    session.crew.push({
+      user: req.user._id,
+      role,
+      joinedAt: new Date()
+    });
+
+    await session.save();
+    await session.populate('crew.user', 'name email');
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('harvest:crew_update', {
+        sessionId: session._id.toString(),
+        crew: session.crew
+      });
+    }
+
+    res.json({ crew: session.crew });
+  } catch (error) {
+    console.error('Force join session error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Покинуть сессию сбора (убрать свою роль)
+// @route   DELETE /api/harvest/session/:sessionId/leave
+export const leaveSession = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+
+    const session = await HarvestSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+    }
+
+    const userId = req.user._id.toString();
+    session.crew = session.crew.filter(c => c.user.toString() !== userId);
+
+    await session.save();
+    await session.populate('crew.user', 'name email');
+
+    const io = req.app.get('io');
+    if (io) {
+      io.emit('harvest:crew_update', {
+        sessionId: session._id.toString(),
+        crew: session.crew
+      });
+    }
+
+    res.json({ crew: session.crew });
+  } catch (error) {
+    console.error('Leave session error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 

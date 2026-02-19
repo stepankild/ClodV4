@@ -5,6 +5,7 @@ import { roomService } from '../../services/roomService';
 import { harvestService } from '../../services/harvestService';
 import { useScale } from '../../hooks/useScale';
 import { useBarcode } from '../../hooks/useBarcode';
+import { onScaleEvent } from '../../services/scaleSocket';
 import HarvestRoomMap from '../../components/RoomMap/HarvestRoomMap';
 import HarvestHistory from './HarvestHistory';
 
@@ -18,8 +19,21 @@ const formatDate = (date) => {
   });
 };
 
+// ── Определение ролей ──
+const CREW_ROLES = [
+  { key: 'cutting', emoji: '✂️', label: 'Срезка', desc: 'Срезать кусты в комнате' },
+  { key: 'room', emoji: '🧹', label: 'В комнате', desc: 'Вынуть кусты из сетки, убрать комнату' },
+  { key: 'carrying', emoji: '🚶', label: 'Носить', desc: 'Носить кусты к весам' },
+  { key: 'weighing', emoji: '⚖️', label: 'Взвешивание', desc: 'Сканер + весы. Запись от вашего имени', max: 1 },
+  { key: 'hooks', emoji: '🪝', label: 'Крючки', desc: 'Разделить взвешенные кусты' },
+  { key: 'hanging', emoji: '🧵', label: 'Развеска', desc: 'Вешать на сушку' },
+  { key: 'observer', emoji: '👁️', label: 'Наблюдатель', desc: 'Просто смотрю' },
+];
+
+const getRoleInfo = (key) => CREW_ROLES.find(r => r.key === key) || { emoji: '❓', label: key, desc: '' };
+
 const Harvest = () => {
-  const { hasPermission } = useAuth();
+  const { hasPermission, user } = useAuth();
   const canDoHarvest = hasPermission && hasPermission('harvest:record');
   const { weight: scaleWeight, unit: scaleUnit, stable: scaleStable, scaleConnected, socketConnected, debug: scaleDebug } = useScale();
   const { lastBarcode, scanTime } = useBarcode();
@@ -39,15 +53,23 @@ const Harvest = () => {
   const [errorNoteSaving, setErrorNoteSaving] = useState(false);
   const [completeSuccess, setCompleteSuccess] = useState(false);
   const [scanFlash, setScanFlash] = useState(false);
-  const [duplicateError, setDuplicateError] = useState(null); // { plantNumber } — блокирующая ошибка дубля
-  const [successMsg, setSuccessMsg] = useState(null); // { plantNumber, weight, sessionId, countdown }
+  const [duplicateError, setDuplicateError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
   const [showDebug, setShowDebug] = useState(false);
   const undoTimerRef = useRef(null);
   const undoCountdownRef = useRef(null);
   const autoRecordRef = useRef(false);
 
+  // ── Crew state ──
+  const [myRole, setMyRole] = useState(null); // текущая роль пользователя
+  const [crew, setCrew] = useState([]); // массив { user: { _id, name }, role, joinedAt }
+  const [roleLoading, setRoleLoading] = useState(false);
+  const [weighingConflict, setWeighingConflict] = useState(null); // { currentWeigher: { name } }
+
   const safeRooms = Array.isArray(rooms) ? rooms : [];
   const activeRooms = safeRooms.filter(r => r && r.isActive);
+
+  const isWeigher = myRole === 'weighing';
 
   useEffect(() => {
     loadRooms();
@@ -56,6 +78,24 @@ const Harvest = () => {
       if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
     };
   }, []);
+
+  // ── Socket.io подписка на crew_update ──
+  useEffect(() => {
+    const unsub = onScaleEvent((event, data) => {
+      if (event === 'crew_update' && session && data.sessionId === session._id) {
+        setCrew(data.crew || []);
+        // Обновить свою роль из crew
+        const me = (data.crew || []).find(c => {
+          const uid = c.user?._id || c.user;
+          return uid === user?._id || uid === user?.id;
+        });
+        if (me) {
+          setMyRole(me.role);
+        }
+      }
+    });
+    return unsub;
+  }, [session?._id, user?._id, user?.id]);
 
   const loadRooms = async () => {
     try {
@@ -90,6 +130,20 @@ const Harvest = () => {
       }
       if (!s) s = await harvestService.createSession(roomId);
       setSession(s);
+      // Загрузить crew из сессии
+      const sessionCrew = s.crew || [];
+      setCrew(sessionCrew);
+      // Проверить есть ли текущий пользователь уже в crew
+      const userId = user?._id || user?.id;
+      const me = sessionCrew.find(c => {
+        const uid = c.user?._id || c.user;
+        return uid === userId;
+      });
+      if (me) {
+        setMyRole(me.role);
+      } else {
+        setMyRole(null);
+      }
     } catch (err) {
       const msg = err.response?.data?.message || err.message || 'Ошибка сессии сбора';
       setError(msg);
@@ -98,7 +152,7 @@ const Harvest = () => {
     } finally {
       setSessionLoading(false);
     }
-  }, []);
+  }, [user]);
 
   // Выбор комнаты по клику на карточку
   const handleSelectRoom = (roomId) => {
@@ -106,16 +160,76 @@ const Harvest = () => {
     setSession(null);
     setError('');
     setCompleteSuccess(false);
+    setMyRole(null);
+    setCrew([]);
     loadOrCreateSession(roomId);
   };
 
   // Вернуться к выбору комнат
   const handleBackToRooms = () => {
+    // Если есть сессия и роль — покинуть crew
+    if (session && myRole) {
+      harvestService.leaveSession(session._id).catch(() => {});
+    }
     setSelectedRoomId('');
     setSession(null);
     setError('');
     setManualWeight('');
     setPlantNumber('');
+    setMyRole(null);
+    setCrew([]);
+  };
+
+  // Выбрать роль
+  const handleJoinRole = async (roleKey) => {
+    if (!session) return;
+    try {
+      setRoleLoading(true);
+      setError('');
+      setWeighingConflict(null);
+      const res = await harvestService.joinSession(session._id, roleKey);
+      setCrew(res.crew || []);
+      setMyRole(roleKey);
+    } catch (err) {
+      if (err.response?.status === 409) {
+        // Роль weighing занята
+        setWeighingConflict({
+          currentWeigher: err.response.data.currentWeigher
+        });
+      } else {
+        setError(err.response?.data?.message || 'Ошибка выбора роли');
+      }
+    } finally {
+      setRoleLoading(false);
+    }
+  };
+
+  // Принудительно занять weighing (заменить)
+  const handleForceJoinWeighing = async () => {
+    if (!session) return;
+    try {
+      setRoleLoading(true);
+      setError('');
+      setWeighingConflict(null);
+      const res = await harvestService.forceJoinSession(session._id, 'weighing');
+      setCrew(res.crew || []);
+      setMyRole('weighing');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка замены роли');
+    } finally {
+      setRoleLoading(false);
+    }
+  };
+
+  // Сменить роль (вернуться к экрану выбора)
+  const handleChangeRole = async () => {
+    if (!session) return;
+    try {
+      await harvestService.leaveSession(session._id);
+      setMyRole(null);
+    } catch (err) {
+      console.error('Leave session error:', err);
+    }
   };
 
   // URL param auto-select
@@ -128,33 +242,28 @@ const Harvest = () => {
     }
   }, [roomIdFromUrl, rooms]);
 
-  // Обработка скана штрихкода
+  // Обработка скана штрихкода — только для weighing роли
   useEffect(() => {
     if (!lastBarcode || !scanTime || !session || session.status !== 'in_progress') return;
+    if (!isWeigher) return; // Только взвешивающий обрабатывает сканы
 
     const num = parseInt(lastBarcode, 10);
     if (isNaN(num) || num <= 0) return;
 
-    // Получить записанные кусты
     const harvestedPlants = new Set((session.plants || []).map(p => p.plantNumber));
 
     if (harvestedPlants.has(num)) {
-      // Куст уже записан — блокирующая ошибка (нужно нажать ОК)
       setDuplicateError({ plantNumber: num });
       return;
     }
 
-    // Заполнить номер
     setPlantNumber(String(num));
     setError('');
 
-    // Авто-запись: если вес стабильный и > 0
     if (scaleConnected && scaleWeight != null && scaleWeight > 0) {
-      // Небольшая задержка чтобы state обновился
       autoRecordRef.current = true;
     }
 
-    // Визуальный feedback
     setScanFlash(true);
     setTimeout(() => setScanFlash(false), 1500);
   }, [scanTime]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -169,16 +278,15 @@ const Harvest = () => {
 
   const handleRecordPlant = async (e, overridePlantNumber) => {
     if (e && e.preventDefault) e.preventDefault();
-    if (duplicateError) return; // Блокировка пока не закрыта ошибка дубля
+    if (duplicateError) return;
+    if (!isWeigher) return; // Только weighing может записывать
     const num = (overridePlantNumber || plantNumber).toString().trim();
-    // Если вес не введён вручную — берём с весов автоматически
     const weight = manualWeight
       ? parseInt(manualWeight, 10)
       : (scaleConnected && scaleWeight != null ? scaleWeight : NaN);
     if (!session || !num || isNaN(weight) || weight <= 0) return;
     if (session.status !== 'in_progress') return;
 
-    // Проверка дубля на клиенте перед отправкой
     const harvestedPlants = new Set((session.plants || []).map(p => p.plantNumber));
     if (harvestedPlants.has(parseInt(num, 10))) {
       setDuplicateError({ plantNumber: parseInt(num, 10) });
@@ -193,7 +301,6 @@ const Harvest = () => {
       setSession(updated);
       setPlantNumber('');
       setManualWeight('');
-      // Уведомление об успешной записи с возможностью отмены 7 сек
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
       if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
       const msgData = { plantNumber: num, weight, sessionId: session._id, countdown: 7 };
@@ -221,7 +328,6 @@ const Harvest = () => {
   const handleUndoPlant = async () => {
     if (!successMsg) return;
     const { sessionId, plantNumber: num } = successMsg;
-    // Остановить таймеры
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
     setSuccessMsg(null);
@@ -263,6 +369,8 @@ const Harvest = () => {
       await harvestService.completeSession(session._id);
       setSession(null);
       setSelectedRoomId('');
+      setMyRole(null);
+      setCrew([]);
       setCompleteSuccess(true);
       setTimeout(() => setCompleteSuccess(false), 5000);
       await loadRooms();
@@ -350,7 +458,6 @@ const Harvest = () => {
                       </span>
                     )}
                   </div>
-                  {/* Progress bar */}
                   <div className="h-2 bg-dark-700 rounded-full overflow-hidden mb-1.5">
                     <div
                       className={`h-full ${progressColor} rounded-full transition-all`}
@@ -375,7 +482,151 @@ const Harvest = () => {
     );
   }
 
-  // ── Режим сессии сбора ──
+  // ── Режим выбора роли (комната выбрана, сессия есть, роль ещё не выбрана) ──
+  const selectedRoom = safeRooms.find(r => r._id === selectedRoomId);
+
+  if (session && session.status === 'in_progress' && !myRole) {
+    // Группируем crew по ролям для дисплея
+    const crewByRole = {};
+    for (const c of crew) {
+      const r = c.role;
+      if (!crewByRole[r]) crewByRole[r] = [];
+      crewByRole[r].push(c);
+    }
+
+    return (
+      <div>
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={handleBackToRooms}
+            className="flex items-center gap-2 text-dark-400 hover:text-primary-400 transition text-sm mb-3"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            </svg>
+            К выбору комнаты
+          </button>
+          <h1 className="text-2xl font-bold text-white">
+            Сбор урожая — {selectedRoom?.name || 'Комната'}
+          </h1>
+          <p className="text-dark-400 mt-1">Выберите вашу роль в сборе</p>
+        </div>
+
+        {error && (
+          <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6">
+            {error}
+          </div>
+        )}
+
+        {/* Конфликт weighing — модалка */}
+        {weighingConflict && (
+          <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+            <div className="bg-dark-800 border-2 border-amber-600 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-full bg-amber-600/20 flex items-center justify-center shrink-0">
+                  <span className="text-2xl">⚖️</span>
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-lg">Роль занята</h3>
+                  <p className="text-amber-400 text-sm mt-1">
+                    Взвешивание: <span className="font-bold text-white">{weighingConflict.currentWeigher?.name || 'Кто-то'}</span>
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setWeighingConflict(null)}
+                  className="flex-1 px-4 py-3 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded-xl font-medium transition"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={handleForceJoinWeighing}
+                  disabled={roleLoading}
+                  className="flex-1 px-4 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold transition disabled:opacity-50"
+                >
+                  Заменить
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Сетка ролей */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 mb-8">
+          {CREW_ROLES.map(role => {
+            const roleCrew = crewByRole[role.key] || [];
+            const isWeighingTaken = role.key === 'weighing' && roleCrew.length > 0;
+            const userId = user?._id || user?.id;
+            const isMeInRole = roleCrew.some(c => {
+              const uid = c.user?._id || c.user;
+              return uid === userId;
+            });
+
+            return (
+              <button
+                key={role.key}
+                type="button"
+                onClick={() => handleJoinRole(role.key)}
+                disabled={roleLoading}
+                className={`relative text-left p-4 rounded-xl border-2 transition-all ${
+                  isMeInRole
+                    ? 'border-primary-500 bg-primary-900/30'
+                    : isWeighingTaken
+                      ? 'border-amber-700/50 bg-dark-800 hover:border-amber-500/70'
+                      : 'border-dark-600 bg-dark-800 hover:border-primary-600/50 hover:bg-dark-750'
+                } disabled:opacity-50`}
+              >
+                <div className="text-3xl mb-2">{role.emoji}</div>
+                <div className="text-white font-bold text-sm mb-1">{role.label}</div>
+                <div className="text-dark-400 text-xs leading-tight">{role.desc}</div>
+                {/* Кто уже в этой роли */}
+                {roleCrew.length > 0 && (
+                  <div className="mt-2 pt-2 border-t border-dark-700">
+                    {roleCrew.map(c => (
+                      <div key={c.user?._id || c.user} className="text-xs text-dark-300 truncate">
+                        {c.user?.name || '—'}
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Бейдж max 1 */}
+                {role.max === 1 && (
+                  <div className="absolute top-2 right-2 text-[10px] text-dark-500 bg-dark-700 px-1.5 py-0.5 rounded">
+                    макс. 1
+                  </div>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Текущая команда */}
+        {crew.length > 0 && (
+          <div className="bg-dark-800 rounded-xl p-4 border border-dark-700">
+            <h3 className="text-sm font-semibold text-white mb-3">Команда на сборе</h3>
+            <div className="flex flex-wrap gap-2">
+              {crew.map(c => {
+                const ri = getRoleInfo(c.role);
+                return (
+                  <div
+                    key={c.user?._id || c.user}
+                    className="flex items-center gap-1.5 bg-dark-700 rounded-full px-3 py-1.5"
+                  >
+                    <span className="text-sm">{ri.emoji}</span>
+                    <span className="text-xs text-white font-medium">{c.user?.name || '—'}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Режим сессии сбора (роль выбрана) ──
   const totalWet = session?.plants?.reduce((s, p) => s + p.wetWeight, 0) ?? 0;
   const expected = session?.plantsCount ?? 0;
   const recorded = session?.plants?.length ?? 0;
@@ -402,12 +653,13 @@ const Harvest = () => {
     return map;
   })();
 
-  const selectedRoom = safeRooms.find(r => r._id === selectedRoomId);
   const sessionPlants = session?.plants || [];
   const harvestedPlants = new Set(sessionPlants.map(p => p.plantNumber));
   const harvestedWeights = new Map(sessionPlants.map(p => [p.plantNumber, p.wetWeight]));
   const hasRoomMap = selectedRoom?.roomLayout?.customRows?.length > 0 &&
     selectedRoom?.roomLayout?.plantPositions?.length > 0;
+
+  const myRoleInfo = getRoleInfo(myRole);
 
   return (
     <div>
@@ -433,10 +685,56 @@ const Harvest = () => {
         </h1>
         {selectedRoom?.isTestRoom ? (
           <p className="text-amber-400 mt-1">Тестовая комната — данные не попадут в архив и статистику.</p>
+        ) : isWeigher ? (
+          <p className="text-dark-400 mt-1">Сканируйте штрихкод или введите номер куста и вес.</p>
         ) : (
-          <p className="text-dark-400 mt-1">Введите номер куста и вес, затем нажмите «Записать».</p>
+          <p className="text-dark-400 mt-1">Вы можете следить за прогрессом сбора.</p>
         )}
       </div>
+
+      {/* Плашка роли + команда */}
+      {myRole && (
+        <div className="bg-dark-800 rounded-xl p-4 border border-dark-700 mb-6">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">{myRoleInfo.emoji}</span>
+              <div>
+                <div className="text-white font-bold text-sm">Ваша роль: {myRoleInfo.label}</div>
+                {isWeigher && (
+                  <div className="text-green-400 text-xs">Запись кустов от вашего имени</div>
+                )}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {/* Мини-дисплей команды */}
+              {crew.length > 0 && (
+                <div className="flex items-center gap-1 mr-2">
+                  {crew.map(c => {
+                    const ri = getRoleInfo(c.role);
+                    return (
+                      <span
+                        key={c.user?._id || c.user}
+                        className="text-sm"
+                        title={`${c.user?.name || '—'} — ${ri.label}`}
+                      >
+                        {ri.emoji}
+                      </span>
+                    );
+                  })}
+                  <span className="text-dark-500 text-xs ml-1">{crew.length}</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleChangeRole}
+                className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-400 hover:text-white border border-dark-600 rounded-lg text-xs font-medium transition"
+              >
+                Сменить роль
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6">
@@ -486,7 +784,6 @@ const Harvest = () => {
                 </p>
               </div>
             </div>
-            {/* Прогресс-бар обратного отсчёта */}
             <div className="w-full bg-dark-700 rounded-full h-1.5 mb-4 overflow-hidden">
               <div
                 className="bg-green-500 h-full rounded-full transition-all duration-1000 ease-linear"
@@ -517,7 +814,6 @@ const Harvest = () => {
             </div>
 
             <div className="space-y-3">
-              {/* Сокет */}
               <div className="flex items-center justify-between py-2 px-3 bg-dark-700 rounded-lg">
                 <span className="text-dark-300 text-sm">Сервер (WebSocket)</span>
                 <span className={`flex items-center gap-2 text-sm font-medium ${socketConnected ? 'text-green-400' : 'text-red-400'}`}>
@@ -525,8 +821,6 @@ const Harvest = () => {
                   {socketConnected ? 'Подключен' : 'Отключен'}
                 </span>
               </div>
-
-              {/* Pi */}
               <div className="flex items-center justify-between py-2 px-3 bg-dark-700 rounded-lg">
                 <span className="text-dark-300 text-sm">Raspberry Pi</span>
                 <span className={`flex items-center gap-2 text-sm font-medium ${scaleDebug ? 'text-green-400' : 'text-red-400'}`}>
@@ -534,8 +828,6 @@ const Harvest = () => {
                   {scaleDebug ? 'Онлайн' : 'Нет данных'}
                 </span>
               </div>
-
-              {/* Весы */}
               <div className="flex items-center justify-between py-2 px-3 bg-dark-700 rounded-lg">
                 <span className="text-dark-300 text-sm">Весы (USB)</span>
                 <span className={`flex items-center gap-2 text-sm font-medium ${scaleConnected ? 'text-green-400' : 'text-red-400'}`}>
@@ -543,8 +835,6 @@ const Harvest = () => {
                   {scaleConnected ? 'Подключены' : 'Отключены'}
                 </span>
               </div>
-
-              {/* Сканер */}
               <div className="flex items-center justify-between py-2 px-3 bg-dark-700 rounded-lg">
                 <span className="text-dark-300 text-sm">Сканер штрихкодов</span>
                 <span className={`flex items-center gap-2 text-sm font-medium ${scaleDebug?.barcodeConnected ? 'text-green-400' : 'text-red-400'}`}>
@@ -553,7 +843,6 @@ const Harvest = () => {
                 </span>
               </div>
 
-              {/* Детали от Pi */}
               {scaleDebug && (
                 <div className="mt-3 pt-3 border-t border-dark-600 space-y-2 text-sm">
                   <div className="flex justify-between">
@@ -649,98 +938,114 @@ const Harvest = () => {
             </div>
           </div>
 
-          {/* Весы и запись куста */}
-          <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 mb-6">
-            <h2 className="text-lg font-semibold text-white mb-4">Записать куст</h2>
+          {/* Весы и запись куста — ТОЛЬКО для weighing */}
+          {isWeigher && (
+            <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 mb-6">
+              <h2 className="text-lg font-semibold text-white mb-4">Записать куст</h2>
 
-            {/* Live-дисплей весов */}
-            <div className={`flex items-center gap-3 mb-4 p-3 rounded-lg border ${
-              scaleConnected
-                ? 'bg-dark-700 border-green-700/50'
-                : 'bg-dark-700/50 border-dark-600'
-            }`}>
-              <div className={`w-3 h-3 rounded-full shrink-0 ${
-                scaleConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-              }`} />
-              {scaleConnected ? (
-                <div className="flex items-center gap-4 flex-wrap flex-1">
-                  <div className="text-3xl font-mono font-bold text-white leading-none">
-                    {scaleWeight != null ? `${scaleWeight} г` : '--- г'}
+              {/* Live-дисплей весов */}
+              <div className={`flex items-center gap-3 mb-4 p-3 rounded-lg border ${
+                scaleConnected
+                  ? 'bg-dark-700 border-green-700/50'
+                  : 'bg-dark-700/50 border-dark-600'
+              }`}>
+                <div className={`w-3 h-3 rounded-full shrink-0 ${
+                  scaleConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+                }`} />
+                {scaleConnected ? (
+                  <div className="flex items-center gap-4 flex-wrap flex-1">
+                    <div className="text-3xl font-mono font-bold text-white leading-none">
+                      {scaleWeight != null ? `${scaleWeight} г` : '--- г'}
+                    </div>
+                    {scaleStable && (
+                      <span className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded">
+                        Стабильно
+                      </span>
+                    )}
                   </div>
-                  {scaleStable && (
-                    <span className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded">
-                      Стабильно
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <div className="text-dark-400 text-sm flex-1">
-                  {socketConnected ? 'Весы не подключены' : 'Подключение к серверу...'}
-                </div>
-              )}
-              {/* Кнопка диагностики */}
-              <button
-                type="button"
-                onClick={() => setShowDebug(true)}
-                className="p-2 text-dark-400 hover:text-white hover:bg-dark-600 rounded-lg transition shrink-0"
-                title="Диагностика оборудования"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="flex flex-wrap items-end gap-4">
-              <div>
-                <label className="block text-sm text-dark-400 mb-1">Номер куста</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={plantNumber}
-                  onChange={(e) => setPlantNumber(e.target.value)}
-                  placeholder="1"
-                  className={`w-28 px-3 py-2 bg-dark-700 border rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500 transition-colors duration-300 ${
-                    scanFlash ? 'border-green-500 ring-2 ring-green-500/50' : 'border-dark-600'
-                  }`}
-                />
-              </div>
-              <div>
-                <label className="block text-sm text-dark-400 mb-1">Вес (г)</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={manualWeight}
-                  onChange={(e) => setManualWeight(e.target.value)}
-                  placeholder={scaleConnected && scaleWeight != null ? String(scaleWeight) : '250'}
-                  className="w-28 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500"
-                />
-              </div>
-              {scaleConnected && scaleWeight != null && (
+                ) : (
+                  <div className="text-dark-400 text-sm flex-1">
+                    {socketConnected ? 'Весы не подключены' : 'Подключение к серверу...'}
+                  </div>
+                )}
                 <button
                   type="button"
-                  onClick={() => setManualWeight(String(scaleWeight))}
-                  className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium"
+                  onClick={() => setShowDebug(true)}
+                  className="p-2 text-dark-400 hover:text-white hover:bg-dark-600 rounded-lg transition shrink-0"
+                  title="Диагностика оборудования"
                 >
-                  Взять с весов ({scaleWeight} г)
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
                 </button>
+              </div>
+
+              <div className="flex flex-wrap items-end gap-4">
+                <div>
+                  <label className="block text-sm text-dark-400 mb-1">Номер куста</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={plantNumber}
+                    onChange={(e) => setPlantNumber(e.target.value)}
+                    placeholder="1"
+                    className={`w-28 px-3 py-2 bg-dark-700 border rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500 transition-colors duration-300 ${
+                      scanFlash ? 'border-green-500 ring-2 ring-green-500/50' : 'border-dark-600'
+                    }`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm text-dark-400 mb-1">Вес (г)</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={manualWeight}
+                    onChange={(e) => setManualWeight(e.target.value)}
+                    placeholder={scaleConnected && scaleWeight != null ? String(scaleWeight) : '250'}
+                    className="w-28 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                {scaleConnected && scaleWeight != null && (
+                  <button
+                    type="button"
+                    onClick={() => setManualWeight(String(scaleWeight))}
+                    className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium"
+                  >
+                    Взять с весов ({scaleWeight} г)
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={handleRecordPlant}
+                  disabled={!canDoHarvest || !plantNumber.trim() || (!manualWeight && !(scaleConnected && scaleWeight > 0)) || recordLoading}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 font-medium"
+                >
+                  {recordLoading ? '...' : 'Записать'}
+                </button>
+              </div>
+              {scaleConnected && !manualWeight && (
+                <p className="text-xs text-dark-500 mt-2">
+                  Вес не введён — при записи будет использован вес с весов автоматически.
+                </p>
               )}
-              <button
-                type="button"
-                onClick={handleRecordPlant}
-                disabled={!canDoHarvest || !plantNumber.trim() || (!manualWeight && !(scaleConnected && scaleWeight > 0)) || recordLoading}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 font-medium"
-              >
-                {recordLoading ? '...' : 'Записать'}
-              </button>
             </div>
-            {scaleConnected && !manualWeight && (
-              <p className="text-xs text-dark-500 mt-2">
-                Вес не введён — при записи будет использован вес с весов автоматически.
-              </p>
-            )}
-          </div>
+          )}
+
+          {/* Для не-weighing ролей — информация что запись недоступна */}
+          {!isWeigher && (
+            <div className="bg-dark-800/50 rounded-xl p-4 border border-dark-700/50 mb-6">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{myRoleInfo.emoji}</span>
+                <div>
+                  <p className="text-dark-300 text-sm">
+                    Вы в роли <span className="text-white font-medium">{myRoleInfo.label}</span> — запись кустов доступна только для роли «Взвешивание».
+                  </p>
+                  <p className="text-dark-500 text-xs mt-1">Вы можете следить за прогрессом сбора ниже.</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Карта комнаты */}
           {hasRoomMap ? (
@@ -751,7 +1056,7 @@ const Harvest = () => {
                 harvestedPlants={harvestedPlants}
                 harvestedWeights={harvestedWeights}
                 onPlantClick={(plantNumber) => {
-                  if (!harvestedPlants.has(plantNumber)) {
+                  if (isWeigher && !harvestedPlants.has(plantNumber)) {
                     setPlantNumber(String(plantNumber));
                   }
                 }}
@@ -888,16 +1193,18 @@ const Harvest = () => {
                                 ) : (
                                   <span className="text-dark-500 text-xs">—</span>
                                 )}
-                                <button
-                                  type="button"
-                                  onClick={() => setErrorNoteEdit({
-                                    plantNumber: p.plantNumber,
-                                    value: p.errorNote || ''
-                                  })}
-                                  className="text-primary-400 hover:text-primary-300 text-xs"
-                                >
-                                  {p.errorNote ? 'Изменить' : 'Добавить пометку'}
-                                </button>
+                                {isWeigher && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setErrorNoteEdit({
+                                      plantNumber: p.plantNumber,
+                                      value: p.errorNote || ''
+                                    })}
+                                    className="text-primary-400 hover:text-primary-300 text-xs"
+                                  >
+                                    {p.errorNote ? 'Изменить' : 'Добавить пометку'}
+                                  </button>
+                                )}
                               </div>
                             )}
                           </td>
@@ -973,13 +1280,13 @@ const Harvest = () => {
             {selectedRoom?.isTestRoom && (
               <span className="text-amber-400 text-sm">Тестовая комната — завершение не создаст архив</span>
             )}
-            {!canDoHarvest && (
-              <span className="text-dark-500 text-sm">Нет права на сбор урожая — только просмотр</span>
+            {!isWeigher && (
+              <span className="text-dark-500 text-sm">Завершить сбор может только взвешивающий</span>
             )}
             <button
               type="button"
               onClick={handleCompleteSession}
-              disabled={sessionLoading || !canDoHarvest}
+              disabled={sessionLoading || !isWeigher || !canDoHarvest}
               className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-500 font-medium disabled:opacity-50"
             >
               {selectedRoom?.isTestRoom ? 'Завершить тест' : 'Завершить сбор'}

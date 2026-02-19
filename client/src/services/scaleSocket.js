@@ -42,6 +42,10 @@ export function connectScale() {
     listeners.forEach(cb => cb('debug', data));
   });
 
+  socket.on('harvest:crew_update', (data) => {
+    listeners.forEach(cb => cb('crew_update', data));
+  });
+
   socket.on('connect', () => {
     listeners.forEach(cb => cb('socketConnected', {}));
   });

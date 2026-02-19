@@ -7,7 +7,11 @@ import {
   removePlant,
   setPlantErrorNote,
   completeSession,
-  getSessions
+  getSessions,
+  getWorkers,
+  joinSession,
+  forceJoinSession,
+  leaveSession
 } from '../controllers/harvestController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -20,6 +24,12 @@ router.use(protect);
 router.get('/scale', getScaleReading);
 router.get('/session', checkPermission('harvest:view'), getSessionByRoom);
 router.get('/sessions', checkPermission('harvest:view'), getSessions);
+router.get('/workers', checkPermission('harvest:view'), getWorkers);
+
+// Crew (роли при сборе)
+router.post('/session/:sessionId/join', checkPermission('harvest:view'), joinSession);
+router.post('/session/:sessionId/force-join', checkPermission('harvest:view'), forceJoinSession);
+router.delete('/session/:sessionId/leave', checkPermission('harvest:view'), leaveSession);
 
 // Действия
 router.post('/session', checkPermission('harvest:record'), createSession);
