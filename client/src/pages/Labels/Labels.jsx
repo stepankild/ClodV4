@@ -132,7 +132,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       // angle: -90 → текст идёт СВЕРХУ ВНИЗ (clockwise), совпадает с curY
       // Раскладка: #N → Комната → Сорт → Старт → Урожай → Штрихкод → #N
 
-      const textX = x + labelW * 0.7;
+      const textX = x + labelW / 2 + 2; // центр браслета по ширине
       let curY = y + PAD + 5;
 
       // ─ 1. Номер куста — БОЛЬШОЙ ─
