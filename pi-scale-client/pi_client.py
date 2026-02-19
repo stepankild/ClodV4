@@ -97,7 +97,7 @@ def connect_to_scale():
         if SCALE_MODE == 'continuous':
             time.sleep(0.5)
             scale.enable_continuous_print()
-            print('[OK] Continuous print (CP) enabled')
+            print('[OK] Continuous print (CP) enabled + IP polling for unstable readings')
         else:
             print(f'[OK] Mode: {SCALE_MODE}')
         return True
@@ -225,9 +225,11 @@ def main():
     consecutive_errors = 0
     max_consecutive_errors = 10
     last_debug_time = 0
+    last_ip_time = 0
     DEBUG_INTERVAL = 5  # секунд между отправками debug
+    IP_POLL_INTERVAL = 0.3  # интервал IP-запросов (получить вес даже нестабильный)
 
-    print(f'\nReading scale every {READ_INTERVAL}s...\n')
+    print(f'\nReading scale every {READ_INTERVAL}s (IP polling every {IP_POLL_INTERVAL}s)...\n')
 
     while True:
         try:
@@ -247,7 +249,10 @@ def main():
 
                 if scale.reconnect(max_retries=5, delay=2):
                     consecutive_errors = 0
-                    # Весы вернулись — сообщить
+                    # Весы вернулись — сообщить и включить CP
+                    if SCALE_MODE == 'continuous':
+                        time.sleep(0.5)
+                        scale.enable_continuous_print()
                     emit_scale_status(True)
                     scale_was_connected = True
                 else:
@@ -256,7 +261,14 @@ def main():
                     time.sleep(5)
                     continue
 
+            # Стратегия: сначала пробуем прочитать данные из CP-потока.
+            # Если CP не даёт данных (нестабильный вес), используем IP-запрос.
             reading = scale.read_weight()
+
+            if reading is None and (now - last_ip_time) >= IP_POLL_INTERVAL:
+                # CP не дал данных — запрашиваем текущий вес через IP
+                reading = scale.read_weight_immediate()
+                last_ip_time = now
 
             if reading is not None:
                 weight, unit, stable = reading

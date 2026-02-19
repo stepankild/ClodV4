@@ -61,6 +61,11 @@ class ScaleReader:
         """Включить непрерывную отправку веса (команда CP)."""
         self.send_command('CP')
 
+    def request_immediate_print(self):
+        """Запросить одноразовое чтение веса (команда IP).
+        IP возвращает текущий вес немедленно, включая нестабильные показания."""
+        self.send_command('IP')
+
     def read_weight(self):
         """
         Прочитать одну строку с весов и распарсить.
@@ -75,6 +80,31 @@ class ScaleReader:
             if self.serial_conn.in_waiting > 500:
                 self.serial_conn.reset_input_buffer()
 
+            line = self.serial_conn.readline().decode('ascii', errors='ignore').strip()
+            if not line:
+                return None
+            return self.parse_line(line)
+        except (serial.SerialException, OSError) as e:
+            print(f'Serial read error: {e}')
+            return None
+
+    def read_weight_immediate(self):
+        """
+        Отправить IP и прочитать ответ — получить текущий вес немедленно.
+        Работает даже если вес нестабилен (качается).
+        Возвращает (weight, unit, stable) или None.
+        """
+        if not self.is_connected():
+            return None
+
+        try:
+            # Сбросить буфер — нам нужен только свежий ответ на IP
+            self.serial_conn.reset_input_buffer()
+            # Отправить IP
+            self.request_immediate_print()
+            # Дать время весам ответить (Ohaus отвечает ~50-100мс)
+            time.sleep(0.08)
+            # Прочитать ответ (timeout=0.1 в serial, итого ждём до ~180мс)
             line = self.serial_conn.readline().decode('ascii', errors='ignore').strip()
             if not line:
                 return None
