@@ -158,7 +158,7 @@ const CrewInfographic = ({ crewData, roomSquareMeters, roomName, strain, onClose
             {renderMetricRow('Время', formatDuration(totalDuration))}
             {showPots && (
               <>
-                {renderMetricRow('🪴 Горшков перенесено', totalPlants)}
+                {renderMetricRow('🪴 Горшков вынесено', totalPlants)}
                 {renderMetricRow('Ходок (горшки)', potTrips)}
                 {potsPerTrip && renderMetricRow('Горшков за ходку', potsPerTrip)}
                 {potDistanceM && renderMetricRow('Расстояние (горшки)', `${potDistanceM} м`)}
@@ -167,7 +167,7 @@ const CrewInfographic = ({ crewData, roomSquareMeters, roomName, strain, onClose
             )}
             {showPlants && (
               <>
-                {renderMetricRow('🌿 Кустов перенесено', totalPlants)}
+                {renderMetricRow('🌿 Кустов к весам', totalPlants)}
                 {renderMetricRow('Ходок (кусты)', plantTrips)}
                 {plantsPerTrip && renderMetricRow('Кустов за ходку', plantsPerTrip)}
                 {plantDistanceM && renderMetricRow('Расстояние (кусты)', `${plantDistanceM} м`)}
@@ -216,7 +216,12 @@ const CrewInfographic = ({ crewData, roomSquareMeters, roomName, strain, onClose
             {totalBranches && renderMetricRow('Веток развешано', `~${totalBranches}`)}
             {!totalBranches && totalPlants && renderMetricRow('Кустов (ветками)', totalPlants)}
             {renderMetricRow('Время', formatDuration(totalDuration))}
-            {totalBranches && renderFunFact(`Развесил ~${totalBranches} веток 🧵`)}
+            {totalBranches && renderFunFact(
+              totalBranches > 500 ? `~${totalBranches} веток — как новогодняя ёлка на стероидах 🎄` :
+              totalBranches > 200 ? `~${totalBranches} веток — хватит на гирлянду через весь дом 🏠` :
+              totalBranches > 50 ? `~${totalBranches} веток — целый бельевой день на верёвках 👕` :
+              `Развесил ~${totalBranches} веток 🧵`
+            )}
           </>
         );
       }

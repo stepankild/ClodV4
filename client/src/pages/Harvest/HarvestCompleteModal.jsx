@@ -104,7 +104,7 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
           {/* Вес горшка */}
           <div>
             <label className="flex items-center gap-2 text-sm text-dark-300 mb-1.5">
-              <span>⚖️</span> Средний вес горшка с растением (кг)
+              <span>⚖️</span> Средний вес горшка (кг)
             </label>
             <input
               type="number"
@@ -181,8 +181,8 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
                         className="flex-1 px-2 py-2 bg-dark-600 border border-dark-500 rounded-lg text-white text-sm focus:ring-2 focus:ring-green-500"
                       >
                         <option value="">Не указано</option>
-                        <option value="pots">🪴 Горшки к весам</option>
-                        <option value="plants">🌿 Кусты на сушку</option>
+                        <option value="pots">🪴 Горшки на выброс</option>
+                        <option value="plants">🌿 Кусты на взвешивание</option>
                         <option value="both">🔄 Оба</option>
                       </select>
                     </div>
