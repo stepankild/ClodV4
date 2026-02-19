@@ -41,18 +41,26 @@ class BarcodeQueue:
                     created_at REAL NOT NULL
                 )
             ''')
+            # Миграция: добавить колонки веса (если ещё нет)
+            cursor = conn.execute('PRAGMA table_info(barcode_queue)')
+            columns = {row[1] for row in cursor.fetchall()}
+            if 'weight' not in columns:
+                conn.execute('ALTER TABLE barcode_queue ADD COLUMN weight REAL')
+                conn.execute('ALTER TABLE barcode_queue ADD COLUMN weight_unit TEXT')
+                conn.execute('ALTER TABLE barcode_queue ADD COLUMN weight_stable INTEGER')
+                print('[Buffer] Migrated barcode_queue: added weight columns')
             conn.commit()
             conn.close()
 
-    def push(self, barcode):
-        """Добавить штрихкод в очередь. Возвращает текущий размер очереди."""
+    def push(self, barcode, weight=None, unit=None, stable=None):
+        """Добавить штрихкод (+ вес) в очередь. Возвращает текущий размер очереди."""
         now = time.time()
         with self._lock:
             try:
                 conn = sqlite3.connect(self.db_path)
                 conn.execute(
-                    'INSERT INTO barcode_queue (barcode, scanned_at, created_at) VALUES (?, ?, ?)',
-                    (barcode, now, now)
+                    'INSERT INTO barcode_queue (barcode, scanned_at, created_at, weight, weight_unit, weight_stable) VALUES (?, ?, ?, ?, ?, ?)',
+                    (barcode, now, now, weight, unit, 1 if stable else (0 if stable is not None else None))
                 )
                 # Ограничение размера — удалить старейшие
                 count = conn.execute('SELECT COUNT(*) FROM barcode_queue').fetchone()[0]
@@ -75,11 +83,13 @@ class BarcodeQueue:
                 raise
 
     def peek_all(self):
-        """Получить все штрихкоды в порядке FIFO. Возвращает [(id, barcode, scanned_at), ...]."""
+        """Получить все штрихкоды в порядке FIFO.
+        Возвращает [(id, barcode, scanned_at, weight, weight_unit, weight_stable), ...].
+        """
         with self._lock:
             conn = sqlite3.connect(self.db_path)
             rows = conn.execute(
-                'SELECT id, barcode, scanned_at FROM barcode_queue ORDER BY id ASC'
+                'SELECT id, barcode, scanned_at, weight, weight_unit, weight_stable FROM barcode_queue ORDER BY id ASC'
             ).fetchall()
             conn.close()
             return rows

@@ -38,7 +38,7 @@ const Harvest = () => {
   const { hasPermission, user } = useAuth();
   const canDoHarvest = hasPermission && hasPermission('harvest:record');
   const { weight: scaleWeight, unit: scaleUnit, stable: scaleStable, scaleConnected, socketConnected, debug: scaleDebug, syncing, syncCount, bufferedBarcodes } = useScale();
-  const { lastBarcode, scanTime } = useBarcode();
+  const { lastBarcode, scanTime, barcodeWeight, barcodeWeightUnit, barcodeWeightStable, barcodeBuffered } = useBarcode();
 
   const [searchParams] = useSearchParams();
   const roomIdFromUrl = searchParams.get('roomId') || '';
@@ -279,7 +279,11 @@ const Harvest = () => {
     setPlantNumber(String(num));
     setError('');
 
-    if (scaleConnected && scaleWeight != null && scaleWeight > 0) {
+    // Для buffered сканов — вес уже в payload (записан на Pi в момент скана)
+    if (barcodeBuffered && barcodeWeight != null && barcodeWeight > 0) {
+      setManualWeight(String(Math.round(barcodeWeight)));
+      autoRecordRef.current = true;
+    } else if (scaleConnected && scaleWeight != null && scaleWeight > 0) {
       autoRecordRef.current = true;
     }
 

@@ -70,6 +70,10 @@ scale = ScaleReader(port=SERIAL_PORT, baudrate=BAUD_RATE)
 barcode_queue = BarcodeQueue()
 weight_buffer = LatestWeightBuffer()
 
+# ── Shared current weight (для доступа из barcode_loop) ──
+# LatestWeightBuffer уже thread-safe, используем отдельный экземпляр
+current_weight = LatestWeightBuffer()  # последнее показание весов, обновляется из main loop
+
 pending = barcode_queue.size()
 if pending > 0:
     print(f'[Buffer] {pending} barcode scan(s) pending from previous session')
@@ -116,18 +120,27 @@ def flush_buffers():
             sio.emit('pi:sync_start', {'barcodeCount': len(queued)})
 
         sent = 0
-        for row_id, barcode_code, scanned_at in queued:
+        for row in queued:
+            row_id, barcode_code, scanned_at = row[0], row[1], row[2]
+            weight_val, weight_unit, weight_stable = row[3], row[4], row[5] if len(row) > 5 else (None, None, None)
             if not sio.connected:
                 print(f'[Buffer] Lost connection during flush, {len(queued) - sent} remaining')
                 return
-            sio.emit('barcode:scan', {
+            payload = {
                 'barcode': barcode_code,
                 'buffered': True,
                 'scannedAt': scanned_at
-            })
+            }
+            # Включить вес если он был записан при скане
+            if weight_val is not None:
+                payload['weight'] = weight_val
+                payload['unit'] = weight_unit or 'g'
+                payload['stable'] = bool(weight_stable)
+            sio.emit('barcode:scan', payload)
             barcode_queue.remove(row_id)
             sent += 1
-            print(f'[Buffer] Sent buffered barcode: {barcode_code}')
+            weight_info = f' (weight: {weight_val} {weight_unit})' if weight_val is not None else ''
+            print(f'[Buffer] Sent buffered barcode: {barcode_code}{weight_info}')
             time.sleep(0.05)  # Небольшая задержка чтобы не флудить сервер
 
         if sio.connected:
@@ -219,13 +232,23 @@ def barcode_loop():
             if code is not None:
                 print(f'[Barcode] Scanned: {code}')
                 wait_cycles = 0
+                # Захватить текущий вес на момент скана
+                cw = current_weight.get()  # (weight, unit, stable) или None
                 if sio.connected:
-                    sio.emit('barcode:scan', {'barcode': code})
-                    print(f'[Barcode] Sent to server: {code}')
+                    payload = {'barcode': code}
+                    if cw is not None:
+                        payload['weight'] = cw[0]
+                        payload['unit'] = cw[1]
+                        payload['stable'] = cw[2]
+                    sio.emit('barcode:scan', payload)
+                    weight_info = f' (weight: {cw[0]} {cw[1]})' if cw else ''
+                    print(f'[Barcode] Sent to server: {code}{weight_info}')
                 else:
-                    # Буферизуем вместо потери
-                    queue_size = barcode_queue.push(code)
-                    print(f'[Barcode] Buffered scan: {code} (queue: {queue_size})')
+                    # Буферизуем вместе с текущим весом
+                    w, u, s = cw if cw else (None, None, None)
+                    queue_size = barcode_queue.push(code, weight=w, unit=u, stable=s)
+                    weight_info = f' (weight: {w} {u})' if w is not None else ' (no weight)'
+                    print(f'[Barcode] Buffered scan: {code}{weight_info} (queue: {queue_size})')
             elif wait_cycles % 12 == 0:
                 # Каждые ~60 секунд — показать что поток жив
                 print(f'[Barcode] Waiting for scan... (connected: {barcode.is_connected()})')
@@ -354,6 +377,9 @@ def main():
             if reading is not None:
                 weight, unit, stable = reading
                 consecutive_errors = 0
+
+                # Обновить shared weight для barcode_loop
+                current_weight.set(weight, unit, stable)
 
                 # Если до этого весы считались отключёнными — сообщить что вернулись
                 if not scale_was_connected:

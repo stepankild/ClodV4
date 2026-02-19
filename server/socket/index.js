@@ -203,15 +203,23 @@ function handlePiConnection(io, socket) {
 
   // Получение скана штрихкода от Pi
   socket.on('barcode:scan', (data) => {
-    const { barcode, buffered } = data;
+    const { barcode, buffered, weight, unit, stable, scannedAt } = data;
     if (barcode) {
+      const weightInfo = weight != null ? ` (weight: ${weight} ${unit || 'g'})` : '';
       if (buffered) {
-        console.log(`Barcode scanned (buffered): ${barcode}`);
+        console.log(`Barcode scanned (buffered): ${barcode}${weightInfo}`);
       } else {
-        console.log(`Barcode scanned: ${barcode}`);
+        console.log(`Barcode scanned: ${barcode}${weightInfo}`);
       }
-      // Broadcast всем браузерам (включая флаг buffered)
-      socket.broadcast.emit('barcode:scan', { barcode, buffered: !!buffered });
+      // Broadcast всем браузерам (включая вес и флаг buffered)
+      const payload = { barcode, buffered: !!buffered };
+      if (weight != null) {
+        payload.weight = weight;
+        payload.unit = unit || 'g';
+        payload.stable = !!stable;
+      }
+      if (scannedAt) payload.scannedAt = scannedAt;
+      socket.broadcast.emit('barcode:scan', payload);
     }
   });
 
