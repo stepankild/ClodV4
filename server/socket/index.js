@@ -189,9 +189,10 @@ function handlePiConnection(io, socket) {
     console.warn('Scale error:', data?.message || data);
   });
 
-  // Диагностика от Pi (каждые 5 сек)
+  // Диагностика от Pi (каждые 5 сек) — также служит heartbeat
   socket.on('scale:debug', (data) => {
     scaleState.debug = { ...data, receivedAt: new Date().toISOString() };
+    resetHeartbeat(io); // debug = heartbeat от Pi (weight может не приходить при стабильном весе)
     // Broadcast браузерам
     socket.broadcast.emit('scale:debug', scaleState.debug);
   });
