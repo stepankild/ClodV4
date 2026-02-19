@@ -40,7 +40,9 @@ const Harvest = () => {
   const [completeSuccess, setCompleteSuccess] = useState(false);
   const [scanFlash, setScanFlash] = useState(false);
   const [duplicateError, setDuplicateError] = useState(null); // { plantNumber } — блокирующая ошибка дубля
-  const [successMsg, setSuccessMsg] = useState(null); // { plantNumber, weight } — уведомление об успешной записи
+  const [successMsg, setSuccessMsg] = useState(null); // { plantNumber, weight, sessionId, countdown }
+  const undoTimerRef = useRef(null);
+  const undoCountdownRef = useRef(null);
   const autoRecordRef = useRef(false);
 
   const safeRooms = Array.isArray(rooms) ? rooms : [];
@@ -48,6 +50,10 @@ const Harvest = () => {
 
   useEffect(() => {
     loadRooms();
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
+    };
   }, []);
 
   const loadRooms = async () => {
@@ -186,14 +192,44 @@ const Harvest = () => {
       setSession(updated);
       setPlantNumber('');
       setManualWeight('');
-      // Уведомление об успешной записи
-      setSuccessMsg({ plantNumber: num, weight });
-      setTimeout(() => setSuccessMsg(null), 5000);
+      // Уведомление об успешной записи с возможностью отмены 7 сек
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+      if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
+      const msgData = { plantNumber: num, weight, sessionId: session._id, countdown: 7 };
+      setSuccessMsg(msgData);
+      undoCountdownRef.current = setInterval(() => {
+        setSuccessMsg(prev => {
+          if (!prev) return null;
+          const next = prev.countdown - 1;
+          if (next <= 0) return null;
+          return { ...prev, countdown: next };
+        });
+      }, 1000);
+      undoTimerRef.current = setTimeout(() => {
+        setSuccessMsg(null);
+        if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
+      }, 7000);
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка записи куста');
       console.error(err);
     } finally {
       setRecordLoading(false);
+    }
+  };
+
+  const handleUndoPlant = async () => {
+    if (!successMsg) return;
+    const { sessionId, plantNumber: num } = successMsg;
+    // Остановить таймеры
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
+    setSuccessMsg(null);
+    try {
+      const updated = await harvestService.removePlant(sessionId, num);
+      setSession(updated);
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка отмены записи');
+      console.error(err);
     }
   };
 
@@ -432,15 +468,37 @@ const Harvest = () => {
         </div>
       )}
 
-      {/* Уведомление об успешной записи */}
+      {/* Уведомление об успешной записи — по центру с отменой */}
       {successMsg && (
-        <div className="fixed bottom-6 right-6 z-40 bg-green-600 text-white px-5 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-[slideUp_0.3s_ease-out]">
-          <svg className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-          </svg>
-          <span className="font-medium">
-            Куст #{successMsg.plantNumber} записан — {successMsg.weight} г
-          </span>
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-dark-800 border-2 border-green-600 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-green-600/20 flex items-center justify-center shrink-0">
+                <svg className="w-7 h-7 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-lg">Куст записан!</h3>
+                <p className="text-green-400 text-sm mt-1">
+                  Куст <span className="font-bold text-white">#{successMsg.plantNumber}</span> — <span className="font-bold text-white">{successMsg.weight} г</span>
+                </p>
+              </div>
+            </div>
+            {/* Прогресс-бар обратного отсчёта */}
+            <div className="w-full bg-dark-700 rounded-full h-1.5 mb-4 overflow-hidden">
+              <div
+                className="bg-green-500 h-full rounded-full transition-all duration-1000 ease-linear"
+                style={{ width: `${((successMsg.countdown || 0) / 7) * 100}%` }}
+              />
+            </div>
+            <button
+              onClick={handleUndoPlant}
+              className="w-full px-4 py-3 bg-dark-700 hover:bg-red-600 border border-dark-600 hover:border-red-500 text-dark-300 hover:text-white rounded-xl font-bold text-lg transition"
+            >
+              Отменить ({successMsg.countdown || 0})
+            </button>
+          </div>
         </div>
       )}
 

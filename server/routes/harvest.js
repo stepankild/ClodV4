@@ -4,6 +4,7 @@ import {
   getSessionByRoom,
   createSession,
   addPlant,
+  removePlant,
   setPlantErrorNote,
   completeSession,
   getSessions
@@ -23,6 +24,7 @@ router.get('/sessions', checkPermission('harvest:view'), getSessions);
 // Действия
 router.post('/session', checkPermission('harvest:record'), createSession);
 router.post('/session/:sessionId/plant', checkPermission('harvest:record'), addPlant);
+router.delete('/session/:sessionId/plant/:plantNumber', checkPermission('harvest:record'), removePlant);
 router.patch('/session/:sessionId/plant/:plantNumber', checkPermission('harvest:edit_weights'), setPlantErrorNote);
 router.post('/session/:sessionId/complete', checkPermission('harvest:complete'), completeSession);
 

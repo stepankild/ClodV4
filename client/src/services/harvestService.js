@@ -24,6 +24,11 @@ export const harvestService = {
     return response.data;
   },
 
+  async removePlant(sessionId, plantNumber) {
+    const response = await api.delete(`/harvest/session/${sessionId}/plant/${plantNumber}`);
+    return response.data;
+  },
+
   async setPlantErrorNote(sessionId, plantNumber, errorNote) {
     const response = await api.patch(
       `/harvest/session/${sessionId}/plant/${plantNumber}`,

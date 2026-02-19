@@ -174,6 +174,45 @@ export const addPlant = async (req, res) => {
   }
 };
 
+// @desc    Удалить запись куста (отмена в течение 7 сек после записи)
+// @route   DELETE /api/harvest/session/:sessionId/plant/:plantNumber
+export const removePlant = async (req, res) => {
+  try {
+    const { sessionId, plantNumber } = req.params;
+    const session = await HarvestSession.findById(sessionId);
+    if (!session) {
+      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+    }
+    if (session.status !== 'in_progress') {
+      return res.status(400).json({ message: 'Сессия уже завершена' });
+    }
+
+    const num = Number(plantNumber);
+    const idx = session.plants.findIndex(p => p.plantNumber === num);
+    if (idx === -1) {
+      return res.status(404).json({ message: `Куст №${num} не найден в сессии` });
+    }
+
+    // Проверка: можно удалить только в течение 30 сек после записи (защита от злоупотреблений)
+    const plant = session.plants[idx];
+    const secondsSinceRecord = (Date.now() - new Date(plant.recordedAt).getTime()) / 1000;
+    if (secondsSinceRecord > 30) {
+      return res.status(400).json({ message: 'Время для отмены истекло (макс. 30 сек)' });
+    }
+
+    session.plants.splice(idx, 1);
+    await session.save();
+    await session.populate('plants.recordedBy', 'name email');
+
+    await createAuditLog(req, { action: 'harvest.plant_remove', entityType: 'HarvestSession', entityId: session._id, details: { roomId: session.room?.toString(), plantNumber: num } });
+
+    res.json(session);
+  } catch (error) {
+    console.error('Remove plant error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
 // @desc    Добавить пометку об ошибке к записи куста (удалять данные нельзя)
 // @route   PATCH /api/harvest/session/:sessionId/plant/:plantNumber
 export const setPlantErrorNote = async (req, res) => {
