@@ -1217,7 +1217,7 @@ const Harvest = () => {
             <p className="text-xs text-dark-500 mt-2">Данные нельзя удалить. Можно добавить или изменить пометку об ошибке.</p>
           </div>
 
-          {/* Таблица кустов по номерам и гистограмма весов */}
+          {/* Таблица кустов + аналитика */}
           <div className="grid lg:grid-cols-2 gap-6 mb-6">
             <div className="bg-dark-800 rounded-xl p-6 border border-dark-700">
               <h2 className="text-lg font-semibold text-white mb-4">Записанные кусты по номеру</h2>
@@ -1251,28 +1251,107 @@ const Harvest = () => {
               )}
             </div>
             <div className="bg-dark-800 rounded-xl p-6 border border-dark-700">
-              <h2 className="text-lg font-semibold text-white mb-4">Вес по кустам</h2>
+              <h2 className="text-lg font-semibold text-white mb-4">Аналитика</h2>
               {session.plants?.length === 0 ? (
-                <p className="text-dark-400 text-sm">Нет данных для графика.</p>
-              ) : (
-                <div className="flex items-end gap-1 h-48">
-                  {[...(session.plants || [])].sort((a, b) => a.plantNumber - b.plantNumber).map((p) => {
-                    const maxW = Math.max(...session.plants.map(x => x.wetWeight), 1);
-                    const h = (p.wetWeight / maxW) * 100;
-                    const barColor = strainColorMap[p.strain || '—'] || 'bg-primary-500';
-                    return (
-                      <div key={`${p.plantNumber}-bar`} className="flex-1 flex flex-col items-center gap-1">
-                        <div
-                          className={`w-full ${barColor} rounded-t min-h-[4px] transition-all`}
-                          style={{ height: `${h}%` }}
-                          title={`Куст ${p.plantNumber} (${p.strain || '—'}): ${p.wetWeight} г`}
-                        />
-                        <span className="text-xs text-dark-400">{p.plantNumber}</span>
+                <p className="text-dark-400 text-sm">Нет данных для аналитики.</p>
+              ) : (() => {
+                const plants = session.plants || [];
+                const sorted = [...plants].sort((a, b) => b.wetWeight - a.wetWeight);
+                const heaviest = sorted[0];
+                const lightest = sorted[sorted.length - 1];
+                const median = sorted[Math.floor(sorted.length / 2)];
+
+                // Статистика по рядам (если есть карта комнаты)
+                const positions = selectedRoom?.roomLayout?.plantPositions || [];
+                const customRows = selectedRoom?.roomLayout?.customRows || [];
+                const plantToRow = {};
+                for (const pos of positions) {
+                  plantToRow[pos.plantNumber] = pos.row;
+                }
+                const rowStats = {};
+                for (const p of plants) {
+                  const rowIdx = plantToRow[p.plantNumber];
+                  if (rowIdx != null) {
+                    const rowName = customRows[rowIdx]?.name || `Ряд ${rowIdx + 1}`;
+                    if (!rowStats[rowName]) rowStats[rowName] = { count: 0, total: 0 };
+                    rowStats[rowName].count++;
+                    rowStats[rowName].total += p.wetWeight;
+                  }
+                }
+                const rowEntries = Object.entries(rowStats).sort((a, b) => b[1].total - a[1].total);
+
+                return (
+                  <div className="space-y-4">
+                    {/* Рекорды */}
+                    <div>
+                      <div className="text-xs text-dark-500 uppercase tracking-wider mb-2">Рекорды</div>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                          <span className="text-dark-300 text-sm">🏆 Самый тяжёлый</span>
+                          <span className="text-green-400 font-bold text-sm">
+                            #{heaviest.plantNumber} — {heaviest.wetWeight} г
+                            {heaviest.strain && <span className="text-dark-400 font-normal ml-1">({heaviest.strain})</span>}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                          <span className="text-dark-300 text-sm">🪶 Самый лёгкий</span>
+                          <span className="text-amber-400 font-bold text-sm">
+                            #{lightest.plantNumber} — {lightest.wetWeight} г
+                            {lightest.strain && <span className="text-dark-400 font-normal ml-1">({lightest.strain})</span>}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                          <span className="text-dark-300 text-sm">📊 Медиана</span>
+                          <span className="text-primary-400 font-bold text-sm">{median.wetWeight} г</span>
+                        </div>
+                        <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                          <span className="text-dark-300 text-sm">📏 Разброс</span>
+                          <span className="text-dark-200 font-bold text-sm">{lightest.wetWeight} — {heaviest.wetWeight} г</span>
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
+                    </div>
+
+                    {/* По сортам (если > 1) */}
+                    {strainStats.length > 1 && (
+                      <div>
+                        <div className="text-xs text-dark-500 uppercase tracking-wider mb-2">По сортам</div>
+                        <div className="space-y-1.5">
+                          {strainStats.map(st => (
+                            <div key={st.strain} className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                              <span className="text-dark-300 text-sm flex items-center gap-1.5">
+                                <span className={`inline-block w-2.5 h-2.5 rounded-sm ${strainColorMap[st.strain] || 'bg-primary-500'}`} />
+                                {st.strain}
+                              </span>
+                              <span className="text-white text-sm">
+                                <span className="font-bold">{st.totalWet} г</span>
+                                <span className="text-dark-400 ml-1.5">{st.count} шт · {Math.round(st.totalWet / st.count)} г/куст</span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* По рядам (если есть карта) */}
+                    {rowEntries.length > 0 && (
+                      <div>
+                        <div className="text-xs text-dark-500 uppercase tracking-wider mb-2">По рядам</div>
+                        <div className="space-y-1.5">
+                          {rowEntries.map(([name, stat]) => (
+                            <div key={name} className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                              <span className="text-dark-300 text-sm">{name}</span>
+                              <span className="text-white text-sm">
+                                <span className="font-bold">{stat.total} г</span>
+                                <span className="text-dark-400 ml-1.5">{stat.count} шт · {Math.round(stat.total / stat.count)} г/куст</span>
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
