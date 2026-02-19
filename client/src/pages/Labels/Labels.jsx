@@ -31,7 +31,7 @@ function migrateLayout(layout) {
 
 // ── Sheet sizes ──
 const SHEET_SIZES = [
-  { name: 'Браслеты 8×10"', w: 203, h: 254, marginLR: 6.5, marginTB: 2, gap: 0 },
+  { name: 'Браслеты 8×10"', w: 203, h: 254, marginLR: 6.5, marginTB: 2, gap: 0, defaultCols: 10, defaultCount: 10 },
   { name: 'A4', w: 210, h: 297 },
   { name: 'A5', w: 148, h: 210 },
   { name: 'Letter', w: 216, h: 279 },
@@ -69,6 +69,8 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
   const PAD = 2;
   const startDateStr = formatDateShort(room.startDate);
   const harvestDateStr = formatDateShort(room.expectedHarvestDate);
+  // Вертикальный браслет: высота >> ширина (например 19x250мм)
+  const isVertical = labelH > labelW * 3;
   const isCompact = labelH < 25;
   const isTiny = labelH < 18;
 
@@ -90,8 +92,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
     doc.rect(x, y, labelW, labelH);
     doc.setLineDashPattern([], 0);
 
-    // Barcode — always centered
-    // Barcode canvas — компактный, не растянутый
+    // Barcode canvas
     const canvas = document.createElement('canvas');
     JsBarcode(canvas, String(plant.number), {
       format: 'CODE128', width: 1.5, height: 30,
@@ -99,7 +100,56 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
     });
     const barcodeDataUrl = canvas.toDataURL('image/png');
 
-    if (isTiny) {
+    if (isVertical) {
+      // ── Вертикальный браслет (~19mm шир × ~250mm выс) ──
+      // Контент повёрнут на 90° — текст читается при повороте браслета
+      // Раскладка сверху вниз: #N | Комната+Сорт | Штрихкод | Даты
+
+      const cx = x + labelW / 2; // центр колонки по X
+
+      // ─ Блок 1: Номер растения (сверху) ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(12); doc.setTextColor(30, 30, 30);
+      const numLabel = `#${plant.number}`;
+      doc.text(numLabel, cx + 3.5, y + PAD + 4, { angle: 90 });
+
+      // ─ Блок 2: Название комнаты ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
+      doc.text(`${room.name || '—'}`, cx + 3.5, y + PAD + 18, { angle: 90 });
+
+      // ─ Блок 3: Сорт (вторая колонка текста) ─
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
+      let st = plant.strain || room.strain || '—';
+      const maxStW = 35;
+      if (doc.getTextWidth(st) > maxStW) { while (doc.getTextWidth(st + '..') > maxStW && st.length > 5) st = st.slice(0, -1); st += '..'; }
+      doc.text(st, cx - 0.5, y + PAD + 18, { angle: 90 });
+
+      // ─ Блок 4: Штрихкод (повёрнут на 90° через pre-rotated canvas) ─
+      const srcCanvas = document.createElement('canvas');
+      JsBarcode(srcCanvas, String(plant.number), {
+        format: 'CODE128', width: 2, height: 40,
+        displayValue: false, margin: 2
+      });
+      // Поворачиваем canvas на 90° для вертикальной вставки
+      const rotCanvas = document.createElement('canvas');
+      rotCanvas.width = srcCanvas.height;
+      rotCanvas.height = srcCanvas.width;
+      const rctx = rotCanvas.getContext('2d');
+      rctx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
+      rctx.rotate(Math.PI / 2);
+      rctx.drawImage(srcCanvas, -srcCanvas.width / 2, -srcCanvas.height / 2);
+      const rotBarcodeUrl = rotCanvas.toDataURL('image/png');
+
+      const barcodeW = labelW - PAD * 2 - 2;
+      const barcodeH = Math.min(60, labelH * 0.25);
+      const barcodeY = y + PAD + 32;
+      doc.addImage(rotBarcodeUrl, 'PNG', x + PAD + 1, barcodeY, barcodeW, barcodeH);
+
+      // ─ Блок 5: Даты (ниже штрихкода) ─
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(5); doc.setTextColor(100, 100, 100);
+      doc.text(`${startDateStr}`, cx + 3, y + PAD + 32 + barcodeH + 5, { angle: 90 });
+      doc.text(`${harvestDateStr}`, cx - 1, y + PAD + 32 + barcodeH + 5, { angle: 90 });
+
+    } else if (isTiny) {
       // Single-row: text left, barcode center, #N right (labelH < 18mm)
       const textY = y + labelH / 2 + 1;
       const barcodeW = Math.min(25, labelW * 0.2);
@@ -210,8 +260,8 @@ const Labels = () => {
   const [marginLR, setMarginLR] = useState(SHEET_SIZES[0].marginLR ?? DEFAULT_MARGIN);
   const [marginTB, setMarginTB] = useState(SHEET_SIZES[0].marginTB ?? DEFAULT_MARGIN);
   const [labelGap, setLabelGap] = useState(SHEET_SIZES[0].gap ?? DEFAULT_GAP);
-  const [cols, setCols] = useState(1);
-  const [countPerSheet, setCountPerSheet] = useState(10);
+  const [cols, setCols] = useState(SHEET_SIZES[0].defaultCols ?? 1);
+  const [countPerSheet, setCountPerSheet] = useState(SHEET_SIZES[0].defaultCount ?? 10);
 
   const handleSheetChange = (idx) => {
     setSheetIdx(idx);
@@ -222,6 +272,8 @@ const Labels = () => {
       setMarginLR(s.marginLR ?? DEFAULT_MARGIN);
       setMarginTB(s.marginTB ?? DEFAULT_MARGIN);
       setLabelGap(s.gap ?? DEFAULT_GAP);
+      if (s.defaultCols) setCols(s.defaultCols);
+      if (s.defaultCount) setCountPerSheet(s.defaultCount);
     }
   };
 
@@ -496,8 +548,8 @@ const Labels = () => {
             )}
             <label className="text-xs">
               <span className="text-dark-400 block mb-1">Колонок</span>
-              <input type="number" min={1} max={5} value={cols}
-                onChange={e => setCols(Math.max(1, Math.min(5, +e.target.value || 1)))}
+              <input type="number" min={1} max={20} value={cols}
+                onChange={e => setCols(Math.max(1, Math.min(20, +e.target.value || 1)))}
                 className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </label>
             <label className="text-xs">
