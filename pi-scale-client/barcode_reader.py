@@ -13,6 +13,7 @@
   - Пользователь должен быть в группе 'input': sudo usermod -a -G input stepan
 """
 
+import os
 import time
 import select
 
@@ -122,9 +123,11 @@ class BarcodeReader:
         if self.device is None:
             return False
         try:
-            # Проверяем что файл дескриптор ещё валиден
-            self.device.path  # noqa
-            return self.device.fd >= 0
+            if self.device.fd < 0:
+                return False
+            # Проверяем что device node ещё существует в /dev
+            os.stat(self.device.path)
+            return True
         except (OSError, AttributeError):
             return False
 
@@ -219,7 +222,8 @@ class BarcodeReader:
                             print(f'[Barcode] Unknown KEY code: {event.code}')
 
         except (OSError, IOError) as e:
-            print(f'[Barcode] Read error: {e}')
+            print(f'[Barcode] Read error (device lost): {e}')
+            self.close()  # пометить как отключённое → barcode_loop сделает reconnect
             self._buffer = ''
             return None
 
