@@ -15,12 +15,29 @@ Farm Pi Client — клиент для Raspberry Pi.
 import os
 import sys
 import time
+import socket as stdlib_socket
 import threading
 from datetime import datetime
 import socketio
 from dotenv import load_dotenv
 from scale_reader import ScaleReader
 from event_buffer import BarcodeQueue, LatestWeightBuffer
+
+
+# ── Systemd watchdog (без внешних зависимостей) ──
+def sd_notify(state):
+    """Отправить уведомление в systemd (sd_notify protocol)."""
+    addr = os.environ.get('NOTIFY_SOCKET')
+    if not addr:
+        return  # Не запущены под systemd или WatchdogSec не настроен
+    if addr[0] == '@':
+        addr = '\0' + addr[1:]  # abstract socket
+    sock = stdlib_socket.socket(stdlib_socket.AF_UNIX, stdlib_socket.SOCK_DGRAM)
+    try:
+        sock.connect(addr)
+        sock.sendall(state.encode())
+    finally:
+        sock.close()
 
 # Загрузить .env из текущей директории
 load_dotenv()
@@ -290,13 +307,18 @@ def main():
 
     print(f'\nReading scale every {READ_INTERVAL}s (IP polling every {IP_POLL_INTERVAL}s)...\n')
 
+    # Сообщить systemd что сервис запустился
+    sd_notify('READY=1')
+    print('[Watchdog] Service ready, watchdog active')
+
     while True:
         try:
             now = time.time()
 
-            # Периодическая отправка диагностики (каждые 5 сек)
+            # Периодическая отправка диагностики (каждые 5 сек) + watchdog heartbeat
             if now - last_debug_time >= DEBUG_INTERVAL:
                 emit_debug_info(last_weight, consecutive_errors, start_time)
+                sd_notify('WATCHDOG=1')  # Говорим systemd что живы
                 last_debug_time = now
 
             if not scale.is_connected():

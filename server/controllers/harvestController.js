@@ -254,6 +254,11 @@ export const setPlantErrorNote = async (req, res) => {
 export const completeSession = async (req, res) => {
   try {
     const { sessionId } = req.params;
+    const {
+      distanceToScale, potWeight, branchesPerPlant,
+      potsPerTrip, plantsPerTrip, carrierAssignments
+    } = req.body || {};
+
     const session = await HarvestSession.findById(sessionId);
     if (!session) {
       return res.status(404).json({ message: 'Сессия сбора не найдена' });
@@ -262,9 +267,117 @@ export const completeSession = async (req, res) => {
       return res.status(400).json({ message: 'Сессия уже завершена' });
     }
 
+    const completedAt = new Date();
     session.status = 'completed';
-    session.completedAt = new Date();
+    session.completedAt = completedAt;
+
+    // Сохранить инфо-параметры на сессию
+    if (distanceToScale != null) session.distanceToScale = distanceToScale;
+    if (potWeight != null) session.potWeight = potWeight;
+    if (branchesPerPlant != null) session.branchesPerPlant = branchesPerPlant;
+    if (potsPerTrip != null) session.potsPerTrip = potsPerTrip;
+    if (plantsPerTrip != null) session.plantsPerTrip = plantsPerTrip;
+
+    // Закрыть всех активных участников crew
+    for (const member of session.crew) {
+      if (!member.leftAt) {
+        member.leftAt = completedAt;
+      }
+    }
+
     await session.save();
+    await session.populate('crew.user', 'name email');
+
+    // ── Собрать crewData ──
+    const totalPlants = session.plants.length;
+    const totalWetWeight = session.plants.reduce((sum, p) => sum + (p.wetWeight || 0), 0);
+    const sessionDurationMs = session.startedAt ? (completedAt - session.startedAt) : 0;
+
+    // Carrier assignments map
+    const carrierMap = {};
+    if (Array.isArray(carrierAssignments)) {
+      for (const ca of carrierAssignments) {
+        if (ca.userId && ca.carryType) {
+          carrierMap[ca.userId] = ca.carryType;
+        }
+      }
+    }
+
+    // Members
+    const crewMembers = session.crew.map(c => {
+      const uid = c.user?._id?.toString() || c.user?.toString();
+      const userName = c.user?.name || '';
+      const durationMs = (c.leftAt && c.joinedAt) ? (new Date(c.leftAt) - new Date(c.joinedAt)) : 0;
+      return {
+        user: c.user?._id || c.user,
+        userName,
+        role: c.role,
+        carryType: c.role === 'carrying' ? (carrierMap[uid] || null) : null,
+        joinedAt: c.joinedAt,
+        leftAt: c.leftAt,
+        durationMs
+      };
+    });
+
+    // Метрики
+    const dist = distanceToScale || 0;
+    const pPerTrip = plantsPerTrip || 0;
+    const poPerTrip = potsPerTrip || 0;
+
+    const potTrips = (dist && poPerTrip) ? Math.ceil(totalPlants / poPerTrip) : null;
+    const plantTrips = (dist && pPerTrip) ? Math.ceil(totalPlants / pPerTrip) : null;
+    const potDistanceM = potTrips ? potTrips * dist * 2 : null;
+    const plantDistanceM = plantTrips ? plantTrips * dist * 2 : null;
+    const totalWeightCarriedKg = potWeight ? Math.round(totalPlants * potWeight * 10) / 10 : null;
+    const totalBranches = branchesPerPlant ? totalPlants * branchesPerPlant : null;
+
+    // Скорость записи из timestamps
+    let avgRecordingSpeed = null;
+    let fastestPlantSec = null;
+    let slowestPlantSec = null;
+    const recordTimes = session.plants
+      .map(p => p.recordedAt ? new Date(p.recordedAt).getTime() : null)
+      .filter(Boolean)
+      .sort((a, b) => a - b);
+
+    if (recordTimes.length >= 2) {
+      const totalRecordingMs = recordTimes[recordTimes.length - 1] - recordTimes[0];
+      avgRecordingSpeed = totalRecordingMs > 0
+        ? Math.round((recordTimes.length / (totalRecordingMs / 60000)) * 10) / 10
+        : null;
+
+      const gaps = [];
+      for (let i = 1; i < recordTimes.length; i++) {
+        gaps.push((recordTimes[i] - recordTimes[i - 1]) / 1000);
+      }
+      if (gaps.length > 0) {
+        fastestPlantSec = Math.round(Math.min(...gaps) * 10) / 10;
+        slowestPlantSec = Math.round(Math.max(...gaps) * 10) / 10;
+      }
+    }
+
+    const crewData = {
+      distanceToScale: distanceToScale || null,
+      potWeight: potWeight || null,
+      branchesPerPlant: branchesPerPlant || null,
+      potsPerTrip: potsPerTrip || null,
+      plantsPerTrip: plantsPerTrip || null,
+      sessionDurationMs,
+      members: crewMembers,
+      metrics: {
+        totalPlants,
+        totalWetWeight,
+        potTrips,
+        plantTrips,
+        potDistanceM,
+        plantDistanceM,
+        totalWeightCarriedKg,
+        totalBranches,
+        avgRecordingSpeed,
+        fastestPlantSec,
+        slowestPlantSec
+      }
+    };
 
     const room = await FlowerRoom.findById(session.room);
 
@@ -288,7 +401,7 @@ export const completeSession = async (req, res) => {
       if (room.flowerStrains) room.flowerStrains = [];
       await room.save();
 
-      return res.json(session);
+      return res.json({ session, crewData, roomSquareMeters: room.squareMeters || null });
     }
 
     if (room && room.isActive) {
@@ -466,7 +579,8 @@ export const completeSession = async (req, res) => {
           feedProduct: t.feedProduct,
           feedDosage: t.feedDosage
         })),
-        harvestMapData
+        harvestMapData,
+        crewData
       });
 
       await RoomLog.create({
@@ -508,9 +622,16 @@ export const completeSession = async (req, res) => {
         entityId: archive._id,
         details: { roomId: room._id.toString(), roomName: room.name, plantsRecorded: (session.plants || []).length }
       });
+
+      return res.json({
+        session,
+        archiveId: archive._id,
+        crewData,
+        roomSquareMeters: room.squareMeters || null
+      });
     }
 
-    res.json(session);
+    res.json({ session, crewData, roomSquareMeters: room?.squareMeters || null });
   } catch (error) {
     console.error('Complete session error:', error);
     res.status(500).json({ message: error.message || 'Ошибка сервера' });
@@ -552,15 +673,15 @@ export const joinSession = async (req, res) => {
 
     const userId = req.user._id.toString();
 
-    // Роль weighing — максимум 1 человек
+    // Роль weighing — максимум 1 активный человек
     if (role === 'weighing') {
       const currentWeigher = session.crew.find(
-        c => c.role === 'weighing' && c.user.toString() !== userId
+        c => c.role === 'weighing' && !c.leftAt && c.user.toString() !== userId
       );
       if (currentWeigher) {
         // Заполнить имя текущего взвешивающего
         await session.populate('crew.user', 'name');
-        const weigherEntry = session.crew.find(c => c.role === 'weighing' && c.user._id.toString() !== userId);
+        const weigherEntry = session.crew.find(c => c.role === 'weighing' && !c.leftAt && c.user._id.toString() !== userId);
         const weigherName = weigherEntry?.user?.name || 'Кто-то';
         return res.status(409).json({
           message: `Роль «Взвешивание» уже занята: ${weigherName}`,
@@ -569,8 +690,11 @@ export const joinSession = async (req, res) => {
       }
     }
 
-    // Удалить предыдущую роль этого пользователя (если есть)
-    session.crew = session.crew.filter(c => c.user.toString() !== userId);
+    // Закрыть предыдущую активную роль этого пользователя (если есть)
+    const prevEntry = session.crew.find(c => c.user.toString() === userId && !c.leftAt);
+    if (prevEntry) {
+      prevEntry.leftAt = new Date();
+    }
 
     // Добавить с новой ролью
     session.crew.push({
@@ -582,16 +706,17 @@ export const joinSession = async (req, res) => {
     await session.save();
     await session.populate('crew.user', 'name email');
 
-    // Broadcast crew update через Socket.io
+    // Broadcast crew update — только активные участники
+    const activeCrew = session.crew.filter(c => !c.leftAt);
     const io = req.app.get('io');
     if (io) {
       io.emit('harvest:crew_update', {
         sessionId: session._id.toString(),
-        crew: session.crew
+        crew: activeCrew
       });
     }
 
-    res.json({ crew: session.crew });
+    res.json({ crew: activeCrew });
   } catch (error) {
     console.error('Join session error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
@@ -619,13 +744,19 @@ export const forceJoinSession = async (req, res) => {
 
     const userId = req.user._id.toString();
 
-    // Удалить текущего человека с этой ролью (если weighing)
+    // Закрыть текущего человека с этой ролью (если weighing)
     if (role === 'weighing') {
-      session.crew = session.crew.filter(c => c.role !== 'weighing');
+      const currentWeigher = session.crew.find(c => c.role === 'weighing' && !c.leftAt);
+      if (currentWeigher) {
+        currentWeigher.leftAt = new Date();
+      }
     }
 
-    // Удалить предыдущую роль этого пользователя
-    session.crew = session.crew.filter(c => c.user.toString() !== userId);
+    // Закрыть предыдущую активную роль этого пользователя
+    const prevEntry = session.crew.find(c => c.user.toString() === userId && !c.leftAt);
+    if (prevEntry) {
+      prevEntry.leftAt = new Date();
+    }
 
     session.crew.push({
       user: req.user._id,
@@ -636,15 +767,17 @@ export const forceJoinSession = async (req, res) => {
     await session.save();
     await session.populate('crew.user', 'name email');
 
+    // Broadcast только активных
+    const activeCrew = session.crew.filter(c => !c.leftAt);
     const io = req.app.get('io');
     if (io) {
       io.emit('harvest:crew_update', {
         sessionId: session._id.toString(),
-        crew: session.crew
+        crew: activeCrew
       });
     }
 
-    res.json({ crew: session.crew });
+    res.json({ crew: activeCrew });
   } catch (error) {
     console.error('Force join session error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
@@ -663,20 +796,25 @@ export const leaveSession = async (req, res) => {
     }
 
     const userId = req.user._id.toString();
-    session.crew = session.crew.filter(c => c.user.toString() !== userId);
+    const activeEntry = session.crew.find(c => c.user.toString() === userId && !c.leftAt);
+    if (activeEntry) {
+      activeEntry.leftAt = new Date();
+    }
 
     await session.save();
     await session.populate('crew.user', 'name email');
 
+    // Broadcast только активных
+    const activeCrew = session.crew.filter(c => !c.leftAt);
     const io = req.app.get('io');
     if (io) {
       io.emit('harvest:crew_update', {
         sessionId: session._id.toString(),
-        crew: session.crew
+        crew: activeCrew
       });
     }
 
-    res.json({ crew: session.crew });
+    res.json({ crew: activeCrew });
   } catch (error) {
     console.error('Leave session error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });

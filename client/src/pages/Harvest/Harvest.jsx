@@ -8,6 +8,8 @@ import { useBarcode } from '../../hooks/useBarcode';
 import { onScaleEvent } from '../../services/scaleSocket';
 import HarvestRoomMap from '../../components/RoomMap/HarvestRoomMap';
 import HarvestHistory from './HarvestHistory';
+import HarvestCompleteModal from './HarvestCompleteModal';
+import CrewInfographic from '../../components/Harvest/CrewInfographic';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -51,7 +53,8 @@ const Harvest = () => {
   const [recordLoading, setRecordLoading] = useState(false);
   const [errorNoteEdit, setErrorNoteEdit] = useState({ plantNumber: null, value: '' });
   const [errorNoteSaving, setErrorNoteSaving] = useState(false);
-  const [completeSuccess, setCompleteSuccess] = useState(false);
+  const [showCompleteModal, setShowCompleteModal] = useState(false);
+  const [completionData, setCompletionData] = useState(null); // { crewData, roomSquareMeters, roomName, strain }
   const [scanFlash, setScanFlash] = useState(false);
   const [duplicateError, setDuplicateError] = useState(null);
   const [successMsg, setSuccessMsg] = useState(null);
@@ -141,10 +144,10 @@ const Harvest = () => {
       }
       if (!s) s = await harvestService.createSession(roomId);
       setSession(s);
-      // Загрузить crew из сессии
-      const sessionCrew = s.crew || [];
+      // Загрузить crew из сессии (только активные — без leftAt)
+      const sessionCrew = (s.crew || []).filter(c => !c.leftAt);
       setCrew(sessionCrew);
-      // Проверить есть ли текущий пользователь уже в crew
+      // Проверить есть ли текущий пользователь уже в active crew
       const userId = user?._id || user?.id;
       const me = sessionCrew.find(c => {
         const uid = c.user?._id || c.user;
@@ -170,7 +173,7 @@ const Harvest = () => {
     setSelectedRoomId(roomId);
     setSession(null);
     setError('');
-    setCompleteSuccess(false);
+    setCompletionData(null);
     setMyRole(null);
     setCrew([]);
     loadOrCreateSession(roomId);
@@ -367,23 +370,38 @@ const Harvest = () => {
     }
   };
 
-  const handleCompleteSession = async () => {
+  const handleCompleteSession = () => {
     if (!session) return;
-    const isTest = selectedRoom?.isTestRoom;
-    const confirmMsg = isTest
-      ? 'Завершить тестовый сбор? Данные НЕ попадут в архив. Комната будет сброшена для нового теста.'
-      : 'Завершить сбор? Комната автоматически попадёт в архив и освободится для нового цикла. Записывать кусты будет нельзя.';
-    if (!confirm(confirmMsg)) return;
+    setShowCompleteModal(true);
+  };
+
+  const handleConfirmComplete = async (data) => {
+    if (!session) return;
     try {
       setSessionLoading(true);
       setError('');
-      await harvestService.completeSession(session._id);
+      const result = await harvestService.completeSession(session._id, data);
+      const roomNameStr = selectedRoom?.name || session.roomName || '';
+      const strainStr = selectedRoom?.flowerStrains?.length > 0
+        ? selectedRoom.flowerStrains.map(fs => fs.strain).filter(Boolean).join(', ')
+        : session.strain || '';
+      setShowCompleteModal(false);
       setSession(null);
-      setSelectedRoomId('');
       setMyRole(null);
       setCrew([]);
-      setCompleteSuccess(true);
-      setTimeout(() => setCompleteSuccess(false), 5000);
+
+      // Показать инфографику если есть crewData с участниками
+      if (result?.crewData?.members?.length > 0) {
+        setCompletionData({
+          crewData: result.crewData,
+          roomSquareMeters: result.roomSquareMeters,
+          roomName: roomNameStr,
+          strain: strainStr
+        });
+      } else {
+        setSelectedRoomId('');
+      }
+
       await loadRooms();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка завершения');
@@ -401,6 +419,24 @@ const Harvest = () => {
     );
   }
 
+  // ── Режим инфографики после завершения ──
+  if (completionData) {
+    return (
+      <div>
+        <CrewInfographic
+          crewData={completionData.crewData}
+          roomSquareMeters={completionData.roomSquareMeters}
+          roomName={completionData.roomName}
+          strain={completionData.strain}
+          onClose={() => {
+            setCompletionData(null);
+            setSelectedRoomId('');
+          }}
+        />
+      </div>
+    );
+  }
+
   // ── Режим выбора комнаты (нет selectedRoomId) ──
   if (!selectedRoomId && !sessionLoading) {
     return (
@@ -413,11 +449,6 @@ const Harvest = () => {
         {error && (
           <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6">
             {error}
-          </div>
-        )}
-        {completeSuccess && (
-          <div className="bg-green-900/30 border border-green-700 text-green-400 px-4 py-3 rounded-lg mb-6">
-            Сбор завершён. Комната автоматически архивирована и освобождена для нового цикла.
           </div>
         )}
 
@@ -1429,6 +1460,16 @@ const Harvest = () => {
           </div>
         </>
       )}
+
+      {/* Модалка завершения */}
+      <HarvestCompleteModal
+        isOpen={showCompleteModal}
+        onClose={() => setShowCompleteModal(false)}
+        onConfirm={handleConfirmComplete}
+        loading={sessionLoading}
+        crew={crew}
+        isTestRoom={selectedRoom?.isTestRoom}
+      />
 
       {session && session.status === 'completed' && (
         <div className="bg-dark-800 rounded-xl p-6 border border-dark-700">

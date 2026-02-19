@@ -36,8 +36,8 @@ export const harvestService = {
     return response.data;
   },
 
-  async completeSession(sessionId) {
-    const response = await api.post(`/harvest/session/${sessionId}/complete`);
+  async completeSession(sessionId, data = {}) {
+    const response = await api.post(`/harvest/session/${sessionId}/complete`, data);
     return response.data;
   },
 

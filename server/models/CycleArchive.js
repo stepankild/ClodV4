@@ -217,6 +217,37 @@ const cycleArchiveSchema = new mongoose.Schema({
       wetWeight: { type: Number, default: 0 }
     }]
   },
+  // Данные команды сбора (инфографика)
+  crewData: {
+    distanceToScale: { type: Number, default: null },
+    potWeight: { type: Number, default: null },
+    branchesPerPlant: { type: Number, default: null },
+    potsPerTrip: { type: Number, default: null },
+    plantsPerTrip: { type: Number, default: null },
+    sessionDurationMs: { type: Number, default: null },
+    members: [{
+      user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      userName: { type: String, default: '' },
+      role: { type: String, default: '' },
+      carryType: { type: String, default: null },   // 'pots' | 'plants' | 'both' — только для carrying
+      joinedAt: { type: Date },
+      leftAt: { type: Date, default: null },
+      durationMs: { type: Number, default: 0 }
+    }],
+    metrics: {
+      totalPlants: { type: Number, default: 0 },
+      totalWetWeight: { type: Number, default: 0 },
+      potTrips: { type: Number, default: null },
+      plantTrips: { type: Number, default: null },
+      potDistanceM: { type: Number, default: null },
+      plantDistanceM: { type: Number, default: null },
+      totalWeightCarriedKg: { type: Number, default: null },
+      totalBranches: { type: Number, default: null },
+      avgRecordingSpeed: { type: Number, default: null },
+      fastestPlantSec: { type: Number, default: null },
+      slowestPlantSec: { type: Number, default: null }
+    }
+  },
   deletedAt: { type: Date, default: null }
 }, {
   timestamps: true
