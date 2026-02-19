@@ -9,8 +9,13 @@ let scaleState = {
   unit: 'g',
   stable: false,
   lastUpdate: null,
-  socketId: null
+  socketId: null,
+  debug: null // диагностика от Pi
 };
+
+// Heartbeat: если Pi не шлёт weight > 15 сек — считаем весы отключёнными
+const HEARTBEAT_TIMEOUT_MS = 15000;
+let heartbeatTimer = null;
 
 export function getScaleState() {
   return { ...scaleState };
@@ -87,6 +92,29 @@ export function initializeSocket(httpServer, allowedOrigins) {
   return io;
 }
 
+// ── Heartbeat helpers ──
+function resetHeartbeat(io) {
+  if (heartbeatTimer) clearTimeout(heartbeatTimer);
+  heartbeatTimer = setTimeout(() => {
+    // Pi не слал weight больше 15 сек — весы считаются отключёнными
+    if (scaleState.connected) {
+      console.warn(`Heartbeat timeout: no scale:weight for ${HEARTBEAT_TIMEOUT_MS / 1000}s`);
+      scaleState.connected = false;
+      scaleState.lastWeight = null;
+      scaleState.stable = false;
+      scaleState.lastUpdate = new Date();
+      io.emit('scale:status', { connected: false });
+    }
+  }, HEARTBEAT_TIMEOUT_MS);
+}
+
+function clearHeartbeat() {
+  if (heartbeatTimer) {
+    clearTimeout(heartbeatTimer);
+    heartbeatTimer = null;
+  }
+}
+
 // ── Raspberry Pi подключение (весы + сканер) ──
 function handlePiConnection(io, socket) {
   console.log(`Pi connected: ${socket.id}`);
@@ -107,6 +135,9 @@ function handlePiConnection(io, socket) {
   // Уведомить все браузеры
   io.emit('scale:status', { connected: true });
 
+  // Запустить heartbeat
+  resetHeartbeat(io);
+
   // Получение веса от Pi
   socket.on('scale:weight', (data) => {
     const { weight, unit, stable } = data;
@@ -114,6 +145,15 @@ function handlePiConnection(io, socket) {
     scaleState.unit = unit || 'g';
     scaleState.stable = !!stable;
     scaleState.lastUpdate = new Date();
+
+    // Если до этого connected был false (heartbeat timeout или scale:status false) — восстановить
+    if (!scaleState.connected) {
+      scaleState.connected = true;
+      io.emit('scale:status', { connected: true });
+    }
+
+    // Сбросить heartbeat таймер
+    resetHeartbeat(io);
 
     // Broadcast всем (включая браузеры)
     socket.broadcast.emit('scale:weight', {
@@ -123,9 +163,37 @@ function handlePiConnection(io, socket) {
     });
   });
 
+  // Статус весов от Pi (весы подключены/отключены от Pi физически)
+  socket.on('scale:status', (data) => {
+    const wasConnected = scaleState.connected;
+    scaleState.connected = !!data.connected;
+    scaleState.lastUpdate = new Date();
+
+    if (!data.connected) {
+      scaleState.lastWeight = null;
+      scaleState.stable = false;
+      clearHeartbeat();
+    } else {
+      resetHeartbeat(io);
+    }
+
+    // Сообщить браузерам только если статус изменился
+    if (wasConnected !== scaleState.connected) {
+      console.log(`Scale status from Pi: connected=${data.connected}`);
+      io.emit('scale:status', { connected: scaleState.connected });
+    }
+  });
+
   // Ошибка от Pi
   socket.on('scale:error', (data) => {
     console.warn('Scale error:', data?.message || data);
+  });
+
+  // Диагностика от Pi (каждые 5 сек)
+  socket.on('scale:debug', (data) => {
+    scaleState.debug = { ...data, receivedAt: new Date().toISOString() };
+    // Broadcast браузерам
+    socket.broadcast.emit('scale:debug', scaleState.debug);
   });
 
   // Получение скана штрихкода от Pi
@@ -147,6 +215,8 @@ function handlePiConnection(io, socket) {
       scaleState.lastWeight = null;
       scaleState.stable = false;
       scaleState.lastUpdate = new Date();
+      scaleState.debug = null;
+      clearHeartbeat();
 
       io.emit('scale:status', { connected: false });
     }
@@ -163,6 +233,10 @@ function handleBrowserConnection(io, socket) {
       unit: scaleState.unit,
       stable: scaleState.stable
     });
+  }
+  // Отправить текущую диагностику (если есть)
+  if (scaleState.debug) {
+    socket.emit('scale:debug', scaleState.debug);
   }
 
   socket.on('disconnect', () => {

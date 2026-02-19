@@ -21,7 +21,7 @@ const formatDate = (date) => {
 const Harvest = () => {
   const { hasPermission } = useAuth();
   const canDoHarvest = hasPermission && hasPermission('harvest:record');
-  const { weight: scaleWeight, unit: scaleUnit, stable: scaleStable, scaleConnected, socketConnected } = useScale();
+  const { weight: scaleWeight, unit: scaleUnit, stable: scaleStable, scaleConnected, socketConnected, debug: scaleDebug } = useScale();
   const { lastBarcode, scanTime } = useBarcode();
 
   const [searchParams] = useSearchParams();
@@ -41,6 +41,7 @@ const Harvest = () => {
   const [scanFlash, setScanFlash] = useState(false);
   const [duplicateError, setDuplicateError] = useState(null); // { plantNumber } — блокирующая ошибка дубля
   const [successMsg, setSuccessMsg] = useState(null); // { plantNumber, weight, sessionId, countdown }
+  const [showDebug, setShowDebug] = useState(false);
   const undoTimerRef = useRef(null);
   const undoCountdownRef = useRef(null);
   const autoRecordRef = useRef(false);
@@ -502,6 +503,111 @@ const Harvest = () => {
         </div>
       )}
 
+      {/* Дебаг-панель оборудования */}
+      {showDebug && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-dark-800 border border-dark-600 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-white font-bold text-lg">Диагностика оборудования</h3>
+              <button onClick={() => setShowDebug(false)} className="text-dark-400 hover:text-white p-1">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {/* Сокет */}
+              <div className="flex items-center justify-between py-2 px-3 bg-dark-700 rounded-lg">
+                <span className="text-dark-300 text-sm">Сервер (WebSocket)</span>
+                <span className={`flex items-center gap-2 text-sm font-medium ${socketConnected ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`w-2 h-2 rounded-full ${socketConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+                  {socketConnected ? 'Подключен' : 'Отключен'}
+                </span>
+              </div>
+
+              {/* Pi */}
+              <div className="flex items-center justify-between py-2 px-3 bg-dark-700 rounded-lg">
+                <span className="text-dark-300 text-sm">Raspberry Pi</span>
+                <span className={`flex items-center gap-2 text-sm font-medium ${scaleDebug ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`w-2 h-2 rounded-full ${scaleDebug ? 'bg-green-400' : 'bg-red-400'}`} />
+                  {scaleDebug ? 'Онлайн' : 'Нет данных'}
+                </span>
+              </div>
+
+              {/* Весы */}
+              <div className="flex items-center justify-between py-2 px-3 bg-dark-700 rounded-lg">
+                <span className="text-dark-300 text-sm">Весы (USB)</span>
+                <span className={`flex items-center gap-2 text-sm font-medium ${scaleConnected ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`w-2 h-2 rounded-full ${scaleConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+                  {scaleConnected ? 'Подключены' : 'Отключены'}
+                </span>
+              </div>
+
+              {/* Сканер */}
+              <div className="flex items-center justify-between py-2 px-3 bg-dark-700 rounded-lg">
+                <span className="text-dark-300 text-sm">Сканер штрихкодов</span>
+                <span className={`flex items-center gap-2 text-sm font-medium ${scaleDebug?.barcodeConnected ? 'text-green-400' : 'text-red-400'}`}>
+                  <span className={`w-2 h-2 rounded-full ${scaleDebug?.barcodeConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+                  {scaleDebug?.barcodeConnected ? 'Подключен' : 'Отключен'}
+                </span>
+              </div>
+
+              {/* Детали от Pi */}
+              {scaleDebug && (
+                <div className="mt-3 pt-3 border-t border-dark-600 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-dark-400">Порт весов</span>
+                    <span className="text-dark-200 font-mono">{scaleDebug.serialPort || '—'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-dark-400">Аптайм Pi</span>
+                    <span className="text-dark-200 font-mono">
+                      {scaleDebug.uptime != null
+                        ? scaleDebug.uptime >= 3600
+                          ? `${Math.floor(scaleDebug.uptime / 3600)}ч ${Math.floor((scaleDebug.uptime % 3600) / 60)}м`
+                          : scaleDebug.uptime >= 60
+                            ? `${Math.floor(scaleDebug.uptime / 60)}м ${scaleDebug.uptime % 60}с`
+                            : `${scaleDebug.uptime}с`
+                        : '—'}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-dark-400">Последний вес</span>
+                    <span className="text-dark-200 font-mono">{scaleDebug.lastWeight ?? '—'} г</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-dark-400">Ошибки чтения</span>
+                    <span className={`font-mono ${scaleDebug.errorCount > 0 ? 'text-amber-400' : 'text-dark-200'}`}>
+                      {scaleDebug.errorCount ?? 0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-dark-400">Время Pi</span>
+                    <span className="text-dark-200 font-mono text-xs">
+                      {scaleDebug.piTime ? new Date(scaleDebug.piTime).toLocaleTimeString('ru-RU') : '—'}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {!scaleDebug && socketConnected && (
+                <p className="text-dark-500 text-xs text-center mt-2">
+                  Pi не отправляет диагностику. Обновите клиент на Pi.
+                </p>
+              )}
+            </div>
+
+            <button
+              onClick={() => setShowDebug(false)}
+              className="w-full mt-5 px-4 py-2.5 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white border border-dark-600 rounded-xl font-medium transition"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+      )}
+
       {sessionLoading && (
         <div className="flex items-center justify-center py-8">
           <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary-500" />
@@ -557,7 +663,7 @@ const Harvest = () => {
                 scaleConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
               }`} />
               {scaleConnected ? (
-                <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-4 flex-wrap flex-1">
                   <div className="text-3xl font-mono font-bold text-white leading-none">
                     {scaleWeight != null ? `${scaleWeight} г` : '--- г'}
                   </div>
@@ -568,10 +674,22 @@ const Harvest = () => {
                   )}
                 </div>
               ) : (
-                <div className="text-dark-400 text-sm">
+                <div className="text-dark-400 text-sm flex-1">
                   {socketConnected ? 'Весы не подключены' : 'Подключение к серверу...'}
                 </div>
               )}
+              {/* Кнопка диагностики */}
+              <button
+                type="button"
+                onClick={() => setShowDebug(true)}
+                className="p-2 text-dark-400 hover:text-white hover:bg-dark-600 rounded-lg transition shrink-0"
+                title="Диагностика оборудования"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </button>
             </div>
 
             <div className="flex flex-wrap items-end gap-4">

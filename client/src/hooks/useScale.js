@@ -23,7 +23,8 @@ function toGrams(weight, unit) {
  *   unit: string,              — всегда 'g'
  *   stable: boolean,           — показание стабильно
  *   scaleConnected: boolean,   — весы подключены к серверу (Pi online)
- *   socketConnected: boolean   — WebSocket соединение с сервером активно
+ *   socketConnected: boolean,  — WebSocket соединение с сервером активно
+ *   debug: object|null         — диагностика от Pi (обновляется каждые 5 сек)
  * }}
  */
 export function useScale() {
@@ -31,6 +32,7 @@ export function useScale() {
   const [stable, setStable] = useState(false);
   const [scaleConnected, setScaleConnected] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [debug, setDebug] = useState(null);
 
   useEffect(() => {
     connectScale();
@@ -51,12 +53,16 @@ export function useScale() {
             setStable(false);
           }
           break;
+        case 'debug':
+          setDebug(data);
+          break;
         case 'socketConnected':
           setSocketConnected(true);
           break;
         case 'socketDisconnected':
           setSocketConnected(false);
           setScaleConnected(false);
+          setDebug(null);
           break;
       }
     });
@@ -67,5 +73,5 @@ export function useScale() {
     };
   }, []);
 
-  return { weight, unit: 'g', stable, scaleConnected, socketConnected };
+  return { weight, unit: 'g', stable, scaleConnected, socketConnected, debug };
 }

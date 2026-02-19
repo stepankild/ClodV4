@@ -16,6 +16,7 @@ import os
 import sys
 import time
 import threading
+from datetime import datetime
 import socketio
 from dotenv import load_dotenv
 from scale_reader import ScaleReader
@@ -161,14 +162,43 @@ def barcode_loop():
             time.sleep(2)
 
 
+def emit_scale_status(connected):
+    """Отправить статус весов на сервер."""
+    if sio.connected:
+        sio.emit('scale:status', {'connected': connected})
+        print(f'[Scale] Status sent: connected={connected}')
+
+
+def emit_debug_info(last_weight, consecutive_errors, start_time):
+    """Отправить диагностику на сервер (для дебаг-панели в UI)."""
+    if not sio.connected:
+        return
+    debug_data = {
+        'scaleConnected': scale.is_connected(),
+        'serialPort': SERIAL_PORT,
+        'barcodeConnected': barcode.is_connected() if barcode else False,
+        'uptime': round(time.time() - start_time),
+        'lastWeight': last_weight,
+        'errorCount': consecutive_errors,
+        'piTime': datetime.now().isoformat()
+    }
+    sio.emit('scale:debug', debug_data)
+
+
 def main():
     """Главный цикл: весы + сканер → отправить на сервер."""
+    start_time = time.time()
+
     # Подключаемся к весам
-    if not connect_to_scale():
+    scale_was_connected = False
+    if connect_to_scale():
+        scale_was_connected = True
+    else:
         print('Retrying scale connection...')
-        if not scale.reconnect(max_retries=10, delay=3):
-            print('Could not connect to scale. Check USB connection.')
-            sys.exit(1)
+        if scale.reconnect(max_retries=10, delay=3):
+            scale_was_connected = True
+        else:
+            print('Could not connect to scale. Will keep trying in main loop...')
 
     # Подключаемся к серверу
     try:
@@ -176,6 +206,10 @@ def main():
     except Exception as e:
         print(f'Could not connect to server: {e}')
         print('Will keep retrying...')
+
+    # Отправить начальный статус весов
+    if sio.connected:
+        emit_scale_status(scale_was_connected)
 
     # Запускаем поток чтения штрихкодов
     if barcode is not None:
@@ -190,15 +224,32 @@ def main():
     last_stable = None
     consecutive_errors = 0
     max_consecutive_errors = 10
+    last_debug_time = 0
+    DEBUG_INTERVAL = 5  # секунд между отправками debug
 
     print(f'\nReading scale every {READ_INTERVAL}s...\n')
 
     while True:
         try:
+            now = time.time()
+
+            # Периодическая отправка диагностики (каждые 5 сек)
+            if now - last_debug_time >= DEBUG_INTERVAL:
+                emit_debug_info(last_weight, consecutive_errors, start_time)
+                last_debug_time = now
+
             if not scale.is_connected():
                 print('Scale disconnected, reconnecting...')
+                # Сообщить что весы отключились
+                if scale_was_connected:
+                    emit_scale_status(False)
+                    scale_was_connected = False
+
                 if scale.reconnect(max_retries=5, delay=2):
                     consecutive_errors = 0
+                    # Весы вернулись — сообщить
+                    emit_scale_status(True)
+                    scale_was_connected = True
                 else:
                     if sio.connected:
                         sio.emit('scale:error', {'message': 'Serial port lost'})
@@ -210,6 +261,11 @@ def main():
             if reading is not None:
                 weight, unit, stable = reading
                 consecutive_errors = 0
+
+                # Если до этого весы считались отключёнными — сообщить что вернулись
+                if not scale_was_connected:
+                    emit_scale_status(True)
+                    scale_was_connected = True
 
                 if weight != last_weight or stable != last_stable:
                     if sio.connected:
@@ -224,6 +280,10 @@ def main():
                 consecutive_errors += 1
                 if consecutive_errors >= max_consecutive_errors:
                     print(f'No valid readings for {consecutive_errors} attempts, reconnecting...')
+                    # Сообщить что весы потеряны
+                    if scale_was_connected:
+                        emit_scale_status(False)
+                        scale_was_connected = False
                     scale.reconnect(max_retries=3, delay=1)
                     consecutive_errors = 0
 

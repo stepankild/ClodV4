@@ -38,6 +38,10 @@ export function connectScale() {
     listeners.forEach(cb => cb('barcode', data));
   });
 
+  socket.on('scale:debug', (data) => {
+    listeners.forEach(cb => cb('debug', data));
+  });
+
   socket.on('connect', () => {
     listeners.forEach(cb => cb('socketConnected', {}));
   });
@@ -64,7 +68,7 @@ export function disconnectScale() {
 /**
  * Подписаться на события весов.
  * @param {Function} callback - (event, data) => void
- *   event: 'weight' | 'status' | 'barcode' | 'socketConnected' | 'socketDisconnected'
+ *   event: 'weight' | 'status' | 'barcode' | 'debug' | 'socketConnected' | 'socketDisconnected'
  * @returns {Function} unsubscribe
  */
 export function onScaleEvent(callback) {
