@@ -17,9 +17,14 @@ let scaleState = {
   bufferedBarcodes: 0,
 };
 
-// Heartbeat: если Pi не шлёт weight > 15 сек — считаем весы отключёнными
-const HEARTBEAT_TIMEOUT_MS = 15000;
+// Heartbeat: если Pi не шлёт weight > 20 сек — считаем весы отключёнными
+const HEARTBEAT_TIMEOUT_MS = 20000;
 let heartbeatTimer = null;
+
+// Grace period: при disconnect ждём 5 сек перед объявлением оффлайн
+// (Pi переподключается за 1-2 сек при кратковременном разрыве)
+const PI_DISCONNECT_GRACE_MS = 5000;
+let piDisconnectTimer = null;
 
 export function getScaleState() {
   return { ...scaleState };
@@ -38,7 +43,10 @@ export function initializeSocket(httpServer, allowedOrigins) {
       },
       credentials: true
     },
-    transports: ['websocket', 'polling']
+    transports: ['websocket', 'polling'],
+    // Частый ping чтобы Railway/облачные прокси не убивали idle WebSocket
+    pingInterval: 10000,   // пинг каждые 10 сек (дефолт 25с — слишком редко для Railway)
+    pingTimeout: 15000,    // ждать ответ 15 сек (дефолт 20с)
   });
 
   // ── Auth middleware ──
@@ -122,6 +130,13 @@ function clearHeartbeat() {
 // ── Raspberry Pi подключение (весы + сканер) ──
 function handlePiConnection(io, socket) {
   console.log(`Pi connected: ${socket.id}`);
+
+  // Отменить grace period timer (Pi вернулся!)
+  if (piDisconnectTimer) {
+    clearTimeout(piDisconnectTimer);
+    piDisconnectTimer = null;
+    console.log('Pi reconnected within grace period — no offline notification sent');
+  }
 
   // Если уже была другая scale подключена — отключаем старую
   if (scaleState.socketId && scaleState.socketId !== socket.id) {
@@ -241,22 +256,32 @@ function handlePiConnection(io, socket) {
     io.emit('pi:sync_status', { syncing: false, count: 0 });
   });
 
-  // Отключение Pi
+  // Отключение Pi — grace period перед объявлением оффлайн
   socket.on('disconnect', (reason) => {
     console.log(`Pi disconnected: ${socket.id} (${reason})`);
     if (scaleState.socketId === socket.id) {
-      scaleState.connected = false;
-      scaleState.socketId = null;
-      scaleState.lastWeight = null;
-      scaleState.stable = false;
-      scaleState.lastUpdate = new Date();
-      scaleState.debug = null;
-      scaleState.syncing = false;
-      scaleState.syncCount = 0;
-      scaleState.bufferedBarcodes = 0;
+      scaleState.socketId = null; // Разрешить новому Pi подключиться
       clearHeartbeat();
 
-      io.emit('scale:status', { connected: false });
+      // Grace period — Pi часто переподключается за 1-2 сек (Railway/proxy resets)
+      // Не спамим браузерам offline если Pi вернётся быстро
+      if (piDisconnectTimer) clearTimeout(piDisconnectTimer);
+      piDisconnectTimer = setTimeout(() => {
+        piDisconnectTimer = null;
+        // Если за время grace period Pi не вернулся — объявить оффлайн
+        if (!scaleState.socketId) {
+          console.log('Pi did not reconnect within grace period — marking offline');
+          scaleState.connected = false;
+          scaleState.lastWeight = null;
+          scaleState.stable = false;
+          scaleState.lastUpdate = new Date();
+          scaleState.debug = null;
+          scaleState.syncing = false;
+          scaleState.syncCount = 0;
+          scaleState.bufferedBarcodes = 0;
+          io.emit('scale:status', { connected: false });
+        }
+      }, PI_DISCONNECT_GRACE_MS);
     }
   });
 }

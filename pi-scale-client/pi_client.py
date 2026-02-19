@@ -59,7 +59,7 @@ if not SCALE_API_KEY:
 sio = socketio.Client(
     reconnection=True,
     reconnection_delay=1,
-    reconnection_delay_max=30,
+    reconnection_delay_max=10,  # макс 10 сек между попытками (было 30)
     logger=False
 )
 
