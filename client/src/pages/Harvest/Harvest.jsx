@@ -65,6 +65,8 @@ const Harvest = () => {
   const [crew, setCrew] = useState([]); // массив { user: { _id, name }, role, joinedAt }
   const [roleLoading, setRoleLoading] = useState(false);
   const [weighingConflict, setWeighingConflict] = useState(null); // { currentWeigher: { name } }
+  const [piOfflineModal, setPiOfflineModal] = useState(false); // модалка "Pi перешёл в офлайн"
+  const prevScaleConnected = useRef(scaleConnected);
 
   const safeRooms = Array.isArray(rooms) ? rooms : [];
   const activeRooms = safeRooms.filter(r => r && r.isActive);
@@ -78,6 +80,15 @@ const Harvest = () => {
       if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
     };
   }, []);
+
+  // ── Детекция перехода Pi в офлайн → показать модалку ──
+  useEffect(() => {
+    // Показать модалку только когда Pi был подключён и отключился (на рабочем экране)
+    if (prevScaleConnected.current && !scaleConnected && session && myRole) {
+      setPiOfflineModal(true);
+    }
+    prevScaleConnected.current = scaleConnected;
+  }, [scaleConnected, session, myRole]);
 
   // ── Socket.io подписка на crew_update ──
   useEffect(() => {
@@ -742,13 +753,31 @@ const Harvest = () => {
         </div>
       )}
 
-      {/* Pi offline — есть буферизованные сканы */}
-      {!scaleConnected && socketConnected && bufferedBarcodes > 0 && (
-        <div className="bg-amber-900/30 border border-amber-700 text-amber-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
-          <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse shrink-0" />
-          <div>
-            <span className="font-medium">Pi офлайн, буферизация...</span>
-            <span className="ml-2 text-amber-300">{bufferedBarcodes} скан(ов) в очереди</span>
+      {/* Модалка: Pi перешёл в офлайн */}
+      {piOfflineModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-dark-800 border-2 border-amber-600 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-amber-600/20 flex items-center justify-center shrink-0">
+                <svg className="w-7 h-7 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 5.636a9 9 0 010 12.728M5.636 18.364a9 9 0 010-12.728M15.536 8.464a5 5 0 010 7.072M8.464 15.536a5 5 0 010-7.072" />
+                </svg>
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-lg">Офлайн режим</h3>
+                <p className="text-amber-400 text-sm mt-1">Pi потерял связь с сервером</p>
+              </div>
+            </div>
+            <p className="text-dark-300 text-sm mb-5">
+              Можно продолжать работу. Все сканы штрихкодов сохраняются в буфер на Pi.
+              Когда связь восстановится — данные автоматически загрузятся на сервер.
+            </p>
+            <button
+              onClick={() => setPiOfflineModal(false)}
+              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-3 px-4 rounded-xl transition-colors"
+            >
+              Понятно, продолжаю
+            </button>
           </div>
         </div>
       )}
@@ -758,6 +787,14 @@ const Harvest = () => {
         <div className="bg-blue-900/30 border border-blue-700 text-blue-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400 shrink-0" />
           <span className="font-medium">Синхронизация {syncCount} буферизованных сканов...</span>
+        </div>
+      )}
+
+      {/* Pi offline — маленький баннер (после закрытия модалки) */}
+      {!scaleConnected && socketConnected && !piOfflineModal && session && myRole && (
+        <div className="bg-amber-900/30 border border-amber-700 text-amber-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+          <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse shrink-0" />
+          <span className="font-medium text-sm">Офлайн режим — данные буферизуются{bufferedBarcodes > 0 ? ` (${bufferedBarcodes} скан.)` : ''}</span>
         </div>
       )}
 
