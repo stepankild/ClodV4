@@ -99,11 +99,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
   const isCompact = labelH < 25;
   const isTiny = labelH < 18;
 
-  // Логотип для вертикальных браслетов (рендерим один раз)
-  let logoDataUrl = null;
-  if (isVertical) {
-    logoDataUrl = await renderLogoToDataUrl(128);
-  }
+  // (logoDataUrl — убран, не используется на браслетах)
 
   for (let i = 0; i < plants.length; i++) {
     if (i > 0 && i % perPage === 0) doc.addPage();
@@ -134,31 +130,25 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
     if (isVertical) {
       // ── Вертикальный браслет (~19mm шир × ~250mm выс) ──
       // angle: -90 → текст идёт СВЕРХУ ВНИЗ (clockwise), совпадает с curY
+      // Раскладка: #N → Комната → Сорт → Старт → Урожай → Штрихкод → #N
 
-      const textX = x + labelW * 0.7; // линия текста
-      let curY = y + PAD + 3;
+      const textX = x + labelW * 0.7;
+      let curY = y + PAD + 5;
 
-      // ─ 1. Логотип True Source ─
-      if (logoDataUrl) {
-        const logoSize = labelW - PAD * 2 - 1;
-        doc.addImage(logoDataUrl, 'PNG', x + PAD + 0.5, curY, logoSize, logoSize);
-        curY += logoSize + 4;
-      }
-
-      // ─ 2. Номер растения — крупный жирный ─
+      // ─ 1. Номер куста — БОЛЬШОЙ ─
       doc.setFont('Roboto', 'bold'); doc.setFontSize(16); doc.setTextColor(20, 20, 20);
       const numLabel = `#${plant.number}`;
       doc.text(numLabel, textX, curY, { angle: -90 });
-      curY += doc.getTextWidth(numLabel) + 8;
+      curY += doc.getTextWidth(numLabel) + 10;
 
-      // ─ 3. Название комнаты — крупное жирное ─
+      // ─ 2. Комната ─
       doc.setFont('Roboto', 'bold'); doc.setFontSize(12); doc.setTextColor(20, 20, 20);
       const roomName = room.name || '—';
       doc.text(roomName, textX, curY, { angle: -90 });
       curY += doc.getTextWidth(roomName) + 6;
 
-      // ─ 4. Сорт — крупный жирный ─
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(40, 40, 40);
+      // ─ 3. Сорт — БОЛЬШОЙ ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(11); doc.setTextColor(30, 30, 30);
       let st = plant.strain || room.strain || '—';
       const maxStLen = 60;
       if (doc.getTextWidth(st) > maxStLen) {
@@ -166,12 +156,18 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
         st += '..';
       }
       doc.text(st, textX, curY, { angle: -90 });
-      curY += doc.getTextWidth(st) + 6;
+      curY += doc.getTextWidth(st) + 7;
 
-      // ─ 5. Даты — жирные ─
+      // ─ 4. Старт — отдельная строка ─
       doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(40, 40, 40);
-      doc.text(`${startDateStr} — ${harvestDateStr}`, textX, curY, { angle: -90 });
-      curY += doc.getTextWidth(`${startDateStr} — ${harvestDateStr}`) + 10;
+      const startStr = `Старт: ${startDateStr}`;
+      doc.text(startStr, textX, curY, { angle: -90 });
+      curY += doc.getTextWidth(startStr) + 4;
+
+      // ─ 5. Урожай — отдельная строка ─
+      const harvestStr = `Урожай: ${harvestDateStr}`;
+      doc.text(harvestStr, textX, curY, { angle: -90 });
+      curY += doc.getTextWidth(harvestStr) + 12;
 
       // ─ 6. Штрихкод — компактный (повёрнут на -90°) ─
       const srcCanvas = document.createElement('canvas');
@@ -189,8 +185,13 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       const rotBarcodeUrl = rotCanvas.toDataURL('image/png');
 
       const barcodeW = labelW - PAD * 2 - 2;
-      const barcodeH = Math.min(40, (y + labelH - curY) * 0.4);
+      const barcodeH = Math.min(35, (y + labelH - curY) * 0.35);
       doc.addImage(rotBarcodeUrl, 'PNG', x + PAD + 1, curY, barcodeW, barcodeH);
+      curY += barcodeH + 10;
+
+      // ─ 7. Номер куста — дубль после штрихкода ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(14); doc.setTextColor(20, 20, 20);
+      doc.text(numLabel, textX, curY, { angle: -90 });
 
     } else if (isTiny) {
       // Single-row: text left, barcode center, #N right (labelH < 18mm)
