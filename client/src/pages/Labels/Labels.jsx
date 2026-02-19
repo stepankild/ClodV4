@@ -31,23 +31,27 @@ function migrateLayout(layout) {
 
 // ── Sheet sizes ──
 const SHEET_SIZES = [
+  { name: 'Браслеты 8×10"', w: 203, h: 254, marginLR: 6.5, marginTB: 2, gap: 0 },
   { name: 'A4', w: 210, h: 297 },
   { name: 'A5', w: 148, h: 210 },
   { name: 'Letter', w: 216, h: 279 },
 ];
 
-const MARGIN = 5;
-const GAP = 2;
+const DEFAULT_MARGIN = 5;
+const DEFAULT_GAP = 2;
 
-function calcFromSheet(sheetW, sheetH, cols, count) {
+function calcFromSheet(sheetW, sheetH, cols, count, marginLR, marginTB, gap) {
+  const mLR = marginLR ?? DEFAULT_MARGIN;
+  const mTB = marginTB ?? DEFAULT_MARGIN;
+  const g = gap ?? DEFAULT_GAP;
   const rows = Math.ceil(count / cols);
-  const labelW = Math.floor((sheetW - MARGIN * 2 - GAP * (cols - 1)) / cols);
-  const labelH = Math.floor((sheetH - MARGIN * 2 - GAP * (rows - 1)) / rows);
-  return { labelW, labelH, rows, perPage: cols * rows };
+  const labelW = Math.floor((sheetW - mLR * 2 - g * (cols - 1)) / cols);
+  const labelH = Math.floor((sheetH - mTB * 2 - g * (rows - 1)) / rows);
+  return { labelW, labelH, rows, perPage: cols * rows, marginLR: mLR, marginTB: mTB, gap: g };
 }
 
 // ── PDF generation ──
-async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, sheetH, perPage }) {
+async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, sheetH, perPage, marginLR, marginTB, gap }) {
   const [{ jsPDF }, { RobotoRegular }, { RobotoBold }, JsBarcodeModule] = await Promise.all([
     import('jspdf'),
     import('../../fonts/Roboto-Regular'),
@@ -73,8 +77,11 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
     const idx = i % perPage;
     const col = idx % cols;
     const row = Math.floor(idx / cols);
-    const x = MARGIN + col * (labelW + GAP);
-    const y = MARGIN + row * (labelH + GAP);
+    const mLR = marginLR ?? DEFAULT_MARGIN;
+    const mTB = marginTB ?? DEFAULT_MARGIN;
+    const g = gap ?? DEFAULT_GAP;
+    const x = mLR + col * (labelW + g);
+    const y = mTB + row * (labelH + g);
     const plant = plants[i];
 
     // Dashed cutting border
@@ -197,21 +204,28 @@ const Labels = () => {
   const [generating, setGenerating] = useState(false);
 
   // Label format — sheet-based
-  const [sheetIdx, setSheetIdx] = useState(0); // A4 default
+  const [sheetIdx, setSheetIdx] = useState(0); // Браслеты 8x10" default
   const [sheetW, setSheetW] = useState(SHEET_SIZES[0].w);
   const [sheetH, setSheetH] = useState(SHEET_SIZES[0].h);
+  const [marginLR, setMarginLR] = useState(SHEET_SIZES[0].marginLR ?? DEFAULT_MARGIN);
+  const [marginTB, setMarginTB] = useState(SHEET_SIZES[0].marginTB ?? DEFAULT_MARGIN);
+  const [labelGap, setLabelGap] = useState(SHEET_SIZES[0].gap ?? DEFAULT_GAP);
   const [cols, setCols] = useState(1);
   const [countPerSheet, setCountPerSheet] = useState(10);
 
   const handleSheetChange = (idx) => {
     setSheetIdx(idx);
     if (idx < SHEET_SIZES.length) {
-      setSheetW(SHEET_SIZES[idx].w);
-      setSheetH(SHEET_SIZES[idx].h);
+      const s = SHEET_SIZES[idx];
+      setSheetW(s.w);
+      setSheetH(s.h);
+      setMarginLR(s.marginLR ?? DEFAULT_MARGIN);
+      setMarginTB(s.marginTB ?? DEFAULT_MARGIN);
+      setLabelGap(s.gap ?? DEFAULT_GAP);
     }
   };
 
-  const layout = calcFromSheet(sheetW, sheetH, cols, countPerSheet);
+  const layout = calcFromSheet(sheetW, sheetH, cols, countPerSheet, marginLR, marginTB, labelGap);
 
   useEffect(() => { loadRooms(); }, []);
 
@@ -311,7 +325,8 @@ const Labels = () => {
       setGenerating(true);
       await generateLabelsPDF(selectedRoom, plants, {
         cols, labelW: layout.labelW, labelH: layout.labelH,
-        sheetW, sheetH, perPage: layout.perPage
+        sheetW, sheetH, perPage: layout.perPage,
+        marginLR: layout.marginLR, marginTB: layout.marginTB, gap: layout.gap
       });
     } catch (err) { console.error(err); setError('Ошибка генерации PDF'); }
     finally { setGenerating(false); }
@@ -490,6 +505,24 @@ const Labels = () => {
               <input type="number" min={1} max={50} value={countPerSheet}
                 onChange={e => setCountPerSheet(Math.max(1, Math.min(50, +e.target.value || 1)))}
                 className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+            </label>
+            <label className="text-xs">
+              <span className="text-dark-400 block mb-1">Отступ Л/П (мм)</span>
+              <input type="number" min={0} max={50} step={0.5} value={marginLR}
+                onChange={e => setMarginLR(Math.max(0, Math.min(50, +e.target.value || 0)))}
+                className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+            </label>
+            <label className="text-xs">
+              <span className="text-dark-400 block mb-1">Отступ В/Н (мм)</span>
+              <input type="number" min={0} max={50} step={0.5} value={marginTB}
+                onChange={e => setMarginTB(Math.max(0, Math.min(50, +e.target.value || 0)))}
+                className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+            </label>
+            <label className="text-xs">
+              <span className="text-dark-400 block mb-1">Зазор (мм)</span>
+              <input type="number" min={0} max={20} step={0.5} value={labelGap}
+                onChange={e => setLabelGap(Math.max(0, Math.min(20, +e.target.value || 0)))}
+                className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </label>
           </div>
 
