@@ -10,7 +10,11 @@ let scaleState = {
   stable: false,
   lastUpdate: null,
   socketId: null,
-  debug: null // диагностика от Pi
+  debug: null, // диагностика от Pi
+  // Pi buffer/sync state
+  syncing: false,
+  syncCount: 0,
+  bufferedBarcodes: 0,
 };
 
 // Heartbeat: если Pi не шлёт weight > 15 сек — считаем весы отключёнными
@@ -199,12 +203,34 @@ function handlePiConnection(io, socket) {
 
   // Получение скана штрихкода от Pi
   socket.on('barcode:scan', (data) => {
-    const { barcode } = data;
+    const { barcode, buffered } = data;
     if (barcode) {
-      console.log(`Barcode scanned: ${barcode}`);
-      // Broadcast всем браузерам
-      socket.broadcast.emit('barcode:scan', { barcode });
+      if (buffered) {
+        console.log(`Barcode scanned (buffered): ${barcode}`);
+      } else {
+        console.log(`Barcode scanned: ${barcode}`);
+      }
+      // Broadcast всем браузерам (включая флаг buffered)
+      socket.broadcast.emit('barcode:scan', { barcode, buffered: !!buffered });
     }
+  });
+
+  // Pi начинает воспроизведение буферизованных сканов
+  socket.on('pi:sync_start', (data) => {
+    const count = data?.barcodeCount || 0;
+    console.log(`Pi sync started: ${count} buffered barcode(s)`);
+    scaleState.syncing = true;
+    scaleState.syncCount = count;
+    io.emit('pi:sync_status', { syncing: true, count });
+  });
+
+  // Pi завершил воспроизведение буферизованных сканов
+  socket.on('pi:sync_complete', (data) => {
+    const count = data?.barcodeCount || 0;
+    console.log(`Pi sync complete: ${count} barcode(s) replayed`);
+    scaleState.syncing = false;
+    scaleState.syncCount = 0;
+    io.emit('pi:sync_status', { syncing: false, count: 0 });
   });
 
   // Отключение Pi
@@ -217,6 +243,9 @@ function handlePiConnection(io, socket) {
       scaleState.stable = false;
       scaleState.lastUpdate = new Date();
       scaleState.debug = null;
+      scaleState.syncing = false;
+      scaleState.syncCount = 0;
+      scaleState.bufferedBarcodes = 0;
       clearHeartbeat();
 
       io.emit('scale:status', { connected: false });
@@ -238,6 +267,10 @@ function handleBrowserConnection(io, socket) {
   // Отправить текущую диагностику (если есть)
   if (scaleState.debug) {
     socket.emit('scale:debug', scaleState.debug);
+  }
+  // Отправить статус синхронизации (если Pi сейчас воспроизводит буфер)
+  if (scaleState.syncing) {
+    socket.emit('pi:sync_status', { syncing: true, count: scaleState.syncCount });
   }
 
   socket.on('disconnect', () => {

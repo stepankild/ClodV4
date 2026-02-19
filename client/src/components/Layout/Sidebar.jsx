@@ -147,6 +147,11 @@ const Sidebar = ({ isOpen, onClose }) => {
                     <span className={`w-1.5 h-1.5 rounded-full ${debug.barcodeConnected ? 'bg-green-400' : 'bg-red-400'}`} />
                     Сканер
                   </span>
+                  {debug.bufferedBarcodes > 0 && (
+                    <span className="text-amber-400">
+                      ({debug.bufferedBarcodes} в буфере)
+                    </span>
+                  )}
                 </div>
               )}
             </div>

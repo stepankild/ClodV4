@@ -33,6 +33,9 @@ export function useScale() {
   const [scaleConnected, setScaleConnected] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [debug, setDebug] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncCount, setSyncCount] = useState(0);
+  const [bufferedBarcodes, setBufferedBarcodes] = useState(0);
 
   useEffect(() => {
     connectScale();
@@ -55,6 +58,14 @@ export function useScale() {
           break;
         case 'debug':
           setDebug(data);
+          // Статистика буфера из debug heartbeat
+          if (data.bufferedBarcodes != null) {
+            setBufferedBarcodes(data.bufferedBarcodes);
+          }
+          break;
+        case 'sync_status':
+          setSyncing(data.syncing);
+          setSyncCount(data.count || 0);
           break;
         case 'socketConnected':
           setSocketConnected(true);
@@ -73,5 +84,5 @@ export function useScale() {
     };
   }, []);
 
-  return { weight, unit: 'g', stable, scaleConnected, socketConnected, debug };
+  return { weight, unit: 'g', stable, scaleConnected, socketConnected, debug, syncing, syncCount, bufferedBarcodes };
 }

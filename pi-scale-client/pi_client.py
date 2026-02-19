@@ -20,6 +20,7 @@ from datetime import datetime
 import socketio
 from dotenv import load_dotenv
 from scale_reader import ScaleReader
+from event_buffer import BarcodeQueue, LatestWeightBuffer
 
 # Загрузить .env из текущей директории
 load_dotenv()
@@ -48,6 +49,14 @@ sio = socketio.Client(
 # ── Scale reader ──
 scale = ScaleReader(port=SERIAL_PORT, baudrate=BAUD_RATE)
 
+# ── Offline buffers ──
+barcode_queue = BarcodeQueue()
+weight_buffer = LatestWeightBuffer()
+
+pending = barcode_queue.size()
+if pending > 0:
+    print(f'[Buffer] {pending} barcode scan(s) pending from previous session')
+
 # ── Barcode reader (опционально — evdev может быть не установлен) ──
 barcode = None
 try:
@@ -63,6 +72,9 @@ except ImportError:
 @sio.event
 def connect():
     print(f'[OK] Connected to server: {SERVER_URL}')
+    # Flush буферизованных данных при (пере)подключении
+    flush_thread = threading.Thread(target=flush_buffers, daemon=True)
+    flush_thread.start()
 
 
 @sio.event
@@ -73,6 +85,48 @@ def disconnect():
 @sio.event
 def connect_error(data):
     print(f'[!] Connection error: {data}')
+
+
+def flush_buffers():
+    """Отправить все буферизованные данные на сервер после (пере)подключения."""
+    time.sleep(0.5)  # Дать сокету стабилизироваться
+
+    # 1. Flush штрихкодов (критичные данные)
+    queued = barcode_queue.peek_all()
+    if queued:
+        print(f'[Buffer] Flushing {len(queued)} buffered barcode scan(s)...')
+        if sio.connected:
+            sio.emit('pi:sync_start', {'barcodeCount': len(queued)})
+
+        sent = 0
+        for row_id, barcode_code, scanned_at in queued:
+            if not sio.connected:
+                print(f'[Buffer] Lost connection during flush, {len(queued) - sent} remaining')
+                return
+            sio.emit('barcode:scan', {
+                'barcode': barcode_code,
+                'buffered': True,
+                'scannedAt': scanned_at
+            })
+            barcode_queue.remove(row_id)
+            sent += 1
+            print(f'[Buffer] Sent buffered barcode: {barcode_code}')
+            time.sleep(0.05)  # Небольшая задержка чтобы не флудить сервер
+
+        if sio.connected:
+            sio.emit('pi:sync_complete', {'barcodeCount': sent})
+        print(f'[Buffer] Flush complete: {sent} barcode(s) sent')
+
+    # 2. Отправить последний буферизованный вес
+    weight_data = weight_buffer.get_and_clear()
+    if weight_data and sio.connected:
+        w, u, s = weight_data
+        sio.emit('scale:weight', {
+            'weight': w,
+            'unit': u,
+            'stable': s
+        })
+        print(f'[Buffer] Sent buffered weight: {w} {u}')
 
 
 def connect_to_server():
@@ -152,7 +206,9 @@ def barcode_loop():
                     sio.emit('barcode:scan', {'barcode': code})
                     print(f'[Barcode] Sent to server: {code}')
                 else:
-                    print('[Barcode] Not connected to server, scan lost')
+                    # Буферизуем вместо потери
+                    queue_size = barcode_queue.push(code)
+                    print(f'[Barcode] Buffered scan: {code} (queue: {queue_size})')
             elif wait_cycles % 12 == 0:
                 # Каждые ~60 секунд — показать что поток жив
                 print(f'[Barcode] Waiting for scan... (connected: {barcode.is_connected()})')
@@ -180,7 +236,10 @@ def emit_debug_info(last_weight, consecutive_errors, start_time):
         'uptime': round(time.time() - start_time),
         'lastWeight': last_weight,
         'errorCount': consecutive_errors,
-        'piTime': datetime.now().isoformat()
+        'piTime': datetime.now().isoformat(),
+        # Статистика буфера
+        'bufferedBarcodes': barcode_queue.size(),
+        'hasBufferedWeight': weight_buffer.has_value(),
     }
     sio.emit('scale:debug', debug_data)
 
@@ -286,6 +345,9 @@ def main():
                             'unit': unit,
                             'stable': stable
                         })
+                    else:
+                        # Буферизуем только последний вес (перезаписывает предыдущий)
+                        weight_buffer.set(weight, unit, stable)
                     last_weight = weight
                     last_stable = stable
             else:

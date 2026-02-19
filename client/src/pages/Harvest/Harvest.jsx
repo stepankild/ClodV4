@@ -35,7 +35,7 @@ const getRoleInfo = (key) => CREW_ROLES.find(r => r.key === key) || { emoji: '�
 const Harvest = () => {
   const { hasPermission, user } = useAuth();
   const canDoHarvest = hasPermission && hasPermission('harvest:record');
-  const { weight: scaleWeight, unit: scaleUnit, stable: scaleStable, scaleConnected, socketConnected, debug: scaleDebug } = useScale();
+  const { weight: scaleWeight, unit: scaleUnit, stable: scaleStable, scaleConnected, socketConnected, debug: scaleDebug, syncing, syncCount, bufferedBarcodes } = useScale();
   const { lastBarcode, scanTime } = useBarcode();
 
   const [searchParams] = useSearchParams();
@@ -739,6 +739,25 @@ const Harvest = () => {
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6">
           {error}
+        </div>
+      )}
+
+      {/* Pi offline — есть буферизованные сканы */}
+      {!scaleConnected && socketConnected && bufferedBarcodes > 0 && (
+        <div className="bg-amber-900/30 border border-amber-700 text-amber-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+          <div className="w-3 h-3 rounded-full bg-amber-500 animate-pulse shrink-0" />
+          <div>
+            <span className="font-medium">Pi офлайн, буферизация...</span>
+            <span className="ml-2 text-amber-300">{bufferedBarcodes} скан(ов) в очереди</span>
+          </div>
+        </div>
+      )}
+
+      {/* Pi синхронизирует буферизованные данные */}
+      {syncing && (
+        <div className="bg-blue-900/30 border border-blue-700 text-blue-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-400 shrink-0" />
+          <span className="font-medium">Синхронизация {syncCount} буферизованных сканов...</span>
         </div>
       )}
 

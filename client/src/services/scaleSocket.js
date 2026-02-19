@@ -46,6 +46,10 @@ export function connectScale() {
     listeners.forEach(cb => cb('crew_update', data));
   });
 
+  socket.on('pi:sync_status', (data) => {
+    listeners.forEach(cb => cb('sync_status', data));
+  });
+
   socket.on('connect', () => {
     listeners.forEach(cb => cb('socketConnected', {}));
   });
