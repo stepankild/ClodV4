@@ -50,6 +50,31 @@ function calcFromSheet(sheetW, sheetH, cols, count, marginLR, marginTB, gap) {
   return { labelW, labelH, rows, perPage: cols * rows, marginLR: mLR, marginTB: mTB, gap: g };
 }
 
+// ── Logo SVG → PNG data URL for PDF ──
+function renderLogoToDataUrl(size = 64) {
+  const svgStr = `<svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">
+    <circle cx="32" cy="32" r="30" fill="#0d3320" stroke="#22c55e" stroke-width="2"/>
+    <path d="M32 42 L32 26" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round"/>
+    <path d="M32 30 Q22 22 18 14 Q24 16 32 26" fill="#16a34a" stroke="#22c55e" stroke-width="1"/>
+    <path d="M32 28 Q40 18 46 12 Q40 16 32 24" fill="#16a34a" stroke="#22c55e" stroke-width="1"/>
+    <path d="M32 26 Q28 14 32 8 Q36 14 32 26" fill="#22c55e" stroke="#15803d" stroke-width="0.8"/>
+    <path d="M32 42 Q28 48 24 54" stroke="#a3a3a3" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+    <path d="M32 42 Q32 50 32 56" stroke="#a3a3a3" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+    <path d="M32 42 Q36 48 40 54" stroke="#a3a3a3" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>
+  </svg>`;
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  const img = new Image();
+  const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  return new Promise((resolve) => {
+    img.onload = () => { ctx.drawImage(img, 0, 0, size, size); URL.revokeObjectURL(url); resolve(c.toDataURL('image/png')); };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+    img.src = url;
+  });
+}
+
 // ── PDF generation ──
 async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, sheetH, perPage, marginLR, marginTB, gap }) {
   const [{ jsPDF }, { RobotoRegular }, { RobotoBold }, JsBarcodeModule] = await Promise.all([
@@ -73,6 +98,12 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
   const isVertical = labelH > labelW * 3;
   const isCompact = labelH < 25;
   const isTiny = labelH < 18;
+
+  // Логотип для вертикальных браслетов (рендерим один раз)
+  let logoDataUrl = null;
+  if (isVertical) {
+    logoDataUrl = await renderLogoToDataUrl(128);
+  }
 
   for (let i = 0; i < plants.length; i++) {
     if (i > 0 && i % perPage === 0) doc.addPage();
@@ -102,45 +133,52 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
 
     if (isVertical) {
       // ── Вертикальный браслет (~19mm шир × ~250mm выс) ──
-      // Весь контент повёрнут — текст читается при повороте браслета
-      //
-      // jsPDF angle: положительный = против часовой, отрицательный = по часовой
-      // angle: -90 → текст идёт СВЕРХУ ВНИЗ по странице (clockwise rotation)
-      // Это совпадает с направлением curY (вниз по браслету)
+      // angle: -90 → текст идёт СВЕРХУ ВНИЗ (clockwise), совпадает с curY
 
-      const textX = x + labelW * 0.65; // линия текста, чуть правее центра
-      let curY = y + PAD + 5; // текущая позиция вдоль браслета
+      const textX = x + labelW * 0.7; // линия текста
+      let curY = y + PAD + 3;
 
-      // ─ 1. Номер растения — крупный ─
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(14); doc.setTextColor(30, 30, 30);
+      // ─ 1. Логотип True Source ─
+      if (logoDataUrl) {
+        const logoSize = labelW - PAD * 2 - 1;
+        doc.addImage(logoDataUrl, 'PNG', x + PAD + 0.5, curY, logoSize, logoSize);
+        curY += logoSize + 4;
+      }
+
+      // ─ 2. Номер растения — крупный жирный ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(16); doc.setTextColor(20, 20, 20);
       const numLabel = `#${plant.number}`;
       doc.text(numLabel, textX, curY, { angle: -90 });
       curY += doc.getTextWidth(numLabel) + 8;
 
-      // ─ 2. Название комнаты ─
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(30, 30, 30);
+      // ─ 3. Название комнаты — крупное жирное ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(12); doc.setTextColor(20, 20, 20);
       const roomName = room.name || '—';
       doc.text(roomName, textX, curY, { angle: -90 });
       curY += doc.getTextWidth(roomName) + 6;
 
-      // ─ 3. Сорт ─
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(8); doc.setTextColor(60, 60, 60);
+      // ─ 4. Сорт — крупный жирный ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(40, 40, 40);
       let st = plant.strain || room.strain || '—';
-      const maxStLen = 55;
+      const maxStLen = 60;
       if (doc.getTextWidth(st) > maxStLen) {
         while (doc.getTextWidth(st + '..') > maxStLen && st.length > 5) st = st.slice(0, -1);
         st += '..';
       }
       doc.text(st, textX, curY, { angle: -90 });
-      curY += doc.getTextWidth(st) + 10;
+      curY += doc.getTextWidth(st) + 6;
 
-      // ─ 4. Штрихкод (повёрнут на 90° через pre-rotated canvas) ─
+      // ─ 5. Даты — жирные ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(40, 40, 40);
+      doc.text(`${startDateStr} — ${harvestDateStr}`, textX, curY, { angle: -90 });
+      curY += doc.getTextWidth(`${startDateStr} — ${harvestDateStr}`) + 10;
+
+      // ─ 6. Штрихкод — компактный (повёрнут на -90°) ─
       const srcCanvas = document.createElement('canvas');
       JsBarcode(srcCanvas, String(plant.number), {
-        format: 'CODE128', width: 2, height: 50,
-        displayValue: false, margin: 2
+        format: 'CODE128', width: 1.5, height: 30,
+        displayValue: false, margin: 1
       });
-      // Поворачиваем canvas на -90° (clockwise) для совпадения с текстом
       const rotCanvas = document.createElement('canvas');
       rotCanvas.width = srcCanvas.height;
       rotCanvas.height = srcCanvas.width;
@@ -150,14 +188,9 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       rctx.drawImage(srcCanvas, -srcCanvas.width / 2, -srcCanvas.height / 2);
       const rotBarcodeUrl = rotCanvas.toDataURL('image/png');
 
-      const barcodeW = labelW - PAD * 2; // по ширине браслета
-      const barcodeH = Math.min(70, (y + labelH - curY) * 0.45); // до 45% оставшегося места
-      doc.addImage(rotBarcodeUrl, 'PNG', x + PAD, curY, barcodeW, barcodeH);
-      curY += barcodeH + 10;
-
-      // ─ 5. Даты ─
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
-      doc.text(`${startDateStr} — ${harvestDateStr}`, textX, curY, { angle: -90 });
+      const barcodeW = labelW - PAD * 2 - 2;
+      const barcodeH = Math.min(40, (y + labelH - curY) * 0.4);
+      doc.addImage(rotBarcodeUrl, 'PNG', x + PAD + 1, curY, barcodeW, barcodeH);
 
     } else if (isTiny) {
       // Single-row: text left, barcode center, #N right (labelH < 18mm)
