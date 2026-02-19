@@ -1,0 +1,16 @@
+[Unit]
+Description=Farm Scale Client (Ohaus R31P3 → Server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stepan
+WorkingDirectory=/home/stepan/pi-scale-client
+ExecStart=/home/stepan/pi-scale-client/venv/bin/python scale_client.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

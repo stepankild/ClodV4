@@ -7,19 +7,20 @@ import RoomLog from '../models/RoomLog.js';
 import VegBatch from '../models/VegBatch.js';
 import CloneCut from '../models/CloneCut.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { getScaleState } from '../socket/index.js';
 
-// Симуляция весов: случайный вес в граммах (50–500 г)
-const SIMULATED_WEIGHT_MIN = 50;
-const SIMULATED_WEIGHT_MAX = 500;
-
-// @desc    Получить текущее показание весов (симуляция)
+// @desc    Получить текущее состояние весов (in-memory из Socket.io)
 // @route   GET /api/harvest/scale
 export const getScaleReading = async (req, res) => {
   try {
-    const weight = Math.round(
-      SIMULATED_WEIGHT_MIN + Math.random() * (SIMULATED_WEIGHT_MAX - SIMULATED_WEIGHT_MIN)
-    );
-    res.json({ weight, unit: 'g' });
+    const state = getScaleState();
+    res.json({
+      weight: state.lastWeight,
+      unit: state.unit || 'g',
+      stable: state.stable,
+      connected: state.connected,
+      lastUpdate: state.lastUpdate
+    });
   } catch (error) {
     console.error('Scale reading error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });

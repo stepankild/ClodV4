@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import { harvestService } from '../../services/harvestService';
+import { useScale } from '../../hooks/useScale';
 import HarvestRoomMap from '../../components/RoomMap/HarvestRoomMap';
 import HarvestHistory from './HarvestHistory';
 
@@ -19,6 +20,7 @@ const formatDate = (date) => {
 const Harvest = () => {
   const { hasPermission } = useAuth();
   const canDoHarvest = hasPermission && hasPermission('harvest:record');
+  const { weight: scaleWeight, unit: scaleUnit, stable: scaleStable, scaleConnected, socketConnected } = useScale();
 
   const [searchParams] = useSearchParams();
   const roomIdFromUrl = searchParams.get('roomId') || '';
@@ -116,7 +118,10 @@ const Harvest = () => {
   const handleRecordPlant = async (e) => {
     e.preventDefault();
     const num = plantNumber.trim();
-    const weight = parseInt(manualWeight, 10);
+    // Если вес не введён вручную — берём с весов автоматически
+    const weight = manualWeight
+      ? parseInt(manualWeight, 10)
+      : (scaleConnected && scaleWeight != null ? Math.round(scaleWeight) : NaN);
     if (!session || !num || isNaN(weight) || weight <= 0) return;
     if (session.status !== 'in_progress') return;
     try {
@@ -371,6 +376,35 @@ const Harvest = () => {
           {/* Весы и запись куста */}
           <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 mb-6">
             <h2 className="text-lg font-semibold text-white mb-4">Записать куст</h2>
+
+            {/* Live-дисплей весов */}
+            <div className={`flex items-center gap-3 mb-4 p-3 rounded-lg border ${
+              scaleConnected
+                ? 'bg-dark-700 border-green-700/50'
+                : 'bg-dark-700/50 border-dark-600'
+            }`}>
+              <div className={`w-3 h-3 rounded-full shrink-0 ${
+                scaleConnected ? 'bg-green-500 animate-pulse' : 'bg-red-500'
+              }`} />
+              {scaleConnected ? (
+                <div className="flex items-center gap-4 flex-wrap">
+                  <div className="text-3xl font-mono font-bold text-white leading-none">
+                    {scaleWeight != null ? scaleWeight : '---'}
+                  </div>
+                  <div className="text-lg text-dark-400">{scaleUnit}</div>
+                  {scaleStable && (
+                    <span className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded">
+                      Стабильно
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-dark-400 text-sm">
+                  {socketConnected ? 'Весы не подключены' : 'Подключение к серверу...'}
+                </div>
+              )}
+            </div>
+
             <div className="flex flex-wrap items-end gap-4">
               <div>
                 <label className="block text-sm text-dark-400 mb-1">Номер куста</label>
@@ -390,19 +424,33 @@ const Harvest = () => {
                   min="1"
                   value={manualWeight}
                   onChange={(e) => setManualWeight(e.target.value)}
-                  placeholder="250"
+                  placeholder={scaleConnected && scaleWeight != null ? String(Math.round(scaleWeight)) : '250'}
                   className="w-28 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500"
                 />
               </div>
+              {scaleConnected && scaleWeight != null && (
+                <button
+                  type="button"
+                  onClick={() => setManualWeight(String(Math.round(scaleWeight)))}
+                  className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium"
+                >
+                  Взять с весов ({Math.round(scaleWeight)} {scaleUnit})
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleRecordPlant}
-                disabled={!canDoHarvest || !plantNumber.trim() || !manualWeight || parseInt(manualWeight, 10) <= 0 || recordLoading}
+                disabled={!canDoHarvest || !plantNumber.trim() || (!manualWeight && !(scaleConnected && scaleWeight > 0)) || recordLoading}
                 className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 font-medium"
               >
                 {recordLoading ? '...' : 'Записать'}
               </button>
             </div>
+            {scaleConnected && !manualWeight && (
+              <p className="text-xs text-dark-500 mt-2">
+                Вес не введён — при записи будет использован вес с весов автоматически.
+              </p>
+            )}
           </div>
 
           {/* Карта комнаты */}
