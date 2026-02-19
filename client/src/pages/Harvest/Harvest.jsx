@@ -69,6 +69,7 @@ const Harvest = () => {
   const [roleLoading, setRoleLoading] = useState(false);
   const [weighingConflict, setWeighingConflict] = useState(null); // { currentWeigher: { name } }
   const [piOfflineModal, setPiOfflineModal] = useState(false); // модалка "Pi перешёл в офлайн"
+  const [weighingTip, setWeighingTip] = useState(false); // подсказка для взвешивающего
   const prevScaleConnected = useRef(scaleConnected);
 
   const safeRooms = Array.isArray(rooms) ? rooms : [];
@@ -204,6 +205,9 @@ const Harvest = () => {
       const res = await harvestService.joinSession(session._id, roleKey);
       setCrew(res.crew || []);
       setMyRole(roleKey);
+      if (roleKey === 'weighing') {
+        setWeighingTip(true);
+      }
     } catch (err) {
       if (err.response?.status === 409) {
         // Роль weighing занята
@@ -228,6 +232,7 @@ const Harvest = () => {
       const res = await harvestService.forceJoinSession(session._id, 'weighing');
       setCrew(res.crew || []);
       setMyRole('weighing');
+      setWeighingTip(true);
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка замены роли');
     } finally {
@@ -808,6 +813,52 @@ const Harvest = () => {
               className="w-full bg-amber-600 hover:bg-amber-700 text-white font-medium py-3 px-4 rounded-xl transition-colors"
             >
               Понятно, продолжаю
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Подсказка для взвешивающего */}
+      {weighingTip && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-dark-800 border-2 border-primary-600 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-12 h-12 rounded-full bg-primary-600/20 flex items-center justify-center shrink-0">
+                <span className="text-2xl">⚖️</span>
+              </div>
+              <div>
+                <h3 className="text-white font-bold text-lg">Ты на весах!</h3>
+                <p className="text-primary-400 text-sm mt-1">Памятка перед началом</p>
+              </div>
+            </div>
+            <div className="space-y-3 mb-5">
+              <div className="flex items-start gap-3 bg-dark-700 rounded-lg p-3">
+                <span className="text-lg shrink-0 mt-0.5">🔄</span>
+                <div>
+                  <div className="text-white text-sm font-medium">Отарь весы</div>
+                  <div className="text-dark-400 text-xs">Убедись что показывает ровно 0 перед первым кустом</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 bg-dark-700 rounded-lg p-3">
+                <span className="text-lg shrink-0 mt-0.5">⏱️</span>
+                <div>
+                  <div className="text-white text-sm font-medium">7 секунд на отмену</div>
+                  <div className="text-dark-400 text-xs">После записи куста есть 7 секунд чтобы отменить если ошибся</div>
+                </div>
+              </div>
+              <div className="flex items-start gap-3 bg-red-900/30 border border-red-800/50 rounded-lg p-3">
+                <span className="text-lg shrink-0 mt-0.5">💀</span>
+                <div>
+                  <div className="text-red-400 text-sm font-medium">Не пропускай кусты</div>
+                  <div className="text-dark-400 text-xs">Каждый пропущенный куст — минус один выходной. Шутка. Или нет. 🙃</div>
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={() => setWeighingTip(false)}
+              className="w-full bg-primary-600 hover:bg-primary-500 text-white font-bold py-3 px-4 rounded-xl transition-colors"
+            >
+              Понял, поехали! 🚀
             </button>
           </div>
         </div>
