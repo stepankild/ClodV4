@@ -127,6 +127,8 @@ def barcode_loop():
     if not connect_to_barcode():
         print('[Barcode] Will retry in background...')
 
+    wait_cycles = 0
+
     while True:
         try:
             # Переподключение если отвалился
@@ -136,16 +138,23 @@ def barcode_loop():
                     print('[Barcode] Could not reconnect, retrying in 10s...')
                     time.sleep(10)
                     continue
+                wait_cycles = 0
 
-            # Блокирующее чтение — ждём скан (с timeout чтобы проверять is_connected)
+            # Чтение с select-based timeout — ждём скан
             code = barcode.read_barcode(timeout=5)
+            wait_cycles += 1
 
             if code is not None:
                 print(f'[Barcode] Scanned: {code}')
+                wait_cycles = 0
                 if sio.connected:
                     sio.emit('barcode:scan', {'barcode': code})
+                    print(f'[Barcode] Sent to server: {code}')
                 else:
                     print('[Barcode] Not connected to server, scan lost')
+            elif wait_cycles % 12 == 0:
+                # Каждые ~60 секунд — показать что поток жив
+                print(f'[Barcode] Waiting for scan... (connected: {barcode.is_connected()})')
 
         except Exception as e:
             print(f'[Barcode] Error: {e}')

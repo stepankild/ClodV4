@@ -5,8 +5,8 @@
 Сканер работает как USB-клавиатура — при скане "набирает" штрихкод и жмёт Enter.
 
 На headless Raspberry Pi (без X11) читаем напрямую из /dev/input/eventX
-через библиотеку evdev. Устройство "захватывается" (grab), чтобы
-другие процессы не получали input.
+через библиотеку evdev. БЕЗ grab() — на headless Pi нет конфликтов
+с другими процессами, а grab может блокировать получение событий.
 
 Требования:
   - pip install evdev
@@ -14,6 +14,7 @@
 """
 
 import time
+import select
 
 try:
     from evdev import InputDevice, categorize, ecodes, list_devices
@@ -37,8 +38,14 @@ KEY_MAP = {
     57: ' ',  # пробел
 }
 
-# KEY_ENTER
-KEY_ENTER = 28
+# Коды клавиш-терминаторов (Enter) — разные сканеры используют разные
+KEY_ENTER = 28        # KEY_ENTER (основная клавиатура)
+KEY_KPENTER = 96      # KEY_KPENTER (numpad Enter)
+ENTER_CODES = {KEY_ENTER, KEY_KPENTER}
+
+# Таймаут паузы между символами — если буфер не пуст и нет новых символов
+# дольше этого времени, считаем скан завершённым (для сканеров без Enter)
+SCAN_GAP_TIMEOUT = 0.3  # секунды
 
 
 class BarcodeReader:
@@ -63,23 +70,37 @@ class BarcodeReader:
     def find_device(self):
         """
         Найти сканер среди /dev/input/event* устройств.
+        Фильтрует по EV_KEY capabilities (цифры + Enter), чтобы выбрать
+        правильный интерфейс (Honeywell создаёт несколько event-устройств).
         Возвращает путь к устройству или None.
         """
         devices = [InputDevice(path) for path in list_devices()]
+        filter_lower = self.device_name_filter.lower()
+        candidates = []
+
         for dev in devices:
             name_lower = dev.name.lower()
-            filter_lower = self.device_name_filter.lower()
-            if filter_lower in name_lower:
-                print(f'[Barcode] Found scanner: {dev.name} at {dev.path}')
-                return dev.path
-            # Fallback — ищем типичные имена HID-сканеров
-            if any(keyword in name_lower for keyword in ['barcode', 'scanner', 'voyager']):
-                print(f'[Barcode] Found scanner (fallback): {dev.name} at {dev.path}')
-                return dev.path
-        return None
+            if filter_lower not in name_lower and not any(
+                kw in name_lower for kw in ['barcode', 'scanner', 'voyager']
+            ):
+                continue
+
+            # Проверить что устройство имеет нужные EV_KEY capabilities
+            caps = dev.capabilities(verbose=False)
+            ev_key_caps = caps.get(ecodes.EV_KEY, [])
+            # Нужны цифровые клавиши (KEY_1=2..KEY_0=11)
+            has_digit_keys = any(k in ev_key_caps for k in range(2, 12))
+
+            if has_digit_keys:
+                print(f'[Barcode] Found scanner: {dev.name} at {dev.path} (has KEY events)')
+                candidates.append(dev.path)
+            else:
+                print(f'[Barcode] Skipping {dev.name} at {dev.path} (no digit KEY events)')
+
+        return candidates[0] if candidates else None
 
     def connect(self):
-        """Подключиться к сканеру."""
+        """Подключиться к сканеру (без grab — headless Pi не требует)."""
         path = self.device_path or self.find_device()
         if not path:
             raise FileNotFoundError(
@@ -90,12 +111,8 @@ class BarcodeReader:
         self.device = InputDevice(path)
         self.device_path = path
 
-        # Захватить устройство — только наш процесс получает input
-        try:
-            self.device.grab()
-        except OSError as e:
-            print(f'[Barcode] Warning: could not grab device: {e}')
-            # Продолжаем без grab — будет работать, но input может уходить и в другие процессы
+        # НЕ используем grab() — на headless Pi без X11 grab конфликтует
+        # с kbd handler ядра и блокирует получение событий
 
         self._buffer = ''
         print(f'[Barcode] Connected: {self.device.name} ({self.device.path})')
@@ -113,10 +130,12 @@ class BarcodeReader:
 
     def read_barcode(self, timeout=None):
         """
-        Прочитать один штрихкод (блокирующий вызов).
+        Прочитать один штрихкод (блокирующий вызов с корректным timeout).
 
-        Ждёт пока сканер отсканирует код (накапливает символы до Enter).
-        Возвращает строку штрихкода или None если timeout истёк.
+        Использует select() для неблокирующего ожидания событий.
+        Поддерживает два способа завершения скана:
+          1. Enter (KEY_ENTER или KEY_KPENTER) — стандартный
+          2. Gap timeout — если буфер не пуст и нет новых символов >300мс
 
         Args:
             timeout: Максимальное время ожидания в секундах.
@@ -126,32 +145,78 @@ class BarcodeReader:
             return None
 
         start_time = time.time()
+        last_char_time = None  # время последнего принятого символа
 
         try:
-            for event in self.device.read_loop():
-                # Проверить timeout
+            while True:
+                # Проверить общий timeout
                 if timeout is not None:
-                    elapsed = time.time() - start_time
-                    if elapsed >= timeout:
-                        # Timeout — сбросить буфер и вернуть None
+                    remaining = timeout - (time.time() - start_time)
+                    if remaining <= 0:
+                        # Timeout — если в буфере есть данные, вернуть их
+                        if self._buffer.strip():
+                            barcode = self._buffer.strip()
+                            self._buffer = ''
+                            print(f'[Barcode] Completed by timeout (buffer had data)')
+                            return barcode
                         self._buffer = ''
                         return None
 
-                # Обрабатываем только нажатия клавиш (не отпускания и не удержания)
-                if event.type != ecodes.EV_KEY or event.value != 1:
+                # Определить timeout для select
+                if self._buffer and last_char_time is not None:
+                    # Буфер не пуст — ждём gap timeout (завершение скана без Enter)
+                    gap_remaining = SCAN_GAP_TIMEOUT - (time.time() - last_char_time)
+                    if gap_remaining <= 0:
+                        # Gap timeout — скан завершён
+                        barcode = self._buffer.strip()
+                        self._buffer = ''
+                        if barcode:
+                            print(f'[Barcode] Completed by gap timeout')
+                            return barcode
+                        continue
+                    select_timeout = min(gap_remaining, 0.1)
+                elif timeout is not None:
+                    select_timeout = min(timeout - (time.time() - start_time), 1.0)
+                else:
+                    select_timeout = 5.0
+
+                if select_timeout <= 0:
                     continue
 
-                if event.code == KEY_ENTER:
-                    # Enter = конец штрихкода
-                    barcode = self._buffer.strip()
-                    self._buffer = ''
-                    if barcode:
-                        return barcode
-                else:
-                    # Добавить символ в буфер
-                    char = KEY_MAP.get(event.code)
-                    if char:
-                        self._buffer += char
+                r, _, _ = select.select([self.device.fd], [], [], select_timeout)
+                if not r:
+                    # Нет данных — проверить gap timeout
+                    if self._buffer and last_char_time is not None:
+                        if (time.time() - last_char_time) >= SCAN_GAP_TIMEOUT:
+                            barcode = self._buffer.strip()
+                            self._buffer = ''
+                            if barcode:
+                                print(f'[Barcode] Completed by gap timeout')
+                                return barcode
+                    continue
+
+                # Есть данные — читаем все доступные события
+                for event in self.device.read():
+                    # Обрабатываем только нажатия клавиш (не отпускания и не удержания)
+                    if event.type != ecodes.EV_KEY or event.value != 1:
+                        continue
+
+                    if event.code in ENTER_CODES:
+                        # Enter = конец штрихкода
+                        barcode = self._buffer.strip()
+                        self._buffer = ''
+                        if barcode:
+                            print(f'[Barcode] Completed by Enter (code={event.code})')
+                            return barcode
+                    else:
+                        # Добавить символ в буфер
+                        char = KEY_MAP.get(event.code)
+                        if char:
+                            self._buffer += char
+                            last_char_time = time.time()
+                            print(f'[Barcode] KEY {event.code} → {char}')
+                        else:
+                            print(f'[Barcode] Unknown KEY code: {event.code}')
 
         except (OSError, IOError) as e:
             print(f'[Barcode] Read error: {e}')
@@ -161,10 +226,6 @@ class BarcodeReader:
     def close(self):
         """Закрыть соединение со сканером."""
         if self.device:
-            try:
-                self.device.ungrab()
-            except (OSError, IOError):
-                pass
             try:
                 self.device.close()
             except (OSError, IOError):
