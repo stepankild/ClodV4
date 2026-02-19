@@ -102,40 +102,37 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
 
     if (isVertical) {
       // ── Вертикальный браслет (~19mm шир × ~250mm выс) ──
-      // Весь контент повёрнут на 90° — текст читается при повороте браслета
-      // Раскладка вдоль браслета (сверху вниз):
-      //   #N (крупный) → Комната → Штрихкод → Сорт → Даты
+      // Весь контент повёрнут — текст читается при повороте браслета
       //
-      // labelW ≈ 19mm (ширина колонки), labelH ≈ 250mm (длина браслета)
-      // angle: 90 в jsPDF = поворот текста на 90° CCW от точки (x,y)
-      // x = горизонталь (вправо), y = вертикаль (вниз по странице)
-      // При angle:90 текст идёт вниз по странице от точки (x,y)
+      // jsPDF angle: положительный = против часовой, отрицательный = по часовой
+      // angle: -90 → текст идёт СВЕРХУ ВНИЗ по странице (clockwise rotation)
+      // Это совпадает с направлением curY (вниз по браслету)
 
-      const textX = x + labelW / 2 + 2; // единая линия текста по центру ширины
-      let curY = y + PAD + 3; // текущая позиция вдоль браслета
+      const textX = x + labelW * 0.65; // линия текста, чуть правее центра
+      let curY = y + PAD + 5; // текущая позиция вдоль браслета
 
-      // ─ 1. Номер растения — крупный, хорошо читаемый ─
+      // ─ 1. Номер растения — крупный ─
       doc.setFont('Roboto', 'bold'); doc.setFontSize(14); doc.setTextColor(30, 30, 30);
       const numLabel = `#${plant.number}`;
-      doc.text(numLabel, textX, curY, { angle: 90 });
-      curY += doc.getTextWidth(numLabel) + 6;
+      doc.text(numLabel, textX, curY, { angle: -90 });
+      curY += doc.getTextWidth(numLabel) + 8;
 
       // ─ 2. Название комнаты ─
       doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(30, 30, 30);
       const roomName = room.name || '—';
-      doc.text(roomName, textX, curY, { angle: 90 });
+      doc.text(roomName, textX, curY, { angle: -90 });
       curY += doc.getTextWidth(roomName) + 6;
 
       // ─ 3. Сорт ─
       doc.setFont('Roboto', 'normal'); doc.setFontSize(8); doc.setTextColor(60, 60, 60);
       let st = plant.strain || room.strain || '—';
-      const maxStLen = 60; // макс длина текста в мм вдоль браслета
+      const maxStLen = 55;
       if (doc.getTextWidth(st) > maxStLen) {
         while (doc.getTextWidth(st + '..') > maxStLen && st.length > 5) st = st.slice(0, -1);
         st += '..';
       }
-      doc.text(st, textX, curY, { angle: 90 });
-      curY += doc.getTextWidth(st) + 8;
+      doc.text(st, textX, curY, { angle: -90 });
+      curY += doc.getTextWidth(st) + 10;
 
       // ─ 4. Штрихкод (повёрнут на 90° через pre-rotated canvas) ─
       const srcCanvas = document.createElement('canvas');
@@ -143,23 +140,24 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
         format: 'CODE128', width: 2, height: 50,
         displayValue: false, margin: 2
       });
+      // Поворачиваем canvas на -90° (clockwise) для совпадения с текстом
       const rotCanvas = document.createElement('canvas');
       rotCanvas.width = srcCanvas.height;
       rotCanvas.height = srcCanvas.width;
       const rctx = rotCanvas.getContext('2d');
       rctx.translate(rotCanvas.width / 2, rotCanvas.height / 2);
-      rctx.rotate(Math.PI / 2);
+      rctx.rotate(-Math.PI / 2);
       rctx.drawImage(srcCanvas, -srcCanvas.width / 2, -srcCanvas.height / 2);
       const rotBarcodeUrl = rotCanvas.toDataURL('image/png');
 
       const barcodeW = labelW - PAD * 2; // по ширине браслета
-      const barcodeH = Math.min(70, (labelH - curY + y) * 0.5); // до половины оставшегося места
+      const barcodeH = Math.min(70, (y + labelH - curY) * 0.45); // до 45% оставшегося места
       doc.addImage(rotBarcodeUrl, 'PNG', x + PAD, curY, barcodeW, barcodeH);
-      curY += barcodeH + 6;
+      curY += barcodeH + 10;
 
       // ─ 5. Даты ─
       doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
-      doc.text(`${startDateStr} — ${harvestDateStr}`, textX, curY, { angle: 90 });
+      doc.text(`${startDateStr} — ${harvestDateStr}`, textX, curY, { angle: -90 });
 
     } else if (isTiny) {
       // Single-row: text left, barcode center, #N right (labelH < 18mm)
