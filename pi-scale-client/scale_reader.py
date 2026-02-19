@@ -71,7 +71,8 @@ class ScaleReader:
 
         try:
             # Сбросить накопившиеся старые данные — читать только свежее
-            if self.serial_conn.in_waiting > 100:
+            # Порог 500 байт (~12 строк) — не сбрасывать при нестабильном весе
+            if self.serial_conn.in_waiting > 500:
                 self.serial_conn.reset_input_buffer()
 
             line = self.serial_conn.readline().decode('ascii', errors='ignore').strip()

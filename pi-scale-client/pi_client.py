@@ -279,13 +279,8 @@ def main():
             else:
                 consecutive_errors += 1
                 if consecutive_errors >= max_consecutive_errors:
-                    print(f'No valid readings for {consecutive_errors} attempts, reconnecting...')
-                    # Сообщить что весы потеряны
-                    if scale_was_connected:
-                        emit_scale_status(False)
-                        scale_was_connected = False
-                    scale.reconnect(max_retries=3, delay=1)
-                    consecutive_errors = 0
+                    print(f'No valid readings for {consecutive_errors} attempts (buffer flush, not a disconnect)')
+                    consecutive_errors = 0  # сброс счётчика — это НЕ потеря связи, reconnect не нужен
 
             time.sleep(READ_INTERVAL)
 
