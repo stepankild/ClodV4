@@ -29,6 +29,10 @@ Cannabis cultivation management portal with Raspberry Pi hardware integration (s
 
 ## Deploy & Push
 
+**ВАЖНО**: Railway деплоит ТОЛЬКО из ветки `main`. Мы работаем в worktree `claude/unruffled-davinci`.
+После коммита ВСЕГДА пушить в main: `git push origin claude/unruffled-davinci:main`.
+Просто `git push` пушит только в свою ветку и деплой НЕ начнётся!
+
 ```bash
 # Push changes (Railway auto-deploys from main):
 git push origin claude/unruffled-davinci:main
