@@ -121,7 +121,7 @@ const Harvest = () => {
     // Если вес не введён вручную — берём с весов автоматически
     const weight = manualWeight
       ? parseInt(manualWeight, 10)
-      : (scaleConnected && scaleWeight != null ? Math.round(scaleWeight) : NaN);
+      : (scaleConnected && scaleWeight != null ? scaleWeight : NaN);
     if (!session || !num || isNaN(weight) || weight <= 0) return;
     if (session.status !== 'in_progress') return;
     try {
@@ -389,9 +389,8 @@ const Harvest = () => {
               {scaleConnected ? (
                 <div className="flex items-center gap-4 flex-wrap">
                   <div className="text-3xl font-mono font-bold text-white leading-none">
-                    {scaleWeight != null ? scaleWeight : '---'}
+                    {scaleWeight != null ? `${scaleWeight} г` : '--- г'}
                   </div>
-                  <div className="text-lg text-dark-400">{scaleUnit}</div>
                   {scaleStable && (
                     <span className="text-xs bg-green-600/20 text-green-400 px-2 py-0.5 rounded">
                       Стабильно
@@ -424,17 +423,17 @@ const Harvest = () => {
                   min="1"
                   value={manualWeight}
                   onChange={(e) => setManualWeight(e.target.value)}
-                  placeholder={scaleConnected && scaleWeight != null ? String(Math.round(scaleWeight)) : '250'}
+                  placeholder={scaleConnected && scaleWeight != null ? String(scaleWeight) : '250'}
                   className="w-28 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-lg focus:ring-2 focus:ring-primary-500"
                 />
               </div>
               {scaleConnected && scaleWeight != null && (
                 <button
                   type="button"
-                  onClick={() => setManualWeight(String(Math.round(scaleWeight)))}
+                  onClick={() => setManualWeight(String(scaleWeight))}
                   className="px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium"
                 >
-                  Взять с весов ({Math.round(scaleWeight)} {scaleUnit})
+                  Взять с весов ({scaleWeight} г)
                 </button>
               )}
               <button

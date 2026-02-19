@@ -2,11 +2,25 @@ import { useState, useEffect } from 'react';
 import { connectScale, disconnectScale, onScaleEvent } from '../services/scaleSocket';
 
 /**
+ * Конвертировать вес в граммы.
+ */
+function toGrams(weight, unit) {
+  if (weight == null) return null;
+  switch (unit) {
+    case 'kg': return weight * 1000;
+    case 'lb': return weight * 453.592;
+    case 'oz': return weight * 28.3495;
+    default: return weight; // уже в граммах
+  }
+}
+
+/**
  * React hook для получения live-данных с весов через Socket.io.
+ * Вес всегда возвращается в граммах (округлённый).
  *
  * @returns {{
- *   weight: number|null,       — текущий вес (null если нет данных)
- *   unit: string,              — единица измерения ('g')
+ *   weight: number|null,       — текущий вес в граммах (null если нет данных)
+ *   unit: string,              — всегда 'g'
  *   stable: boolean,           — показание стабильно
  *   scaleConnected: boolean,   — весы подключены к серверу (Pi online)
  *   socketConnected: boolean   — WebSocket соединение с сервером активно
@@ -14,7 +28,6 @@ import { connectScale, disconnectScale, onScaleEvent } from '../services/scaleSo
  */
 export function useScale() {
   const [weight, setWeight] = useState(null);
-  const [unit, setUnit] = useState('g');
   const [stable, setStable] = useState(false);
   const [scaleConnected, setScaleConnected] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
@@ -24,12 +37,13 @@ export function useScale() {
 
     const unsubscribe = onScaleEvent((event, data) => {
       switch (event) {
-        case 'weight':
-          setWeight(data.weight);
-          setUnit(data.unit || 'g');
+        case 'weight': {
+          const grams = toGrams(data.weight, data.unit || 'g');
+          setWeight(grams != null ? Math.round(grams) : null);
           setStable(data.stable ?? false);
           setScaleConnected(true);
           break;
+        }
         case 'status':
           setScaleConnected(data.connected);
           if (!data.connected) {
@@ -53,5 +67,5 @@ export function useScale() {
     };
   }, []);
 
-  return { weight, unit, stable, scaleConnected, socketConnected };
+  return { weight, unit: 'g', stable, scaleConnected, socketConnected };
 }
