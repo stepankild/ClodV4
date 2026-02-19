@@ -102,34 +102,47 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
 
     if (isVertical) {
       // ── Вертикальный браслет (~19mm шир × ~250mm выс) ──
-      // Контент повёрнут на 90° — текст читается при повороте браслета
-      // Раскладка сверху вниз: #N | Комната+Сорт | Штрихкод | Даты
+      // Весь контент повёрнут на 90° — текст читается при повороте браслета
+      // Раскладка вдоль браслета (сверху вниз):
+      //   #N (крупный) → Комната → Штрихкод → Сорт → Даты
+      //
+      // labelW ≈ 19mm (ширина колонки), labelH ≈ 250mm (длина браслета)
+      // angle: 90 в jsPDF = поворот текста на 90° CCW от точки (x,y)
+      // x = горизонталь (вправо), y = вертикаль (вниз по странице)
+      // При angle:90 текст идёт вниз по странице от точки (x,y)
 
-      const cx = x + labelW / 2; // центр колонки по X
+      const textX = x + labelW / 2 + 2; // единая линия текста по центру ширины
+      let curY = y + PAD + 3; // текущая позиция вдоль браслета
 
-      // ─ Блок 1: Номер растения (сверху) ─
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(12); doc.setTextColor(30, 30, 30);
+      // ─ 1. Номер растения — крупный, хорошо читаемый ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(14); doc.setTextColor(30, 30, 30);
       const numLabel = `#${plant.number}`;
-      doc.text(numLabel, cx + 3.5, y + PAD + 4, { angle: 90 });
+      doc.text(numLabel, textX, curY, { angle: 90 });
+      curY += doc.getTextWidth(numLabel) + 6;
 
-      // ─ Блок 2: Название комнаты ─
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
-      doc.text(`${room.name || '—'}`, cx + 3.5, y + PAD + 18, { angle: 90 });
+      // ─ 2. Название комнаты ─
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(30, 30, 30);
+      const roomName = room.name || '—';
+      doc.text(roomName, textX, curY, { angle: 90 });
+      curY += doc.getTextWidth(roomName) + 6;
 
-      // ─ Блок 3: Сорт (вторая колонка текста) ─
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
+      // ─ 3. Сорт ─
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(8); doc.setTextColor(60, 60, 60);
       let st = plant.strain || room.strain || '—';
-      const maxStW = 35;
-      if (doc.getTextWidth(st) > maxStW) { while (doc.getTextWidth(st + '..') > maxStW && st.length > 5) st = st.slice(0, -1); st += '..'; }
-      doc.text(st, cx - 0.5, y + PAD + 18, { angle: 90 });
+      const maxStLen = 60; // макс длина текста в мм вдоль браслета
+      if (doc.getTextWidth(st) > maxStLen) {
+        while (doc.getTextWidth(st + '..') > maxStLen && st.length > 5) st = st.slice(0, -1);
+        st += '..';
+      }
+      doc.text(st, textX, curY, { angle: 90 });
+      curY += doc.getTextWidth(st) + 8;
 
-      // ─ Блок 4: Штрихкод (повёрнут на 90° через pre-rotated canvas) ─
+      // ─ 4. Штрихкод (повёрнут на 90° через pre-rotated canvas) ─
       const srcCanvas = document.createElement('canvas');
       JsBarcode(srcCanvas, String(plant.number), {
-        format: 'CODE128', width: 2, height: 40,
+        format: 'CODE128', width: 2, height: 50,
         displayValue: false, margin: 2
       });
-      // Поворачиваем canvas на 90° для вертикальной вставки
       const rotCanvas = document.createElement('canvas');
       rotCanvas.width = srcCanvas.height;
       rotCanvas.height = srcCanvas.width;
@@ -139,15 +152,14 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       rctx.drawImage(srcCanvas, -srcCanvas.width / 2, -srcCanvas.height / 2);
       const rotBarcodeUrl = rotCanvas.toDataURL('image/png');
 
-      const barcodeW = labelW - PAD * 2 - 2;
-      const barcodeH = Math.min(60, labelH * 0.25);
-      const barcodeY = y + PAD + 32;
-      doc.addImage(rotBarcodeUrl, 'PNG', x + PAD + 1, barcodeY, barcodeW, barcodeH);
+      const barcodeW = labelW - PAD * 2; // по ширине браслета
+      const barcodeH = Math.min(70, (labelH - curY + y) * 0.5); // до половины оставшегося места
+      doc.addImage(rotBarcodeUrl, 'PNG', x + PAD, curY, barcodeW, barcodeH);
+      curY += barcodeH + 6;
 
-      // ─ Блок 5: Даты (ниже штрихкода) ─
-      doc.setFont('Roboto', 'normal'); doc.setFontSize(5); doc.setTextColor(100, 100, 100);
-      doc.text(`${startDateStr}`, cx + 3, y + PAD + 32 + barcodeH + 5, { angle: 90 });
-      doc.text(`${harvestDateStr}`, cx - 1, y + PAD + 32 + barcodeH + 5, { angle: 90 });
+      // ─ 5. Даты ─
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
+      doc.text(`${startDateStr} — ${harvestDateStr}`, textX, curY, { angle: 90 });
 
     } else if (isTiny) {
       // Single-row: text left, barcode center, #N right (labelH < 18mm)
