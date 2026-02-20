@@ -1244,33 +1244,6 @@ const Harvest = () => {
             </div>
           </div>
 
-          {/* Статистика по сортам */}
-          {strainStats.length > 1 && (
-            <div className="bg-dark-800 rounded-xl p-4 border border-dark-700 mb-6">
-              <h3 className="text-sm font-semibold text-white mb-3">По сортам</h3>
-              <div className="space-y-2">
-                {strainStats.map(st => {
-                  const pct = totalWet > 0 ? Math.round((st.totalWet / totalWet) * 100) : 0;
-                  const colorClass = strainColorMap[st.strain] || 'bg-primary-500';
-                  return (
-                    <div key={st.strain}>
-                      <div className="flex justify-between text-xs mb-1">
-                        <span className="text-dark-300 flex items-center gap-1.5">
-                          <span className={`inline-block w-2.5 h-2.5 rounded-sm ${colorClass}`} />
-                          {st.strain}
-                        </span>
-                        <span className="text-white">{st.count} кустов · {st.totalWet} г · {Math.round(st.totalWet / st.count)} г/куст</span>
-                      </div>
-                      <div className="h-1.5 bg-dark-700 rounded-full overflow-hidden">
-                        <div className={`h-full ${colorClass} rounded-full`} style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
           {/* Прогресс-бар */}
           <div className="mb-6">
             <div className="flex justify-between text-sm text-dark-400 mb-1">
@@ -1370,56 +1343,29 @@ const Harvest = () => {
             <p className="text-xs text-dark-500 mt-2">Данные нельзя удалить. Можно добавить или изменить пометку об ошибке.</p>
           </div>
 
-          {/* Таблица кустов + аналитика */}
+          {/* Прогресс по сортам и рядам + аналитика */}
           <div className="grid lg:grid-cols-2 gap-6 mb-6">
+            {/* Прогресс по сортам и рядам */}
             <div className="bg-dark-800 rounded-xl p-6 border border-dark-700">
-              <h2 className="text-lg font-semibold text-white mb-4">Записанные кусты по номеру</h2>
+              <h2 className="text-lg font-semibold text-white mb-4">Прогресс по сортам и рядам</h2>
               {session.plants?.length === 0 ? (
-                <p className="text-dark-400 text-sm">Пока нет записей. Введите номер куста, снимите вес и нажмите «Записать».</p>
-              ) : (
-                <div className="overflow-x-auto max-h-64 overflow-y-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="text-left text-dark-400 border-b border-dark-600">
-                        <th className="pb-2 pr-4">№</th>
-                        <th className="pb-2 pr-4">Сорт</th>
-                        <th className="pb-2 pr-4">Вес (г)</th>
-                        <th className="pb-2 pr-4">Когда</th>
-                        <th className="pb-2">Кто записал</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {[...(session.plants || [])].sort((a, b) => a.plantNumber - b.plantNumber).map((p) => (
-                        <tr key={`${p.plantNumber}-${p.recordedAt}`} className="border-b border-dark-700">
-                          <td className="py-2 pr-4 font-medium text-white">{p.plantNumber}</td>
-                          <td className="py-2 pr-4 text-dark-300">{p.strain || '—'}</td>
-                          <td className="py-2 pr-4 text-green-400">{p.wetWeight}</td>
-                          <td className="py-2 pr-4 text-dark-300">{formatDate(p.recordedAt)}</td>
-                          <td className="py-2 text-white">{p.recordedBy?.name || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-            <div className="bg-dark-800 rounded-xl p-6 border border-dark-700">
-              <h2 className="text-lg font-semibold text-white mb-4">Аналитика</h2>
-              {session.plants?.length === 0 ? (
-                <p className="text-dark-400 text-sm">Нет данных для аналитики.</p>
+                <p className="text-dark-400 text-sm">Пока нет записей.</p>
               ) : (() => {
                 const plants = session.plants || [];
-                const sorted = [...plants].sort((a, b) => b.wetWeight - a.wetWeight);
-                const heaviest = sorted[0];
-                const lightest = sorted[sorted.length - 1];
-                const median = sorted[Math.floor(sorted.length / 2)];
 
-                // Статистика по рядам (если есть карта комнаты)
+                // Статистика по рядам
                 const positions = selectedRoom?.roomLayout?.plantPositions || [];
                 const customRows = selectedRoom?.roomLayout?.customRows || [];
                 const plantToRow = {};
                 for (const pos of positions) {
                   plantToRow[pos.plantNumber] = pos.row;
+                }
+                // Подсчитать ожидаемое кол-во кустов в каждом ряду (из карты комнаты)
+                const rowExpected = {};
+                for (const pos of positions) {
+                  const rowName = customRows[pos.row]?.name || `Ряд ${pos.row + 1}`;
+                  if (!rowExpected[rowName]) rowExpected[rowName] = 0;
+                  rowExpected[rowName]++;
                 }
                 const rowStats = {};
                 for (const p of plants) {
@@ -1431,77 +1377,167 @@ const Harvest = () => {
                     rowStats[rowName].total += p.wetWeight;
                   }
                 }
-                const rowEntries = Object.entries(rowStats).sort((a, b) => b[1].total - a[1].total);
+                // Все ряды (включая те, где ещё ничего не собрано)
+                const allRowNames = [...new Set([...Object.keys(rowExpected), ...Object.keys(rowStats)])];
+                const rowEntries = allRowNames.map(name => ({
+                  name,
+                  count: rowStats[name]?.count || 0,
+                  total: rowStats[name]?.total || 0,
+                  expected: rowExpected[name] || 0
+                })).sort((a, b) => {
+                  // Сортируем по имени ряда (числовой порядок)
+                  const numA = parseInt(a.name.replace(/\D/g, '')) || 0;
+                  const numB = parseInt(b.name.replace(/\D/g, '')) || 0;
+                  return numA - numB;
+                });
+
+                // Прогресс по сортам: собрано vs ожидается
+                // Ожидаемые кусты по сорту — из карты комнаты + flowerStrains
+                const strainExpected = {};
+                if (selectedRoom?.flowerStrains?.length > 0) {
+                  // Если у комнаты есть plantPositions с привязкой к сорту
+                  for (const pos of positions) {
+                    const strainIdx = pos.strainIndex ?? 0;
+                    const strainName = selectedRoom.flowerStrains[strainIdx]?.strain || '—';
+                    if (!strainExpected[strainName]) strainExpected[strainName] = 0;
+                    strainExpected[strainName]++;
+                  }
+                }
+
+                const ROW_COLORS = ['bg-blue-500', 'bg-emerald-500', 'bg-violet-500', 'bg-orange-500', 'bg-pink-500', 'bg-cyan-500', 'bg-lime-500', 'bg-rose-500'];
 
                 return (
-                  <div className="space-y-4">
-                    {/* Рекорды */}
-                    <div>
-                      <div className="text-xs text-dark-500 uppercase tracking-wider mb-2">Рекорды</div>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
-                          <span className="text-dark-300 text-sm">🏆 Самый тяжёлый</span>
-                          <span className="text-green-400 font-bold text-sm">
-                            #{heaviest.plantNumber} — {heaviest.wetWeight} г
-                            {heaviest.strain && <span className="text-dark-400 font-normal ml-1">({heaviest.strain})</span>}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
-                          <span className="text-dark-300 text-sm">🪶 Самый лёгкий</span>
-                          <span className="text-amber-400 font-bold text-sm">
-                            #{lightest.plantNumber} — {lightest.wetWeight} г
-                            {lightest.strain && <span className="text-dark-400 font-normal ml-1">({lightest.strain})</span>}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
-                          <span className="text-dark-300 text-sm">📊 Медиана</span>
-                          <span className="text-primary-400 font-bold text-sm">{median.wetWeight} г</span>
-                        </div>
-                        <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
-                          <span className="text-dark-300 text-sm">📏 Разброс</span>
-                          <span className="text-dark-200 font-bold text-sm">{lightest.wetWeight} — {heaviest.wetWeight} г</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* По сортам (если > 1) */}
-                    {strainStats.length > 1 && (
+                  <div className="space-y-5">
+                    {/* По сортам */}
+                    {strainStats.length > 0 && (
                       <div>
-                        <div className="text-xs text-dark-500 uppercase tracking-wider mb-2">По сортам</div>
-                        <div className="space-y-1.5">
-                          {strainStats.map(st => (
-                            <div key={st.strain} className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
-                              <span className="text-dark-300 text-sm flex items-center gap-1.5">
-                                <span className={`inline-block w-2.5 h-2.5 rounded-sm ${strainColorMap[st.strain] || 'bg-primary-500'}`} />
-                                {st.strain}
-                              </span>
-                              <span className="text-white text-sm">
-                                <span className="font-bold">{st.totalWet} г</span>
-                                <span className="text-dark-400 ml-1.5">{st.count} шт · {Math.round(st.totalWet / st.count)} г/куст</span>
-                              </span>
-                            </div>
-                          ))}
+                        <div className="text-xs text-dark-500 uppercase tracking-wider mb-3">По сортам</div>
+                        <div className="space-y-3">
+                          {strainStats.map(st => {
+                            const exp = strainExpected[st.strain] || expected;
+                            const pct = exp > 0 ? Math.round((st.count / exp) * 100) : 0;
+                            const weightPct = totalWet > 0 ? Math.round((st.totalWet / totalWet) * 100) : 0;
+                            const colorClass = strainColorMap[st.strain] || 'bg-primary-500';
+                            return (
+                              <div key={st.strain}>
+                                <div className="flex justify-between text-sm mb-1.5">
+                                  <span className="text-white font-medium flex items-center gap-1.5">
+                                    <span className={`inline-block w-2.5 h-2.5 rounded-sm ${colorClass}`} />
+                                    {st.strain}
+                                  </span>
+                                  <span className="text-dark-300">
+                                    <span className="text-white font-bold">{st.count}</span>
+                                    {strainExpected[st.strain] ? <span>/{strainExpected[st.strain]}</span> : null}
+                                    <span className="text-dark-500 ml-1">·</span>
+                                    <span className="text-green-400 font-bold ml-1">{st.totalWet} г</span>
+                                    <span className="text-dark-500 ml-1">· {Math.round(st.totalWet / st.count)} г/куст</span>
+                                  </span>
+                                </div>
+                                <div className="flex gap-1.5">
+                                  <div className="flex-1 h-2.5 bg-dark-700 rounded-full overflow-hidden" title={`Кустов: ${pct}%`}>
+                                    <div
+                                      className={`h-full ${colorClass} rounded-full transition-all duration-500`}
+                                      style={{ width: `${Math.min(pct, 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-dark-400 w-10 text-right shrink-0">{pct}%</span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
 
-                    {/* По рядам (если есть карта) */}
+                    {/* По рядам */}
                     {rowEntries.length > 0 && (
                       <div>
-                        <div className="text-xs text-dark-500 uppercase tracking-wider mb-2">По рядам</div>
-                        <div className="space-y-1.5">
-                          {rowEntries.map(([name, stat]) => (
-                            <div key={name} className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
-                              <span className="text-dark-300 text-sm">{name}</span>
-                              <span className="text-white text-sm">
-                                <span className="font-bold">{stat.total} г</span>
-                                <span className="text-dark-400 ml-1.5">{stat.count} шт · {Math.round(stat.total / stat.count)} г/куст</span>
-                              </span>
-                            </div>
-                          ))}
+                        <div className="text-xs text-dark-500 uppercase tracking-wider mb-3">По рядам</div>
+                        <div className="space-y-3">
+                          {rowEntries.map((row, idx) => {
+                            const pct = row.expected > 0 ? Math.round((row.count / row.expected) * 100) : (row.count > 0 ? 100 : 0);
+                            const colorClass = ROW_COLORS[idx % ROW_COLORS.length];
+                            const isDone = row.expected > 0 && row.count >= row.expected;
+                            return (
+                              <div key={row.name}>
+                                <div className="flex justify-between text-sm mb-1.5">
+                                  <span className={`font-medium flex items-center gap-1.5 ${isDone ? 'text-green-400' : 'text-white'}`}>
+                                    {isDone && <span>✓</span>}
+                                    {row.name}
+                                  </span>
+                                  <span className="text-dark-300">
+                                    <span className="text-white font-bold">{row.count}</span>
+                                    {row.expected > 0 && <span>/{row.expected}</span>}
+                                    {row.total > 0 && (
+                                      <>
+                                        <span className="text-dark-500 ml-1">·</span>
+                                        <span className="text-green-400 font-bold ml-1">{row.total} г</span>
+                                        {row.count > 0 && <span className="text-dark-500 ml-1">· {Math.round(row.total / row.count)} г/куст</span>}
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+                                <div className="flex gap-1.5">
+                                  <div className="flex-1 h-2.5 bg-dark-700 rounded-full overflow-hidden">
+                                    <div
+                                      className={`h-full ${isDone ? 'bg-green-500' : colorClass} rounded-full transition-all duration-500`}
+                                      style={{ width: `${Math.min(pct, 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-xs text-dark-400 w-10 text-right shrink-0">{pct}%</span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     )}
+
+                    {/* Если нет ни сортов ни рядов */}
+                    {strainStats.length === 0 && rowEntries.length === 0 && (
+                      <p className="text-dark-500 text-sm">Настройте карту комнаты для прогресса по рядам.</p>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Аналитика */}
+            <div className="bg-dark-800 rounded-xl p-6 border border-dark-700">
+              <h2 className="text-lg font-semibold text-white mb-4">Аналитика</h2>
+              {session.plants?.length === 0 ? (
+                <p className="text-dark-400 text-sm">Нет данных для аналитики.</p>
+              ) : (() => {
+                const plants = session.plants || [];
+                const sorted = [...plants].sort((a, b) => b.wetWeight - a.wetWeight);
+                const heaviest = sorted[0];
+                const lightest = sorted[sorted.length - 1];
+                const median = sorted[Math.floor(sorted.length / 2)];
+
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                      <span className="text-dark-300 text-sm">🏆 Самый тяжёлый</span>
+                      <span className="text-green-400 font-bold text-sm">
+                        #{heaviest.plantNumber} — {heaviest.wetWeight} г
+                        {heaviest.strain && <span className="text-dark-400 font-normal ml-1">({heaviest.strain})</span>}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                      <span className="text-dark-300 text-sm">🪶 Самый лёгкий</span>
+                      <span className="text-amber-400 font-bold text-sm">
+                        #{lightest.plantNumber} — {lightest.wetWeight} г
+                        {lightest.strain && <span className="text-dark-400 font-normal ml-1">({lightest.strain})</span>}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                      <span className="text-dark-300 text-sm">📊 Медиана</span>
+                      <span className="text-primary-400 font-bold text-sm">{median.wetWeight} г</span>
+                    </div>
+                    <div className="flex items-center justify-between py-1.5 px-3 bg-dark-700 rounded-lg">
+                      <span className="text-dark-300 text-sm">📏 Разброс</span>
+                      <span className="text-dark-200 font-bold text-sm">{lightest.wetWeight} — {heaviest.wetWeight} г</span>
+                    </div>
                   </div>
                 );
               })()}
