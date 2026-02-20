@@ -72,8 +72,8 @@ export function useScale() {
           break;
         case 'socketDisconnected':
           setSocketConnected(false);
-          setScaleConnected(false);
-          setDebug(null);
+          // НЕ сбрасываем scaleConnected — при переподключении сервер пришлёт актуальный scale:status
+          // debug тоже не трогаем — восстановится при переподключении
           break;
       }
     });

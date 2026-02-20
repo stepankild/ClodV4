@@ -71,6 +71,7 @@ const Harvest = () => {
   const [piOfflineModal, setPiOfflineModal] = useState(false); // модалка "Pi перешёл в офлайн"
   const [weighingTip, setWeighingTip] = useState(false); // подсказка для взвешивающего
   const prevScaleConnected = useRef(scaleConnected);
+  const piGraceTimerRef = useRef(null); // grace period перед показом Pi offline модалки
 
   const safeRooms = Array.isArray(rooms) ? rooms : [];
   const activeRooms = safeRooms.filter(r => r && r.isActive);
@@ -82,14 +83,24 @@ const Harvest = () => {
     return () => {
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
       if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
+      if (piGraceTimerRef.current) clearTimeout(piGraceTimerRef.current);
     };
   }, []);
 
-  // ── Детекция перехода Pi в офлайн → показать модалку ──
+  // ── Детекция перехода Pi в офлайн → показать модалку (с grace period) ──
   useEffect(() => {
-    // Показать модалку только когда Pi был подключён и отключился (на рабочем экране)
     if (prevScaleConnected.current && !scaleConnected && session && myRole) {
-      setPiOfflineModal(true);
+      // Grace period 6 сек — Pi часто переподключается за 1-3 сек
+      if (piGraceTimerRef.current) clearTimeout(piGraceTimerRef.current);
+      piGraceTimerRef.current = setTimeout(() => {
+        piGraceTimerRef.current = null;
+        setPiOfflineModal(true);
+      }, 6000);
+    }
+    // Pi вернулся — отменить grace period, не показывать модалку
+    if (scaleConnected && piGraceTimerRef.current) {
+      clearTimeout(piGraceTimerRef.current);
+      piGraceTimerRef.current = null;
     }
     prevScaleConnected.current = scaleConnected;
   }, [scaleConnected, session, myRole]);
