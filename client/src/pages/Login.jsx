@@ -36,7 +36,7 @@ const Login = () => {
         <div className="bg-dark-900 rounded-2xl shadow-2xl p-8 border border-dark-800">
           {/* Logo/Title */}
           <div className="flex flex-col items-center mb-8">
-            <Logo size="lg" />
+            <Logo variant="login" />
             <p className="text-dark-400 mt-4">Войдите в систему</p>
           </div>
 
