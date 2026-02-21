@@ -31,14 +31,15 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-dark-950">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-dark-950 py-8">
+      {/* Logo — above the card, large */}
+      <div className="mb-8">
+        <Logo variant="login" />
+      </div>
+
       <div className="max-w-md w-full mx-4">
         <div className="bg-dark-900 rounded-2xl shadow-2xl p-8 border border-dark-800">
-          {/* Logo/Title */}
-          <div className="flex flex-col items-center mb-8">
-            <Logo variant="login" />
-            <p className="text-dark-400 mt-4">Войдите в систему</p>
-          </div>
+          <p className="text-dark-400 text-center mb-6">Войдите в систему</p>
 
           {/* Error message */}
           {error && (

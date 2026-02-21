@@ -97,7 +97,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         }`}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center px-6 border-b border-dark-800">
+        <div className="h-20 flex items-center px-4 border-b border-dark-800">
           <Logo size="md" />
         </div>
 
