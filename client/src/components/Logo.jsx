@@ -1,11 +1,9 @@
 /**
  * True Source — логотип с новым дизайном.
- * Использует SVG-файлы из assets: leaf (иконка) и text (название).
+ * SVG-файлы из assets: leaf (иконка) и text (название TRUE SOURCE).
  *
- * variant="sidebar"  — горизонтально: лист + текст + "grow management"
- * variant="login"    — вертикально: большой лист + текст снизу
- *
- * Старые пропсы (size, showText) остаются для обратной совместимости.
+ * variant="login"  — вертикально: большой лист + текст снизу (для страницы входа)
+ * default           — горизонтально: лист + текст + "grow management" (для сайдбара)
  */
 import leafSvg from '../assets/true-source-leaf.svg';
 import textSvg from '../assets/true-source-text.svg';
@@ -14,18 +12,29 @@ export default function Logo({ size = 'md', showText = true, variant }) {
   // Login page — большой вертикальный логотип
   if (variant === 'login') {
     return (
-      <div className="flex flex-col items-center gap-5">
-        <img src={leafSvg} alt="True Source" className="w-32 h-32 drop-shadow-[0_0_24px_rgba(74,222,128,0.25)]" />
-        <img src={textSvg} alt="True Source" className="h-10 drop-shadow-[0_0_12px_rgba(74,222,128,0.15)]" />
+      <div className="flex flex-col items-center gap-4">
+        <img
+          src={leafSvg}
+          alt="True Source"
+          className="w-36 h-36 drop-shadow-[0_0_30px_rgba(74,222,128,0.3)]"
+        />
+        <img
+          src={textSvg}
+          alt="True Source"
+          className="w-48 drop-shadow-[0_0_16px_rgba(74,222,128,0.2)]"
+        />
+        <span className="text-[11px] tracking-[0.25em] uppercase font-medium text-green-400/50 -mt-2">
+          grow management
+        </span>
       </div>
     );
   }
 
-  // Sidebar / header — горизонтально: лист + текст + subtitle
+  // Sidebar — горизонтально: лист + текст + subtitle
   const sizes = {
-    sm: { icon: 28, textH: 10 },
-    md: { icon: 32, textH: 12 },
-    lg: { icon: 48, textH: 16 },
+    sm: { icon: 30, textW: 90 },
+    md: { icon: 36, textW: 110 },
+    lg: { icon: 48, textW: 140 },
   };
   const s = sizes[size] || sizes.md;
 
@@ -33,25 +42,21 @@ export default function Logo({ size = 'md', showText = true, variant }) {
     <div className="flex items-center gap-2.5">
       <img
         src={leafSvg}
-        alt="True Source"
-        className="shrink-0 drop-shadow-[0_0_8px_rgba(74,222,128,0.2)]"
+        alt=""
+        className="shrink-0 drop-shadow-[0_0_10px_rgba(74,222,128,0.25)]"
         style={{ width: s.icon, height: s.icon }}
       />
       {showText && (
-        <div className="flex flex-col leading-none gap-0.5">
+        <div className="flex flex-col gap-0.5">
           <img
             src={textSvg}
             alt="True Source"
-            className="drop-shadow-[0_0_6px_rgba(74,222,128,0.12)]"
-            style={{ height: s.textH }}
+            className="drop-shadow-[0_0_8px_rgba(74,222,128,0.15)]"
+            style={{ width: s.textW }}
           />
           <span
-            className="tracking-[0.18em] uppercase font-medium"
-            style={{
-              fontSize: s.textH * 0.38,
-              color: 'rgba(74, 222, 128, 0.55)',
-              marginLeft: 1,
-            }}
+            className="tracking-[0.2em] uppercase font-medium text-green-400/45"
+            style={{ fontSize: size === 'sm' ? 7 : size === 'lg' ? 10 : 8 }}
           >
             grow management
           </span>
