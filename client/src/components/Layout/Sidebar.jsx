@@ -1,9 +1,11 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { useScale } from '../../hooks/useScale';
 import Logo from '../Logo';
 
 const Sidebar = ({ isOpen, onClose }) => {
   const { hasPermission } = useAuth();
+  const { scaleConnected, socketConnected, debug } = useScale();
 
   const menuItems = [
     { title: 'Обзор фермы', path: '/', end: true, permission: 'overview:view', icon: (
@@ -90,7 +92,7 @@ const Sidebar = ({ isOpen, onClose }) => {
 
       {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-dark-900 border-r border-dark-800 transform transition-transform duration-300 ease-in-out ${
+        className={`fixed lg:static inset-y-0 left-0 z-30 w-64 bg-dark-900 border-r border-dark-800 transform transition-transform duration-300 ease-in-out flex flex-col ${
           isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
@@ -100,7 +102,7 @@ const Sidebar = ({ isOpen, onClose }) => {
         </div>
 
         {/* Navigation */}
-        <nav className="p-4 space-y-1">
+        <nav className="p-4 space-y-1 flex-1 overflow-y-auto">
           {filteredMenuItems.map((item) => (
             <NavLink
               key={item.path}
@@ -120,6 +122,41 @@ const Sidebar = ({ isOpen, onClose }) => {
             </NavLink>
           ))}
         </nav>
+
+        {/* Pi status indicator */}
+        <div className="p-4 border-t border-dark-800">
+          <div className="flex items-center gap-3 px-4 py-2.5 rounded-lg bg-dark-800/50">
+            {/* Pi icon */}
+            <svg className="w-4 h-4 text-dark-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${debug ? 'bg-green-400 animate-pulse' : socketConnected ? 'bg-yellow-400' : 'bg-red-400'}`} />
+                <span className="text-xs text-dark-400 truncate">
+                  {debug ? 'Pi онлайн' : socketConnected ? 'Pi нет данных' : 'Pi офлайн'}
+                </span>
+              </div>
+              {debug && (
+                <div className="flex items-center gap-3 mt-1 text-[10px] text-dark-500">
+                  <span className="flex items-center gap-1">
+                    <span className={`w-1.5 h-1.5 rounded-full ${scaleConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+                    Весы
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span className={`w-1.5 h-1.5 rounded-full ${debug.barcodeConnected ? 'bg-green-400' : 'bg-red-400'}`} />
+                    Сканер
+                  </span>
+                  {debug.bufferedBarcodes > 0 && (
+                    <span className="text-amber-400">
+                      ({debug.bufferedBarcodes} в буфере)
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </aside>
     </>
   );

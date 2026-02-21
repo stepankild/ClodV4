@@ -26,6 +26,19 @@ export const getRooms = async (req, res) => {
       rooms = await FlowerRoom.insertMany(defaultRooms);
     }
 
+    // Ensure test room exists
+    const hasTestRoom = rooms.some(r => r.isTestRoom === true);
+    if (!hasTestRoom) {
+      const testRoom = await FlowerRoom.create({
+        roomNumber: 6,
+        name: 'Тест',
+        isActive: false,
+        isTestRoom: true
+      });
+      rooms.push(testRoom);
+      rooms.sort((a, b) => a.roomNumber - b.roomNumber);
+    }
+
     // Добавляем количество невыполненных задач к каждой комнате
     const roomsWithTasks = await Promise.all(rooms.map(async (room) => {
       const pendingTasks = await RoomTask.countDocuments({
@@ -57,6 +70,20 @@ export const getRoomsSummary = async (req, res) => {
       }
       rooms = await FlowerRoom.insertMany(defaultRooms);
     }
+
+    // Ensure test room exists
+    const hasTestRoom = rooms.some(r => r.isTestRoom === true);
+    if (!hasTestRoom) {
+      const testRoom = await FlowerRoom.create({
+        roomNumber: 6,
+        name: 'Тест',
+        isActive: false,
+        isTestRoom: true
+      });
+      rooms.push(testRoom);
+      rooms.sort((a, b) => a.roomNumber - b.roomNumber);
+    }
+
     const summary = await Promise.all(rooms.map(async (room) => {
       const roomId = room._id;
       // Фильтр задач по текущему циклу (если есть cycleId)

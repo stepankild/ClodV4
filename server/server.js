@@ -5,12 +5,14 @@ console.log('ENV PORT:', process.env.PORT);
 console.log('ENV MONGODB_URI:', process.env.MONGODB_URI ? 'SET' : 'NOT SET');
 
 import express from 'express';
+import { createServer } from 'http';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import connectDB from './config/db.js';
+import { initializeSocket } from './socket/index.js';
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
 import roomRoutes from './routes/rooms.js';
@@ -139,8 +141,15 @@ app.use((err, req, res, next) => {
 
 const PORT = process.env.PORT || 5000;
 
+// HTTP server (needed for Socket.io)
+const server = createServer(app);
+
+// Initialize Socket.io for real-time scale data
+const io = initializeSocket(server, allowedOrigins);
+app.set('io', io);
+
 // Listen first so Railway gets a response (no 502). DB connects after.
-app.listen(PORT, '0.0.0.0', () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} (frontend: ${hasFrontend ? 'yes' : 'no'})`);
   connectDB().catch((err) => {
     console.error('MongoDB connection failed:', err.message);

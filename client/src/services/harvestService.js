@@ -16,11 +16,15 @@ export const harvestService = {
     return response.data;
   },
 
-  async addPlant(sessionId, plantNumber, wetWeight) {
-    const response = await api.post(`/harvest/session/${sessionId}/plant`, {
-      plantNumber,
-      wetWeight
-    });
+  async addPlant(sessionId, plantNumber, wetWeight, overrideWorkerId) {
+    const body = { plantNumber, wetWeight };
+    if (overrideWorkerId) body.overrideWorkerId = overrideWorkerId;
+    const response = await api.post(`/harvest/session/${sessionId}/plant`, body);
+    return response.data;
+  },
+
+  async removePlant(sessionId, plantNumber) {
+    const response = await api.delete(`/harvest/session/${sessionId}/plant/${plantNumber}`);
     return response.data;
   },
 
@@ -32,13 +36,34 @@ export const harvestService = {
     return response.data;
   },
 
-  async completeSession(sessionId) {
-    const response = await api.post(`/harvest/session/${sessionId}/complete`);
+  async completeSession(sessionId, data = {}) {
+    const response = await api.post(`/harvest/session/${sessionId}/complete`, data);
     return response.data;
   },
 
   async getSessions(params = {}) {
     const response = await api.get('/harvest/sessions', { params });
+    return response.data;
+  },
+
+  // Crew (роли при сборе)
+  async getWorkers() {
+    const response = await api.get('/harvest/workers');
+    return response.data;
+  },
+
+  async joinSession(sessionId, role) {
+    const response = await api.post(`/harvest/session/${sessionId}/join`, { role });
+    return response.data;
+  },
+
+  async forceJoinSession(sessionId, role) {
+    const response = await api.post(`/harvest/session/${sessionId}/force-join`, { role });
+    return response.data;
+  },
+
+  async leaveSession(sessionId) {
+    const response = await api.delete(`/harvest/session/${sessionId}/leave`);
     return response.data;
   }
 };
