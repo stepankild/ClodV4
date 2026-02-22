@@ -756,8 +756,9 @@ const Harvest = () => {
 
       {/* Плашка роли + команда */}
       {myRole && (
-        <div className="bg-dark-800 rounded-xl p-4 border border-dark-700 mb-6">
-          <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="bg-dark-800 rounded-xl border border-dark-700 mb-6 overflow-hidden">
+          {/* Верхняя строка — моя роль + кнопка смены */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-dark-700/50">
             <div className="flex items-center gap-3">
               <span className="text-2xl">{myRoleInfo.emoji}</span>
               <div>
@@ -767,34 +768,48 @@ const Harvest = () => {
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {/* Мини-дисплей команды */}
-              {crew.length > 0 && (
-                <div className="flex items-center gap-1 mr-2">
-                  {crew.map(c => {
-                    const ri = getRoleInfo(c.role);
-                    return (
-                      <span
-                        key={c.user?._id || c.user}
-                        className="text-sm"
-                        title={`${c.user?.name || '—'} — ${ri.label}`}
-                      >
-                        {ri.emoji}
-                      </span>
-                    );
-                  })}
-                  <span className="text-dark-500 text-xs ml-1">{crew.length}</span>
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={handleChangeRole}
-                className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-400 hover:text-white border border-dark-600 rounded-lg text-xs font-medium transition"
-              >
-                Сменить роль
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleChangeRole}
+              className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-400 hover:text-white border border-dark-600 rounded-lg text-xs font-medium transition shrink-0"
+            >
+              Сменить роль
+            </button>
           </div>
+
+          {/* Команда на сборе */}
+          {crew.length > 0 && (
+            <div className="px-4 py-3">
+              <div className="text-xs text-dark-500 uppercase tracking-wider mb-2">
+                Команда · {crew.length} чел.
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {crew.map(c => {
+                  const ri = getRoleInfo(c.role);
+                  const userId = user?._id || user?.id;
+                  const isMe = (c.user?._id || c.user) === userId;
+                  return (
+                    <div
+                      key={c.user?._id || c.user}
+                      className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 ${
+                        isMe
+                          ? 'bg-primary-900/40 border border-primary-700/50'
+                          : 'bg-dark-700'
+                      }`}
+                    >
+                      <span className="text-sm">{ri.emoji}</span>
+                      <span className={`text-xs font-medium ${isMe ? 'text-primary-300' : 'text-white'}`}>
+                        {c.user?.name || '—'}
+                      </span>
+                      <span className="text-[10px] text-dark-500">
+                        {ri.label}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
