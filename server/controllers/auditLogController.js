@@ -3,6 +3,7 @@ import User from '../models/User.js';
 import { parseUserAgent } from '../utils/parseUserAgent.js';
 import { geoipBatch } from '../utils/geoip.js';
 import { getClientIp } from '../utils/getClientIp.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 
 // Check if an IP is private/internal/CGN (not useful for GeoIP)
 // Covers: 127.x, 10.x, 172.16-31.x, 192.168.x, 100.64-127.x (CGN RFC6598), IPv6 loopback/private
@@ -18,7 +19,7 @@ export const getAuditLogs = async (req, res) => {
 
     const query = {};
     if (userId) query.user = userId;
-    if (action) query.action = new RegExp(action, 'i');
+    if (action) query.action = new RegExp(escapeRegex(action), 'i');
     if (from || to) {
       query.createdAt = {};
       if (from) query.createdAt.$gte = new Date(from);

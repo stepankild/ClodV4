@@ -8,6 +8,7 @@ import CloneCut from '../models/CloneCut.js';
 import TrimLog from '../models/TrimLog.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
 
 // @desc    Get all archives
 // @route   GET /api/archive
@@ -17,7 +18,7 @@ export const getArchives = async (req, res) => {
 
     const query = { ...notDeleted };
     if (roomId) query.room = roomId;
-    if (strain) query.strain = new RegExp(strain, 'i');
+    if (strain) query.strain = new RegExp(escapeRegex(strain), 'i');
 
     const archives = await CycleArchive.find(query)
       .sort({ harvestDate: -1 })

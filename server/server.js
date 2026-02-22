@@ -10,6 +10,8 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import cors from 'cors';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 import connectDB from './config/db.js';
 import { initializeSocket } from './socket/index.js';
@@ -70,16 +72,44 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: (origin, callback) => {
-    // Разрешаем запросы без origin (same-origin, curl, etc)
+    // Разрешаем запросы без origin (same-origin, curl, mobile apps)
     if (!origin) return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     // На Railway домен может быть динамическим
     if (origin.endsWith('.railway.app')) return callback(null, true);
-    callback(null, true); // Разрешаем все для упрощения отладки
+    console.warn(`CORS blocked origin: ${origin}`);
+    callback(new Error('Not allowed by CORS'));
   },
   credentials: true
 }));
-app.use(express.json());
+app.use(express.json({ limit: '2mb' }));
+
+// Security headers
+app.use(helmet({
+  contentSecurityPolicy: false, // SPA обслуживается отсюда же, CSP усложнит
+  crossOriginEmbedderPolicy: false // Не ломать загрузку SVG/шрифтов
+}));
+
+// Rate limiting — глобальный лимит
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 500,                  // 500 запросов на IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Слишком много запросов, попробуйте позже' }
+});
+app.use('/api', globalLimiter);
+
+// Жёсткий лимит на auth endpoints (защита от брутфорса)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 минут
+  max: 20,                   // 20 попыток на IP
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Слишком много попыток входа, подождите 15 минут' }
+});
+app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/register', authLimiter);
 
 // Routes
 app.use('/api/auth', authRoutes);
