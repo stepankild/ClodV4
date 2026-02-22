@@ -824,8 +824,10 @@ export const getSessions = async (req, res) => {
   try {
     const { roomId, status, limit = 20 } = req.query;
     const query = {};
-    if (roomId) query.room = roomId;
-    if (status) query.status = status;
+    if (roomId && typeof roomId === 'string' && mongoose.Types.ObjectId.isValid(roomId)) {
+      query.room = roomId;
+    }
+    if (status && typeof status === 'string') query.status = status;
 
     const sessions = await HarvestSession.find(query)
       .sort({ startedAt: -1 })

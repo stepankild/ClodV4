@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import AuditLog from '../models/AuditLog.js';
 import User from '../models/User.js';
 import { parseUserAgent } from '../utils/parseUserAgent.js';
@@ -18,8 +19,10 @@ export const getAuditLogs = async (req, res) => {
     const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10)));
 
     const query = {};
-    if (userId) query.user = userId;
-    if (action) query.action = new RegExp(escapeRegex(action), 'i');
+    if (userId && typeof userId === 'string' && mongoose.Types.ObjectId.isValid(userId)) {
+      query.user = userId;
+    }
+    if (action && typeof action === 'string') query.action = new RegExp(escapeRegex(action), 'i');
     if (from || to) {
       query.createdAt = {};
       if (from) query.createdAt.$gte = new Date(from);

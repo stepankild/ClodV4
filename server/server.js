@@ -58,7 +58,7 @@ process.on('unhandledRejection', (reason, p) => {
 const app = express();
 
 // Trust proxy (Railway / Cloudflare / nginx) — needed for correct req.ip
-app.set('trust proxy', true);
+app.set('trust proxy', 1);
 
 // Middleware
 // На Railway фронтенд и бэкенд на одном домене, поэтому разрешаем same-origin

@@ -49,7 +49,7 @@ export const createPlan = async (req, res) => {
     res.status(201).json(plan);
   } catch (error) {
     console.error('Create plan error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 

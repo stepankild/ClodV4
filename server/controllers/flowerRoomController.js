@@ -153,8 +153,7 @@ export const getRoomsSummary = async (req, res) => {
     res.json(summary);
   } catch (error) {
     console.error('Get rooms summary error:', error);
-    const msg = error?.message || 'Ошибка сервера';
-    res.status(500).json({ message: msg });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 

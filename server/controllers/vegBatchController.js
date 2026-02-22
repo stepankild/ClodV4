@@ -178,7 +178,7 @@ export const createVegBatch = async (req, res) => {
     res.status(201).json(doc);
   } catch (error) {
     console.error('Create veg batch error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -265,7 +265,7 @@ export const updateVegBatch = async (req, res) => {
     res.json(doc);
   } catch (error) {
     console.error('Update veg batch error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -313,6 +313,6 @@ export const restoreVegBatch = async (req, res) => {
     res.json(doc);
   } catch (error) {
     console.error('Restore veg batch error:', error);
-    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

@@ -104,7 +104,7 @@ export const upsertCloneCut = async (req, res) => {
       } catch (_) {}
       return res.status(409).json({ message: 'Бэтч для этой комнаты уже существует. Попробуйте ещё раз.' });
     }
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -165,7 +165,7 @@ export const deleteCloneCut = async (req, res) => {
     res.json({ message: 'Удалено (можно восстановить)' });
   } catch (error) {
     console.error('Delete clone cut error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -194,7 +194,7 @@ export const restoreCloneCut = async (req, res) => {
     res.json(doc);
   } catch (error) {
     console.error('Restore clone cut error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 

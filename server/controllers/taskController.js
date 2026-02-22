@@ -307,6 +307,6 @@ export const restoreTask = async (req, res) => {
     res.json(task);
   } catch (error) {
     console.error('Restore task error:', error);
-    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
