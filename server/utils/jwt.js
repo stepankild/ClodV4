@@ -9,17 +9,17 @@ if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
 
-export const generateAccessToken = (userId) => {
+export const generateAccessToken = (userId, tokenVersion = 0) => {
   return jwt.sign(
-    { userId },
+    { userId, v: tokenVersion },
     JWT_SECRET,
     { expiresIn: '24h' }      // 24 часа — баланс между безопасностью и удобством
   );
 };
 
-export const generateRefreshToken = (userId) => {
+export const generateRefreshToken = (userId, tokenVersion = 0) => {
   return jwt.sign(
-    { userId },
+    { userId, v: tokenVersion },
     JWT_REFRESH_SECRET,
     { expiresIn: '30d' }      // 30 дней — разумный срок для приватного приложения
   );

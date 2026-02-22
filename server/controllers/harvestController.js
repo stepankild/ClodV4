@@ -55,7 +55,7 @@ export const getSessionByRoom = async (req, res) => {
     res.json(session);
   } catch (error) {
     console.error('Get harvest session error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -102,10 +102,7 @@ export const createSession = async (req, res) => {
     res.status(201).json(session);
   } catch (error) {
     console.error('Create harvest session error:', error);
-    res.status(500).json({
-      message: error.message || 'Ошибка сервера',
-      ...(error.name === 'ValidationError' && { details: error.errors })
-    });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -634,7 +631,7 @@ export const completeSession = async (req, res) => {
     res.json({ session, crewData, roomSquareMeters: room?.squareMeters || null });
   } catch (error) {
     console.error('Complete session error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 

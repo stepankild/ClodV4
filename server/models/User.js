@@ -37,6 +37,11 @@ const userSchema = new mongoose.Schema({
   refreshToken: {
     type: String
   },
+  // Инкрементируется при смене пароля — инвалидирует все выданные токены
+  tokenVersion: {
+    type: Number,
+    default: 0
+  },
   deletedAt: {
     type: Date,
     default: null

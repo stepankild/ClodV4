@@ -73,8 +73,9 @@ export const login = async (req, res) => {
       return res.status(401).json({ message: 'Неверный email или пароль' });
     }
 
-    const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+    const tv = user.tokenVersion || 0;
+    const accessToken = generateAccessToken(user._id, tv);
+    const refreshToken = generateRefreshToken(user._id, tv);
 
     // Save refresh token to database
     user.refreshToken = refreshToken;
@@ -132,11 +133,6 @@ export const refreshToken = async (req, res) => {
         return res.status(401).json({ message: 'Пользователь не найден' });
       }
 
-      // НЕ проверяем user.refreshToken !== refreshToken:
-      // эта проверка убивала сессии при логине с другого устройства/вкладки,
-      // потому что новый login перезаписывал refreshToken в БД.
-      // Достаточно проверки подписи JWT (verifyRefreshToken выше).
-
       if (!user.isActive) {
         return res.status(401).json({ message: 'Аккаунт деактивирован' });
       }
@@ -145,7 +141,14 @@ export const refreshToken = async (req, res) => {
         return res.status(401).json({ message: 'Аккаунт удалён' });
       }
 
-      const newAccessToken = generateAccessToken(user._id);
+      // Проверяем tokenVersion — если пароль был изменён, старые токены невалидны
+      const tokenV = decoded.v ?? 0;
+      const userV = user.tokenVersion || 0;
+      if (tokenV !== userV) {
+        return res.status(401).json({ message: 'Сессия недействительна. Войдите заново.' });
+      }
+
+      const newAccessToken = generateAccessToken(user._id, userV);
       res.json({
         accessToken: newAccessToken,
         refreshToken              // возвращаем тот же refresh token
@@ -214,6 +217,15 @@ export const changePassword = async (req, res) => {
     }
 
     user.password = newPassword;
+    // Инкрементируем tokenVersion — все старые токены на всех устройствах станут невалидны
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    user.refreshToken = null; // очищаем старый refresh token
+    await user.save();
+
+    // Генерируем новые токены с новой версией для текущей сессии
+    const newAccessToken = generateAccessToken(user._id, user.tokenVersion);
+    const newRefreshToken = generateRefreshToken(user._id, user.tokenVersion);
+    user.refreshToken = newRefreshToken;
     await user.save();
 
     // Audit log
@@ -229,7 +241,11 @@ export const changePassword = async (req, res) => {
       });
     } catch (_) {}
 
-    res.json({ message: 'Пароль успешно изменён' });
+    res.json({
+      message: 'Пароль успешно изменён',
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken
+    });
   } catch (error) {
     console.error('Change password error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });

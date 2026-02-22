@@ -28,7 +28,14 @@ const ChangePasswordModal = ({ onClose }) => {
 
     setLoading(true);
     try {
-      await authService.changePassword(currentPassword, newPassword);
+      const result = await authService.changePassword(currentPassword, newPassword);
+      // Сервер возвращает новые токены после смены пароля (старые инвалидированы)
+      if (result.accessToken) {
+        localStorage.setItem('accessToken', result.accessToken);
+      }
+      if (result.refreshToken) {
+        localStorage.setItem('refreshToken', result.refreshToken);
+      }
       setSuccess('Пароль успешно изменён!');
       setCurrentPassword('');
       setNewPassword('');

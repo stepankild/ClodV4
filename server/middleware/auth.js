@@ -23,6 +23,13 @@ export const protect = async (req, res, next) => {
         return res.status(401).json({ message: 'Аккаунт деактивирован' });
       }
 
+      // Проверяем tokenVersion — если пароль был изменён, старый access token невалиден
+      const tokenV = decoded.v ?? 0;
+      const userV = user.tokenVersion || 0;
+      if (tokenV !== userV) {
+        return res.status(401).json({ message: 'Сессия недействительна', code: 'TOKEN_EXPIRED' });
+      }
+
       req.user = user;
       next();
     } catch (error) {
