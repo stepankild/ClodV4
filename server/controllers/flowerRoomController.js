@@ -3,6 +3,7 @@ import RoomTask from '../models/RoomTask.js';
 import RoomLog from '../models/RoomLog.js';
 import CycleArchive from '../models/CycleArchive.js';
 import PlannedCycle from '../models/PlannedCycle.js';
+import HarvestSession from '../models/HarvestSession.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted } from '../utils/softDelete.js';
@@ -384,6 +385,144 @@ export const harvestRoom = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Harvest room error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+// @desc    Transfer active cycle from one room to another
+// @route   POST /api/rooms/:sourceId/transfer/:targetId
+export const transferCycle = async (req, res) => {
+  try {
+    const { sourceId, targetId } = req.params;
+    const { reason } = req.body;
+
+    // Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(sourceId) || !mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ message: 'Некорректный ID комнаты' });
+    }
+    if (sourceId === targetId) {
+      return res.status(400).json({ message: 'Нельзя перенести цикл в ту же комнату' });
+    }
+
+    // Load both rooms
+    const [sourceRoom, targetRoom] = await Promise.all([
+      FlowerRoom.findById(sourceId),
+      FlowerRoom.findById(targetId)
+    ]);
+
+    if (!sourceRoom) return res.status(404).json({ message: 'Комната-источник не найдена' });
+    if (!targetRoom) return res.status(404).json({ message: 'Комната-назначение не найдена' });
+
+    // Validate states
+    if (!sourceRoom.isActive) {
+      return res.status(400).json({ message: 'Комната-источник не имеет активного цикла' });
+    }
+    if (targetRoom.isActive) {
+      return res.status(400).json({ message: 'Комната-назначение уже имеет активный цикл. Сначала завершите его.' });
+    }
+
+    // Check no active harvest session
+    const activeHarvest = await HarvestSession.findOne({
+      room: sourceId,
+      status: 'in_progress'
+    });
+    if (activeHarvest) {
+      return res.status(400).json({ message: 'В комнате-источнике идёт сбор урожая. Завершите его перед переносом.' });
+    }
+
+    const cycleId = sourceRoom.currentCycleId;
+    const currentDay = sourceRoom.currentDay; // virtual field
+    const sourceRoomName = sourceRoom.name;
+    const targetRoomName = targetRoom.name;
+
+    // Transfer cycle data to target room
+    targetRoom.cycleName = sourceRoom.cycleName;
+    targetRoom.strain = sourceRoom.strain;
+    targetRoom.plantsCount = sourceRoom.plantsCount;
+    targetRoom.flowerStrains = sourceRoom.flowerStrains;
+    targetRoom.startDate = sourceRoom.startDate;
+    targetRoom.floweringDays = sourceRoom.floweringDays;
+    targetRoom.currentCycleId = cycleId;
+    targetRoom.notes = sourceRoom.notes;
+    targetRoom.isActive = true;
+    targetRoom.environment = sourceRoom.environment;
+    // plantPositions не переносим — сетка другая
+
+    // Reset source room
+    sourceRoom.cycleName = '';
+    sourceRoom.strain = '';
+    sourceRoom.plantsCount = 0;
+    sourceRoom.flowerStrains = [];
+    sourceRoom.startDate = null;
+    sourceRoom.expectedHarvestDate = null;
+    sourceRoom.notes = '';
+    sourceRoom.isActive = false;
+    sourceRoom.currentCycleId = null;
+    if (sourceRoom.roomLayout) {
+      sourceRoom.roomLayout.plantPositions = [];
+    }
+
+    // Save both rooms (target first for safety)
+    await targetRoom.save();
+    await sourceRoom.save();
+
+    // Transfer tasks and logs to target room
+    await RoomTask.updateMany(
+      { room: sourceId, cycleId: cycleId },
+      { $set: { room: targetId } }
+    );
+    await RoomLog.updateMany(
+      { room: sourceId, cycleId: cycleId },
+      { $set: { room: targetId } }
+    );
+
+    // Create log entries in both rooms
+    const reasonText = reason || 'Без указания причины';
+
+    await RoomLog.create({
+      room: sourceId,
+      cycleId: null,
+      type: 'cycle_transfer',
+      title: `Цикл перенесён в ${targetRoomName}`,
+      description: reasonText,
+      data: { targetRoomId: targetId, targetRoomName, transferredCycleId: cycleId },
+      user: req.user._id,
+      dayOfCycle: currentDay
+    });
+
+    await RoomLog.create({
+      room: targetId,
+      cycleId: cycleId,
+      type: 'cycle_transfer',
+      title: `Цикл принят из ${sourceRoomName}`,
+      description: reasonText,
+      data: { sourceRoomId: sourceId, sourceRoomName, transferredCycleId: cycleId },
+      user: req.user._id,
+      dayOfCycle: currentDay
+    });
+
+    // Audit log
+    await createAuditLog(req, {
+      action: 'room.cycle_transfer',
+      entityType: 'FlowerRoom',
+      entityId: sourceId,
+      details: {
+        sourceRoom: sourceRoomName,
+        targetRoom: targetRoomName,
+        cycleName: targetRoom.cycleName,
+        strain: targetRoom.strain,
+        reason: reasonText,
+        dayOfCycle: currentDay
+      }
+    });
+
+    res.json({
+      source: sourceRoom,
+      target: targetRoom,
+      message: `Цикл перенесён из ${sourceRoomName} в ${targetRoomName}`
+    });
+  } catch (error) {
+    console.error('Transfer cycle error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

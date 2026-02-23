@@ -89,6 +89,12 @@ export default function ActiveRooms() {
     potSize: ''
   });
 
+  // Transfer cycle state
+  const [transferMode, setTransferMode] = useState(false);
+  const [transferTarget, setTransferTarget] = useState('');
+  const [transferReason, setTransferReason] = useState('');
+  const [transferSaving, setTransferSaving] = useState(false);
+
   useEffect(() => {
     loadRooms();
   }, []);
@@ -134,6 +140,7 @@ export default function ActiveRooms() {
     setStartMode(false);
     setMapMode(openMap);
     setSettingsMode(false);
+    setTransferMode(false);
     setSprayFormOpen(false);
     setSprayProduct('');
     setNoteInput('');
@@ -150,6 +157,7 @@ export default function ActiveRooms() {
     setStartMode(false);
     setMapMode(false);
     setSettingsMode(false);
+    setTransferMode(false);
     setRoomTasks([]);
   };
 
@@ -316,6 +324,25 @@ export default function ActiveRooms() {
       setError(err.response?.data?.message || 'Ошибка завершения цикла');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTransfer = async () => {
+    if (!selectedRoom || !transferTarget) return;
+    const targetName = rooms.find(r => r._id === transferTarget)?.name || 'выбранную комнату';
+    if (!confirm(`Перенести цикл из ${selectedRoom.name} в ${targetName}? Все задачи и логи будут перенесены.`)) return;
+    setTransferSaving(true);
+    try {
+      await roomService.transferCycle(selectedRoom._id, transferTarget, transferReason);
+      setTransferMode(false);
+      setTransferTarget('');
+      setTransferReason('');
+      closeRoom();
+      await loadRooms();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Ошибка переноса цикла');
+    } finally {
+      setTransferSaving(false);
     }
   };
 
@@ -970,8 +997,59 @@ export default function ActiveRooms() {
                 </div>
               )}
 
+              {/* Перенос цикла */}
+              {transferMode && selectedRoom?.isActive && (
+                <div className="space-y-4">
+                  <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2">
+                    Перенос цикла из {selectedRoom.name}
+                  </h4>
+                  <div>
+                    <label className="block text-xs text-dark-400 mb-1">Комната назначения</label>
+                    <select
+                      value={transferTarget}
+                      onChange={e => setTransferTarget(e.target.value)}
+                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
+                    >
+                      <option value="">Выберите комнату...</option>
+                      {inactiveRooms.map(r => (
+                        <option key={r._id} value={r._id}>{r.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-dark-400 mb-1">Причина переноса</label>
+                    <textarea
+                      value={transferReason}
+                      onChange={e => setTransferReason(e.target.value)}
+                      rows={3}
+                      className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none"
+                      placeholder="Например: ошибка в настройке света — 22 дня лампы работали в режиме вегетации..."
+                    />
+                  </div>
+                  <div className="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-3 text-xs text-yellow-300">
+                    Цикл, задачи и журнал будут перенесены в выбранную комнату.
+                    Дата старта и день цикла сохранятся. Карта рассадки не переносится.
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button
+                      onClick={handleTransfer}
+                      disabled={transferSaving || !transferTarget}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition disabled:opacity-50"
+                    >
+                      {transferSaving ? 'Перенос...' : 'Перенести цикл'}
+                    </button>
+                    <button
+                      onClick={() => setTransferMode(false)}
+                      className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg transition"
+                    >
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Просмотр информации */}
-              {!editMode && !startMode && !settingsMode && !mapMode && (
+              {!editMode && !startMode && !settingsMode && !mapMode && !transferMode && (
                 <>
                   {selectedRoom.isActive ? (
                     <div className="space-y-4">
@@ -1410,6 +1488,21 @@ export default function ActiveRooms() {
                         >
                           Карта
                         </button>
+                        {inactiveRooms.length > 0 && (
+                          <button
+                            onClick={() => {
+                              setTransferMode(true);
+                              setTransferTarget('');
+                              setTransferReason('');
+                              setEditMode(false);
+                              setSettingsMode(false);
+                              setMapMode(false);
+                            }}
+                            className="px-4 py-2 bg-blue-800 text-blue-200 rounded-lg hover:bg-blue-700 transition"
+                          >
+                            ↗ Перенести
+                          </button>
+                        )}
                       </div>
                     </div>
                   ) : (

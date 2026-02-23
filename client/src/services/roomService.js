@@ -31,6 +31,11 @@ export const roomService = {
     return response.data;
   },
 
+  async transferCycle(sourceId, targetId, reason) {
+    const response = await api.post(`/rooms/${sourceId}/transfer/${targetId}`, { reason });
+    return response.data;
+  },
+
   async getPlans(params = {}) {
     const response = await api.get('/rooms/plans', { params });
     return response.data;
