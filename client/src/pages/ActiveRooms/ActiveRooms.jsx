@@ -94,6 +94,7 @@ export default function ActiveRooms() {
   const [transferTarget, setTransferTarget] = useState('');
   const [transferReason, setTransferReason] = useState('');
   const [transferSaving, setTransferSaving] = useState(false);
+  const [transferStrains, setTransferStrains] = useState([]);
 
   useEffect(() => {
     loadRooms();
@@ -329,14 +330,25 @@ export default function ActiveRooms() {
 
   const handleTransfer = async () => {
     if (!selectedRoom || !transferTarget) return;
+    const totalTransfer = transferStrains.reduce((s, t) => s + (t.transfer || 0), 0);
+    const totalDisposed = transferStrains.reduce((s, t) => s + ((t.original || 0) - (t.transfer || 0)), 0);
+    if (totalTransfer === 0) {
+      setError('Нужно перенести хотя бы одно растение');
+      return;
+    }
     const targetName = rooms.find(r => r._id === transferTarget)?.name || 'выбранную комнату';
-    if (!confirm(`Перенести цикл из ${selectedRoom.name} в ${targetName}? Все задачи и логи будут перенесены.`)) return;
+    const disposeMsg = totalDisposed > 0 ? `\nСписано будет ${totalDisposed} кустов.` : '';
+    if (!confirm(`Перенести ${totalTransfer} кустов из ${selectedRoom.name} в ${targetName}?${disposeMsg}\nВсе задачи и логи будут перенесены.`)) return;
     setTransferSaving(true);
     try {
-      await roomService.transferCycle(selectedRoom._id, transferTarget, transferReason);
+      const strainsToSend = transferStrains
+        .filter(s => s.transfer > 0)
+        .map(s => ({ strain: s.strain, quantity: s.transfer }));
+      await roomService.transferCycle(selectedRoom._id, transferTarget, transferReason, strainsToSend);
       setTransferMode(false);
       setTransferTarget('');
       setTransferReason('');
+      setTransferStrains([]);
       closeRoom();
       await loadRooms();
     } catch (err) {
@@ -998,7 +1010,11 @@ export default function ActiveRooms() {
               )}
 
               {/* Перенос цикла */}
-              {transferMode && selectedRoom?.isActive && (
+              {transferMode && selectedRoom?.isActive && (() => {
+                const totalOriginal = transferStrains.reduce((s, t) => s + (t.original || 0), 0);
+                const totalTransfer = transferStrains.reduce((s, t) => s + (t.transfer || 0), 0);
+                const totalDisposed = totalOriginal - totalTransfer;
+                return (
                 <div className="space-y-4">
                   <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2">
                     Перенос цикла из {selectedRoom.name}
@@ -1016,27 +1032,80 @@ export default function ActiveRooms() {
                       ))}
                     </select>
                   </div>
+
+                  {/* Выбор количества по сортам */}
+                  {transferStrains.length > 0 && (
+                    <div>
+                      <label className="block text-xs text-dark-400 mb-2">Количество по сортам</label>
+                      <div className="bg-dark-800 rounded-lg overflow-hidden border border-dark-600">
+                        <div className="grid grid-cols-4 gap-1 px-3 py-1.5 bg-dark-700 text-xs text-dark-400 font-medium">
+                          <div>Сорт</div>
+                          <div className="text-center">Всего</div>
+                          <div className="text-center">Перенести</div>
+                          <div className="text-center">Списать</div>
+                        </div>
+                        {transferStrains.map((ts, idx) => {
+                          const disposed = (ts.original || 0) - (ts.transfer || 0);
+                          return (
+                            <div key={idx} className="grid grid-cols-4 gap-1 px-3 py-1.5 items-center border-t border-dark-700">
+                              <div className="text-white text-sm truncate" title={ts.strain}>{ts.strain || '—'}</div>
+                              <div className="text-center text-dark-300 text-sm">{ts.original}</div>
+                              <div className="text-center">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={ts.original}
+                                  value={ts.transfer}
+                                  onChange={e => {
+                                    const val = Math.max(0, Math.min(ts.original, parseInt(e.target.value, 10) || 0));
+                                    setTransferStrains(prev => prev.map((s, i) => i === idx ? { ...s, transfer: val } : s));
+                                  }}
+                                  className="w-16 mx-auto px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm text-center"
+                                />
+                              </div>
+                              <div className={`text-center text-sm ${disposed > 0 ? 'text-red-400' : 'text-dark-500'}`}>
+                                {disposed}
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {/* Итого */}
+                        <div className="grid grid-cols-4 gap-1 px-3 py-1.5 border-t border-dark-600 bg-dark-700/50 font-medium">
+                          <div className="text-dark-300 text-xs">Итого</div>
+                          <div className="text-center text-dark-300 text-sm">{totalOriginal}</div>
+                          <div className="text-center text-white text-sm">{totalTransfer}</div>
+                          <div className={`text-center text-sm ${totalDisposed > 0 ? 'text-red-400' : 'text-dark-500'}`}>{totalDisposed}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs text-dark-400 mb-1">Причина переноса</label>
                     <textarea
                       value={transferReason}
                       onChange={e => setTransferReason(e.target.value)}
-                      rows={3}
+                      rows={2}
                       className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none"
-                      placeholder="Например: ошибка в настройке света — 22 дня лампы работали в режиме вегетации..."
+                      placeholder="Например: ошибка в настройке света..."
                     />
                   </div>
+
+                  {totalDisposed > 0 && (
+                    <div className="bg-red-900/20 border border-red-800/50 rounded-lg p-3 text-xs text-red-300">
+                      {totalDisposed} {totalDisposed === 1 ? 'куст будет списан' : 'кустов будет списано'} при переносе.
+                    </div>
+                  )}
                   <div className="bg-yellow-900/20 border border-yellow-800/50 rounded-lg p-3 text-xs text-yellow-300">
-                    Цикл, задачи и журнал будут перенесены в выбранную комнату.
-                    Дата старта и день цикла сохранятся. Карта рассадки не переносится.
+                    Задачи и журнал будут перенесены. Дата старта и день цикла сохранятся.
                   </div>
                   <div className="flex gap-2 pt-2">
                     <button
                       onClick={handleTransfer}
-                      disabled={transferSaving || !transferTarget}
+                      disabled={transferSaving || !transferTarget || totalTransfer === 0}
                       className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-500 transition disabled:opacity-50"
                     >
-                      {transferSaving ? 'Перенос...' : 'Перенести цикл'}
+                      {transferSaving ? 'Перенос...' : `Перенести ${totalTransfer} кустов`}
                     </button>
                     <button
                       onClick={() => setTransferMode(false)}
@@ -1046,7 +1115,8 @@ export default function ActiveRooms() {
                     </button>
                   </div>
                 </div>
-              )}
+                );
+              })()}
 
               {/* Просмотр информации */}
               {!editMode && !startMode && !settingsMode && !mapMode && !transferMode && (
@@ -1494,6 +1564,13 @@ export default function ActiveRooms() {
                               setTransferMode(true);
                               setTransferTarget('');
                               setTransferReason('');
+                              setTransferStrains(
+                                (selectedRoom.flowerStrains || []).map(s => ({
+                                  strain: s.strain || '',
+                                  original: s.quantity || 0,
+                                  transfer: s.quantity || 0
+                                }))
+                              );
                               setEditMode(false);
                               setSettingsMode(false);
                               setMapMode(false);

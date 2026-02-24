@@ -389,12 +389,13 @@ export const harvestRoom = async (req, res) => {
   }
 };
 
-// @desc    Transfer active cycle from one room to another
+// @desc    Transfer active cycle from one room to another (full or partial)
 // @route   POST /api/rooms/:sourceId/transfer/:targetId
+// @body    { reason, transferStrains?: [{ strain, quantity }] }
 export const transferCycle = async (req, res) => {
   try {
     const { sourceId, targetId } = req.params;
-    const { reason } = req.body;
+    const { reason, transferStrains } = req.body;
 
     // Validate IDs
     if (!mongoose.Types.ObjectId.isValid(sourceId) || !mongoose.Types.ObjectId.isValid(targetId)) {
@@ -431,22 +432,75 @@ export const transferCycle = async (req, res) => {
     }
 
     const cycleId = sourceRoom.currentCycleId;
-    const currentDay = sourceRoom.currentDay; // virtual field
+    const currentDay = sourceRoom.currentDay;
     const sourceRoomName = sourceRoom.name;
     const targetRoomName = targetRoom.name;
+    const originalPlantsCount = sourceRoom.plantsCount;
+
+    // Determine transferred vs disposed strains
+    const isPartial = Array.isArray(transferStrains) && transferStrains.length > 0;
+    let targetFlowerStrains;
+    let transferredTotal = 0;
+    let disposedTotal = 0;
+    const transferDetails = [];
+
+    if (isPartial) {
+      // Build a map of transfer quantities by strain name
+      const transferMap = new Map(
+        transferStrains.map(s => [String(s.strain || '').trim(), Math.max(0, parseInt(s.quantity, 10) || 0)])
+      );
+
+      // Validate and build target strains
+      targetFlowerStrains = [];
+      for (const original of (sourceRoom.flowerStrains || [])) {
+        const strainName = original.strain || '';
+        const origQty = original.quantity || 0;
+        const transferQty = Math.min(transferMap.get(strainName) || 0, origQty);
+        const disposedQty = origQty - transferQty;
+
+        transferDetails.push({ strain: strainName, original: origQty, transferred: transferQty, disposed: disposedQty });
+        transferredTotal += transferQty;
+        disposedTotal += disposedQty;
+
+        if (transferQty > 0) {
+          targetFlowerStrains.push({ strain: strainName, quantity: transferQty });
+        }
+      }
+
+      if (transferredTotal === 0) {
+        return res.status(400).json({ message: 'Нужно перенести хотя бы одно растение' });
+      }
+
+      // Recalculate sequential numbering for target
+      let currentStart = 1;
+      for (const fs of targetFlowerStrains) {
+        fs.startNumber = currentStart;
+        fs.endNumber = currentStart + fs.quantity - 1;
+        currentStart = fs.endNumber + 1;
+      }
+    } else {
+      // Full transfer — copy everything
+      targetFlowerStrains = (sourceRoom.flowerStrains || []).map(s => ({
+        strain: s.strain, quantity: s.quantity, startNumber: s.startNumber, endNumber: s.endNumber
+      }));
+      transferredTotal = originalPlantsCount;
+
+      for (const s of (sourceRoom.flowerStrains || [])) {
+        transferDetails.push({ strain: s.strain || '', original: s.quantity || 0, transferred: s.quantity || 0, disposed: 0 });
+      }
+    }
 
     // Transfer cycle data to target room
     targetRoom.cycleName = sourceRoom.cycleName;
-    targetRoom.strain = sourceRoom.strain;
-    targetRoom.plantsCount = sourceRoom.plantsCount;
-    targetRoom.flowerStrains = sourceRoom.flowerStrains;
+    targetRoom.strain = targetFlowerStrains.map(s => s.strain).filter(Boolean).join(' / ') || sourceRoom.strain;
+    targetRoom.plantsCount = transferredTotal;
+    targetRoom.flowerStrains = targetFlowerStrains;
     targetRoom.startDate = sourceRoom.startDate;
     targetRoom.floweringDays = sourceRoom.floweringDays;
     targetRoom.currentCycleId = cycleId;
     targetRoom.notes = sourceRoom.notes;
     targetRoom.isActive = true;
     targetRoom.environment = sourceRoom.environment;
-    // plantPositions не переносим — сетка другая
 
     // Reset source room
     sourceRoom.cycleName = '';
@@ -476,16 +530,22 @@ export const transferCycle = async (req, res) => {
       { $set: { room: targetId } }
     );
 
-    // Create log entries in both rooms
+    // Build log description
     const reasonText = reason || 'Без указания причины';
+    const transferSummary = transferDetails
+      .map(d => `${d.strain || '—'}: ${d.transferred}/${d.original}` + (d.disposed > 0 ? ` (списано ${d.disposed})` : ''))
+      .join(', ');
+    const logDescription = disposedTotal > 0
+      ? `${reasonText}\nПеренесено ${transferredTotal} из ${originalPlantsCount} кустов (списано ${disposedTotal}): ${transferSummary}`
+      : reasonText;
 
     await RoomLog.create({
       room: sourceId,
       cycleId: null,
       type: 'cycle_transfer',
       title: `Цикл перенесён в ${targetRoomName}`,
-      description: reasonText,
-      data: { targetRoomId: targetId, targetRoomName, transferredCycleId: cycleId },
+      description: logDescription,
+      data: { targetRoomId: targetId, targetRoomName, transferredCycleId: cycleId, transferDetails },
       user: req.user._id,
       dayOfCycle: currentDay
     });
@@ -495,8 +555,8 @@ export const transferCycle = async (req, res) => {
       cycleId: cycleId,
       type: 'cycle_transfer',
       title: `Цикл принят из ${sourceRoomName}`,
-      description: reasonText,
-      data: { sourceRoomId: sourceId, sourceRoomName, transferredCycleId: cycleId },
+      description: logDescription,
+      data: { sourceRoomId: sourceId, sourceRoomName, transferredCycleId: cycleId, transferDetails },
       user: req.user._id,
       dayOfCycle: currentDay
     });
@@ -512,14 +572,17 @@ export const transferCycle = async (req, res) => {
         cycleName: targetRoom.cycleName,
         strain: targetRoom.strain,
         reason: reasonText,
-        dayOfCycle: currentDay
+        dayOfCycle: currentDay,
+        transferred: transferredTotal,
+        disposed: disposedTotal,
+        transferDetails
       }
     });
 
     res.json({
       source: sourceRoom,
       target: targetRoom,
-      message: `Цикл перенесён из ${sourceRoomName} в ${targetRoomName}`
+      message: `Цикл перенесён из ${sourceRoomName} в ${targetRoomName}` + (disposedTotal > 0 ? ` (списано ${disposedTotal} кустов)` : '')
     });
   } catch (error) {
     console.error('Transfer cycle error:', error);
