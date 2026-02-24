@@ -428,7 +428,10 @@ export const transferCycle = async (req, res) => {
       status: 'in_progress'
     });
     if (activeHarvest) {
-      return res.status(400).json({ message: 'В комнате-источнике идёт сбор урожая. Завершите его перед переносом.' });
+      // Auto-close stale harvest session to allow transfer
+      activeHarvest.status = 'completed';
+      activeHarvest.completedAt = new Date();
+      await activeHarvest.save();
     }
 
     const cycleId = sourceRoom.currentCycleId;
