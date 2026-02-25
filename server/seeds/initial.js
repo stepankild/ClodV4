@@ -60,6 +60,13 @@ const permissions = [
   // ── Templates (шаблоны) ──
   { name: 'templates:manage', description: 'Создавать и удалять шаблоны комнат', module: 'templates' },
 
+  // ── Treatments (обработки) ──
+  { name: 'treatments:view', description: 'Видеть раздел «Обработки»', module: 'treatments' },
+  { name: 'treatments:create', description: 'Создавать записи обработок', module: 'treatments' },
+  { name: 'treatments:edit', description: 'Редактировать записи обработок', module: 'treatments' },
+  { name: 'treatments:delete', description: 'Удалять записи обработок', module: 'treatments' },
+  { name: 'treatments:products', description: 'Управлять базой препаратов', module: 'treatments' },
+
   // ── Users (пользователи) ──
   { name: 'users:read', description: 'Просмотр пользователей и ролей', module: 'users' },
   { name: 'users:create', description: 'Создание пользователей', module: 'users' },
@@ -97,7 +104,8 @@ const seedDatabase = async () => {
     // View permissions (все разделы)
     const viewPerms = resolve(
       'overview:view', 'active:view', 'harvest:view', 'clones:view',
-      'vegetation:view', 'archive:view', 'stats:view', 'trim:view'
+      'vegetation:view', 'archive:view', 'stats:view', 'trim:view',
+      'treatments:view'
     );
 
     // Create roles
@@ -132,6 +140,8 @@ const seedDatabase = async () => {
             'cycles:edit_name', 'cycles:plan',
             // Templates
             'templates:manage',
+            // Treatments
+            'treatments:create', 'treatments:edit', 'treatments:delete', 'treatments:products',
             // Users
             'users:read', 'users:create', 'users:update', 'users:delete',
             'audit:read'
@@ -158,7 +168,9 @@ const seedDatabase = async () => {
             // Trim
             'trim:create', 'trim:edit', 'trim:complete',
             // Cycles
-            'cycles:edit_name', 'cycles:plan'
+            'cycles:edit_name', 'cycles:plan',
+            // Treatments
+            'treatments:create', 'treatments:edit', 'treatments:products'
           )
         ],
         isSystem: true
@@ -176,7 +188,9 @@ const seedDatabase = async () => {
             // Harvest
             'harvest:record',
             // Trim
-            'trim:create'
+            'trim:create',
+            // Treatments
+            'treatments:create'
           )
         ],
         isSystem: true
