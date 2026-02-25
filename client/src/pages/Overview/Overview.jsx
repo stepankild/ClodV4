@@ -149,7 +149,7 @@ const Overview = () => {
   const findCurrentCut = (room) => {
     const cutDate = getCutDateForRoom(room);
     const roomCuts = safeCloneCuts
-      .filter(c => String(c.room?._id || c.room || '') === String(room._id))
+      .filter(c => !c.deletedAt && String(c.room?._id || c.room || '') === String(room._id))
       .sort((a, b) => new Date(b.cutDate) - new Date(a.cutDate));
     if (!cutDate || roomCuts.length === 0) return roomCuts[0] || null;
     const target = new Date(cutDate).getTime();
