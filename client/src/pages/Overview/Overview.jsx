@@ -145,7 +145,8 @@ const Overview = () => {
   const alerts = [];
 
   // Найти актуальный клон-бэтч для комнаты: самый свежий по cutDate,
-  // чья дата нарезки в пределах ±60 дней от расчётной даты нарезки для текущего цикла
+  // чья дата нарезки в пределах ±60 дней от расчётной даты нарезки для текущего цикла.
+  // Ищет только среди активных (не удалённых) записей.
   const findCurrentCut = (room) => {
     const cutDate = getCutDateForRoom(room);
     const roomCuts = safeCloneCuts
@@ -157,15 +158,32 @@ const Overview = () => {
     return roomCuts.find(c => Math.abs(new Date(c.cutDate).getTime() - target) <= margin) || null;
   };
 
+  // Проверить есть ли VegBatch привязанный к клон-бэтчу этой комнаты (включая удалённые CloneCut).
+  // CloneCut может быть списан (deletedAt != null) после отправки в вег, но VegBatch жив.
+  const hasVegBatchForRoom = (room) => {
+    const cutDate = getCutDateForRoom(room);
+    const allRoomCuts = safeCloneCuts
+      .filter(c => String(c.room?._id || c.room || '') === String(room._id));
+    if (allRoomCuts.length === 0) return false;
+    // Если есть cutDate — фильтруем по ±60 дней
+    let relevantCuts = allRoomCuts;
+    if (cutDate) {
+      const target = new Date(cutDate).getTime();
+      const margin = 60 * 24 * 60 * 60 * 1000;
+      relevantCuts = allRoomCuts.filter(c => Math.abs(new Date(c.cutDate).getTime() - target) <= margin);
+    }
+    return relevantCuts.some(c =>
+      safeVegBatches.some(b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(c._id))
+    );
+  };
+
   safeRooms.forEach(room => {
     const cutDate = getCutDateForRoom(room);
     if (!cutDate) return;
     const daysUntil = getDaysUntilCut(cutDate);
     const cut = findCurrentCut(room);
     const isDone = cut?.isDone ?? false;
-    const hasTransplanted = cut && safeVegBatches.some(
-      b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id)
-    );
+    const hasTransplanted = hasVegBatchForRoom(room);
     if (!isDone && !hasTransplanted && daysUntil !== null && daysUntil <= 3) {
       alerts.push({
         type: daysUntil < 0 ? 'danger' : 'warning',
@@ -310,10 +328,8 @@ const Overview = () => {
           const cutDate = getCutDateForRoom(room);
           const daysUntilCut = cutDate ? getDaysUntilCut(cutDate) : null;
           const cut = findCurrentCut(room);
-          const hasTransplantedRoom = cut && safeVegBatches.some(
-            b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id)
-          );
-          const clonesDone = (cut?.isDone ?? false) || !!hasTransplantedRoom;
+          const hasTransplantedRoom = hasVegBatchForRoom(room);
+          const clonesDone = (cut?.isDone ?? false) || hasTransplantedRoom;
           const hasCutPlan = cutDate != null;
 
           return (
