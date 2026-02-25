@@ -4,6 +4,7 @@ import RoomLog from '../models/RoomLog.js';
 import CycleArchive from '../models/CycleArchive.js';
 import PlannedCycle from '../models/PlannedCycle.js';
 import HarvestSession from '../models/HarvestSession.js';
+import CloneCut from '../models/CloneCut.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted } from '../utils/softDelete.js';
@@ -530,6 +531,18 @@ export const transferCycle = async (req, res) => {
     );
     await RoomLog.updateMany(
       { room: sourceId, cycleId: cycleId },
+      { $set: { room: targetId } }
+    );
+
+    // Archive old CloneCut records in target room (from previous cycles)
+    await CloneCut.updateMany(
+      { room: targetId, deletedAt: null },
+      { $set: { deletedAt: new Date() } }
+    );
+
+    // Transfer CloneCut records from source room to target room
+    await CloneCut.updateMany(
+      { room: sourceId, deletedAt: null },
       { $set: { room: targetId } }
     );
 
