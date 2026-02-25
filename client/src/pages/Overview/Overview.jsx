@@ -158,8 +158,9 @@ const Overview = () => {
     return roomCuts.find(c => Math.abs(new Date(c.cutDate).getTime() - target) <= margin) || null;
   };
 
-  // Проверить есть ли VegBatch привязанный к клон-бэтчу этой комнаты (включая удалённые CloneCut).
-  // CloneCut может быть списан (deletedAt != null) после отправки в вег, но VegBatch жив.
+  // Проверить есть ли АКТИВНЫЙ (не удалённый) VegBatch привязанный к клон-бэтчу этой комнаты.
+  // CloneCut может быть списан (deletedAt != null) после отправки в вег, но VegBatch жив —
+  // ищем только активные VegBatch (не удалённые, не пересаженные в цвет).
   const hasVegBatchForRoom = (room) => {
     const cutDate = getCutDateForRoom(room);
     const allRoomCuts = safeCloneCuts
@@ -172,8 +173,12 @@ const Overview = () => {
       const margin = 60 * 24 * 60 * 60 * 1000;
       relevantCuts = allRoomCuts.filter(c => Math.abs(new Date(c.cutDate).getTime() - target) <= margin);
     }
-    return relevantCuts.some(c =>
-      safeVegBatches.some(b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(c._id))
+    const relevantCutIds = new Set(relevantCuts.map(c => String(c._id)));
+    // Только активные VegBatch: не удалённые и не пересаженные в цвет
+    return safeVegBatches.some(b =>
+      !b.deletedAt &&
+      !b.transplantedToFlowerAt &&
+      relevantCutIds.has(String(b.sourceCloneCut?._id || b.sourceCloneCut || ''))
     );
   };
 
