@@ -333,7 +333,7 @@ const Harvest = () => {
       const res = await harvestService.addPlant(session._id, num, weight);
       const updated = res?.session ?? res;
       setSession(updated);
-      setPlantNumber('');
+      setPlantNumber(String(parseInt(num, 10) + 1));
       setManualWeight('');
       if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
       if (undoCountdownRef.current) clearInterval(undoCountdownRef.current);
