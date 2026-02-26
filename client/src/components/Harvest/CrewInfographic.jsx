@@ -116,64 +116,82 @@ const CrewInfographic = ({ crewData, roomSquareMeters, roomName, strain, onClose
 
     switch (role) {
       case 'cutting': {
-        const speed = totalDuration > 0 && totalPlants
-          ? Math.round((totalPlants / (totalDuration / 60000)) * 10) / 10
+        const cutMaxDuration = Math.max(...membersInRole.map(m => m.durationMs || 0));
+        const speed = cutMaxDuration > 0 && totalPlants
+          ? Math.round((totalPlants / (cutMaxDuration / 60000)) * 10) / 10
           : null;
+        const cutFun = speed != null
+          ? (speed >= 3 ? 'Эдвард Руки-ножницы позавидовал бы ✂️'
+            : speed >= 2 ? 'Косил — не остановить! 💪'
+            : speed >= 1 ? 'Ровно и аккуратно, мастер! 🎯'
+            : 'Не торопился, зато без потерь 🐌')
+          : (totalPlants >= 50 ? 'Целая плантация пала! ✂️'
+            : totalPlants >= 20 ? 'Руки не устали? 💪'
+            : 'Быстро управился! 👏');
         return (
           <>
             {renderMetricRow('Кустов срезано', totalPlants || '—')}
-            {renderMetricRow('Время', formatDuration(totalDuration))}
+            {renderMetricRow('Время', formatDuration(cutMaxDuration))}
             {speed != null && renderMetricRow('Скорость', `${speed} куст/мин`)}
+            {renderFunFact(cutFun)}
           </>
         );
       }
 
       case 'room': {
+        const roomMaxDuration = Math.max(...membersInRole.map(m => m.durationMs || 0));
         return (
           <>
             {roomSquareMeters && renderMetricRow('Площадь комнаты', `${roomSquareMeters} м²`)}
             {renderMetricRow('Горшков убрано', totalPlants || '—')}
-            {renderMetricRow('Время', formatDuration(totalDuration))}
+            {renderMetricRow('Время', formatDuration(roomMaxDuration))}
             {roomSquareMeters && renderFunFact(`Убрали ${roomSquareMeters} кв. метров 🧹`)}
           </>
         );
       }
 
       case 'carrying': {
-        // Разделяем по carryType
+        // Разделяем по carryType — показываем кто что нёс
         const potCarriers = membersInRole.filter(m => m.carryType === 'pots' || m.carryType === 'both');
         const plantCarriers = membersInRole.filter(m => m.carryType === 'plants' || m.carryType === 'both');
-        const bothCarriers = membersInRole.filter(m => m.carryType === 'both');
+        const unassigned = membersInRole.filter(m => !m.carryType);
 
-        // Расстояние для каждого типа
         const showPots = potCarriers.length > 0 && potTrips;
         const showPlants = plantCarriers.length > 0 && plantTrips;
 
-        // Если у нас оба типа или неизвестный тип — показываем всё
         const totalDistance = (potDistanceM || 0) + (plantDistanceM || 0);
-        const carrierNames = membersInRole.map(m => m.userName).filter(Boolean);
+
+        // Имена по типу
+        const potNames = potCarriers.map(m => m.userName).filter(Boolean);
+        const plantNames = plantCarriers.map(m => m.userName).filter(Boolean);
+        const unassignedNames = unassigned.map(m => m.userName).filter(Boolean);
+
+        // Макс. время одного участника (реальное время работы, не суммарное)
+        const maxDuration = Math.max(...membersInRole.map(m => m.durationMs || 0));
 
         return (
           <>
-            {renderMetricRow('Время', formatDuration(totalDuration))}
+            {renderMetricRow('Время', formatDuration(maxDuration))}
             {showPots && (
               <>
-                {renderMetricRow('🪴 Горшков вынесено', totalPlants)}
-                {renderMetricRow('Ходок (горшки)', potTrips)}
-                {potsPerTrip && renderMetricRow('Горшков за ходку', potsPerTrip)}
-                {potDistanceM && renderMetricRow('Расстояние (горшки)', `${potDistanceM} м`)}
+                <div className="text-xs text-dark-500 mt-2 mb-1 font-medium">🪴 Горшки — {potNames.join(', ')}</div>
+                {renderMetricRow('Горшков вынесено', totalPlants)}
+                {renderMetricRow('Ходок', potTrips)}
+                {potsPerTrip && renderMetricRow('За ходку', potsPerTrip)}
+                {potDistanceM && renderMetricRow('Расстояние', `${potDistanceM} м`)}
                 {totalWeightCarriedKg && renderMetricRow('Перенесено веса', `${totalWeightCarriedKg} кг`, true)}
               </>
             )}
             {showPlants && (
               <>
-                {renderMetricRow('🌿 Кустов к весам', totalPlants)}
-                {renderMetricRow('Ходок (кусты)', plantTrips)}
-                {plantsPerTrip && renderMetricRow('Кустов за ходку', plantsPerTrip)}
-                {plantDistanceM && renderMetricRow('Расстояние (кусты)', `${plantDistanceM} м`)}
+                <div className="text-xs text-dark-500 mt-2 mb-1 font-medium">🌿 Кусты — {plantNames.join(', ')}</div>
+                {renderMetricRow('Кустов к весам', totalPlants)}
+                {renderMetricRow('Ходок', plantTrips)}
+                {plantsPerTrip && renderMetricRow('За ходку', plantsPerTrip)}
+                {plantDistanceM && renderMetricRow('Расстояние', `${plantDistanceM} м`)}
               </>
             )}
-            {!showPots && !showPlants && (
+            {unassignedNames.length > 0 && !showPots && !showPlants && (
               <>
                 {distanceToScale && renderMetricRow('Расстояние в одну сторону', `${distanceToScale} м`)}
               </>
@@ -199,23 +217,26 @@ const CrewInfographic = ({ crewData, roomSquareMeters, roomName, strain, onClose
       }
 
       case 'hooks': {
+        const hooksMaxDuration = Math.max(...membersInRole.map(m => m.durationMs || 0));
         return (
           <>
             {renderMetricRow('Кустов разделено', totalPlants || '—')}
             {branchesPerPlant && renderMetricRow('Веток с куста', branchesPerPlant)}
             {totalBranches && renderMetricRow('Всего веток', totalBranches, true)}
-            {renderMetricRow('Время', formatDuration(totalDuration))}
+            {renderMetricRow('Время', formatDuration(hooksMaxDuration))}
             {totalBranches && renderFunFact(`Разделил ${totalPlants} кустов на ${totalBranches} веток 🪝`)}
           </>
         );
       }
 
       case 'hanging': {
+        // Реальное время работы — макс. из участников (они работали параллельно)
+        const hangMaxDuration = Math.max(...membersInRole.map(m => m.durationMs || 0));
         return (
           <>
             {totalBranches && renderMetricRow('Веток развешано', `~${totalBranches}`)}
             {!totalBranches && totalPlants && renderMetricRow('Кустов (ветками)', totalPlants)}
-            {renderMetricRow('Время', formatDuration(totalDuration))}
+            {renderMetricRow('Время', formatDuration(hangMaxDuration))}
             {totalBranches && renderFunFact(
               totalBranches > 500 ? `~${totalBranches} веток — как новогодняя ёлка на стероидах 🎄` :
               totalBranches > 200 ? `~${totalBranches} веток — хватит на гирлянду через весь дом 🏠` :
