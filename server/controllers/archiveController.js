@@ -201,7 +201,7 @@ export const getArchiveStats = async (req, res) => {
 
     // Статистика по месяцам (для графика)
     const monthlyStats = await CycleArchive.aggregate([
-      { $match: dateFilter },
+      { $match: { $and: [dateFilter, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] } },
       {
         $group: {
           _id: {
@@ -219,32 +219,21 @@ export const getArchiveStats = async (req, res) => {
 
     // Статистика по комнатам (room = ObjectId для привязки к комнате)
     const roomStatsByRoomId = await CycleArchive.aggregate([
-      { $match: dateFilter },
+      { $match: { $and: [dateFilter, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] } },
       {
         $group: {
           _id: '$room',
           cycles: { $sum: 1 },
           totalWeight: { $sum: '$harvestData.dryWeight' },
+          totalWetWeight: { $sum: '$harvestData.wetWeight' },
           avgWeight: { $avg: '$harvestData.dryWeight' },
+          totalPlants: { $sum: '$plantsCount' },
           totalDays: { $sum: '$actualDays' },
-          avgDays: { $avg: '$actualDays' }
+          avgDays: { $avg: '$actualDays' },
+          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' }
         }
       }
-    ]);
-
-    const roomStats = await CycleArchive.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: '$roomNumber',
-          cycles: { $sum: 1 },
-          totalWeight: { $sum: '$harvestData.dryWeight' },
-          avgWeight: { $avg: '$harvestData.dryWeight' },
-          totalDays: { $sum: '$actualDays' },
-          avgDays: { $avg: '$actualDays' }
-        }
-      },
-      { $sort: { _id: 1 } }
     ]);
 
     // Total trim weight from TrimLog
@@ -270,7 +259,6 @@ export const getArchiveStats = async (req, res) => {
       total: totalData,
       byStrain: strainStats,
       byMonth: monthlyStats,
-      byRoom: roomStats,
       byRoomId: roomStatsByRoomId
     });
   } catch (error) {

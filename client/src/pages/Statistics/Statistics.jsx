@@ -444,7 +444,9 @@ const Statistics = () => {
   const cyclesPerYearFarm = avgCycleDays && avgCycleDays > 0 ? (DAYS_PER_YEAR / avgCycleDays) * safeRooms.length : null;
   const avgGpw = roundTo(total.avgGramsPerWatt, 2);
   const avgGpp = roundTo(total.avgGramsPerPlant, 1);
-  const avgGpd = roundTo(total.avgGramsPerDay, 1);
+  const shrinkageRatio = total.totalWetWeight > 0 && total.totalDryWeight > 0
+    ? roundTo((1 - total.totalDryWeight / total.totalWetWeight) * 100, 1)
+    : null;
 
   // Best strain & room by g/plant
   const bestStrain = byStrain.length > 0
@@ -452,12 +454,18 @@ const Statistics = () => {
     : null;
   const bestRoomEntry = (stats?.byRoomId || []).length > 0
     ? (stats.byRoomId).reduce((best, r) => {
-        const gpp = r.totalWeight && r.cycles ? r.totalWeight / r.cycles : 0;
-        const bestGpp = best.totalWeight && best.cycles ? best.totalWeight / best.cycles : 0;
+        const gpp = r.avgGramsPerPlant || 0;
+        const bestGpp = best.avgGramsPerPlant || 0;
         return gpp > bestGpp ? r : best;
       }, stats.byRoomId[0])
     : null;
   const bestRoomObj = bestRoomEntry ? safeRooms.find((r) => String(r._id) === String(bestRoomEntry._id)) : null;
+
+  // Strain g/plant map for planned harvest estimates
+  const strainGppMap = {};
+  byStrain.forEach((s) => {
+    if (s._id && s.avgGramsPerPlant > 0) strainGppMap[s._id] = s.avgGramsPerPlant;
+  });
 
   // Данные для графика по месяцам
   const monthlyData = byMonth.map((m) => ({
@@ -548,17 +556,46 @@ const Statistics = () => {
           </div>
         </div>
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">{t('stats.harvestWet')}</div>
+          <div className="text-2xl font-bold text-teal-400 mt-1">
+            {total.totalWetWeight > 0 ? formatNum(total.totalWetWeight, locale) : '—'}<span className="text-sm ml-1">{total.totalWetWeight > 0 ? t('common.grams') : ''}</span>
+          </div>
+        </div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">{t('stats.trimWeight')}</div>
+          <div className="text-2xl font-bold text-purple-400 mt-1">
+            {total.totalTrimWeight > 0 ? formatNum(total.totalTrimWeight, locale) : '—'}<span className="text-sm ml-1">{total.totalTrimWeight > 0 ? t('common.grams') : ''}</span>
+          </div>
+          {total.totalTrimEntries > 0 && (
+            <p className="text-dark-500 text-xs mt-0.5">{total.totalTrimEntries} {t('stats.trimEntries')}</p>
+          )}
+        </div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">{t('stats.shrinkage')}</div>
+          <div className="text-2xl font-bold text-orange-400 mt-1">
+            {shrinkageRatio != null ? `${shrinkageRatio}%` : '—'}
+          </div>
+        </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">{t('stats.avgCycle')}</div>
           <div className="text-2xl font-bold text-white mt-1">
             {avgCycleDays != null ? t('stats.avgCycleDays', { days: avgCycleDays }) : '—'}
           </div>
         </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">{t('stats.cyclesPerYear', { rooms: safeRooms.length })}</div>
           <div className="text-2xl font-bold text-primary-400 mt-1">
             {cyclesPerYearFarm != null ? t('stats.cyclesPerYearApprox', { count: Math.round(cyclesPerYearFarm) }) : '—'}
+          </div>
+        </div>
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">{t('stats.totalPlants')}</div>
+          <div className="text-2xl font-bold text-white mt-1">
+            {total.totalPlants > 0 ? formatNum(total.totalPlants, locale) : '—'}
           </div>
         </div>
         <div className="bg-dark-800 rounded-xl border border-emerald-800/40 p-4">
@@ -581,7 +618,7 @@ const Statistics = () => {
               <div className="text-xl font-bold text-indigo-400 mt-1 truncate" title={bestRoomObj.name}>
                 {bestRoomObj.name}
               </div>
-              <p className="text-dark-500 text-xs mt-0.5">{formatNum(Math.round(bestRoomEntry.totalWeight / bestRoomEntry.cycles), locale)} {t('stats.gPerCycle')}</p>
+              <p className="text-dark-500 text-xs mt-0.5">{roundTo(bestRoomEntry.avgGramsPerPlant, 1)} {t('stats.gPerPlantSuffix')}</p>
             </>
           ) : (
             <div className="text-2xl font-bold text-dark-500 mt-1">—</div>
@@ -733,8 +770,9 @@ const Statistics = () => {
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.roomCol')}</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.cyclesCol')}</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.daysCol')}</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.harvestGCol')}</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.gPerPlantCol')}</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.gPerWattCol')}</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.avgCycleCol')}</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.cyclesPerYearCol')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('stats.currentCol')}</th>
@@ -743,7 +781,7 @@ const Statistics = () => {
             <tbody className="divide-y divide-dark-700">
               {safeRooms.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-dark-500">
+                  <td colSpan={8} className="px-4 py-8 text-center text-dark-500">
                     {t('stats.noRooms')}
                   </td>
                 </tr>
@@ -751,8 +789,9 @@ const Statistics = () => {
                 safeRooms.map((room) => {
                   const rStat = byRoomId[String(room._id)];
                   const cycles = rStat?.cycles ?? 0;
-                  const totalDays = rStat?.totalDays ?? 0;
                   const totalWeight = rStat?.totalWeight ?? 0;
+                  const rGpp = rStat?.avgGramsPerPlant != null ? roundTo(rStat.avgGramsPerPlant, 1) : null;
+                  const rGpw = rStat?.avgGramsPerWatt != null && rStat.avgGramsPerWatt > 0 ? roundTo(rStat.avgGramsPerWatt, 2) : null;
                   const avgDays = rStat?.avgDays != null ? Math.round(Number(rStat.avgDays)) : null;
                   const cyclesPerYear = avgDays && avgDays > 0 ? DAYS_PER_YEAR / avgDays : null;
                   const isExpanded = expandedRoom === String(room._id);
@@ -771,8 +810,9 @@ const Statistics = () => {
                           </span>
                         </td>
                         <td className="px-4 py-3 text-right text-dark-300">{formatNum(cycles, locale)}</td>
-                        <td className="px-4 py-3 text-right text-dark-300">{formatNum(totalDays, locale)}</td>
                         <td className="px-4 py-3 text-right text-green-400">{formatNum(totalWeight, locale)}</td>
+                        <td className="px-4 py-3 text-right text-blue-400">{rGpp != null ? formatNum(rGpp, locale) : '—'}</td>
+                        <td className="px-4 py-3 text-right text-amber-400">{rGpw != null ? formatNum(rGpw, locale) : '—'}</td>
                         <td className="px-4 py-3 text-right text-dark-300">{avgDays != null ? `${avgDays} ${t('common.days')}` : '—'}</td>
                         <td className="px-4 py-3 text-right text-primary-400">
                           {cyclesPerYear != null ? `~${cyclesPerYear.toFixed(1)}` : '—'}
@@ -794,7 +834,7 @@ const Statistics = () => {
                       </tr>
                       {isExpanded && (
                         <tr>
-                          <td colSpan={7} className="p-0">
+                          <td colSpan={8} className="p-0">
                             <RoomDetailCard roomId={String(room._id)} period={period} t={t} locale={locale} />
                           </td>
                         </tr>
@@ -824,14 +864,48 @@ const Statistics = () => {
               {safeRooms
                 .filter((r) => r.isActive)
                 .map((room) => {
-                  const avgGppVal = total.avgGramsPerPlant != null ? Number(total.avgGramsPerPlant) : null;
-                  const estimatedDry = room.plantsCount && avgGppVal ? Math.round(room.plantsCount * avgGppVal) : null;
+                  // Use strain-specific g/plant if available, otherwise fall back to global avg
+                  const roomStrains = (room.flowerStrains && room.flowerStrains.length > 0)
+                    ? room.flowerStrains : (room.strain ? [{ strain: room.strain, quantity: room.plantsCount }] : []);
+                  let estimatedDry = null;
+                  let usedStrainGpp = false;
+                  if (roomStrains.length > 0 && room.plantsCount > 0) {
+                    let sum = 0;
+                    let matched = 0;
+                    for (const rs of roomStrains) {
+                      const qty = rs.quantity || 0;
+                      const sGpp = strainGppMap[rs.strain];
+                      if (sGpp && qty > 0) {
+                        sum += qty * sGpp;
+                        matched += qty;
+                      }
+                    }
+                    if (matched > 0) {
+                      // For unmatched plants, use global avg
+                      const unmatched = room.plantsCount - matched;
+                      const globalGpp = total.avgGramsPerPlant != null ? Number(total.avgGramsPerPlant) : 0;
+                      sum += unmatched * globalGpp;
+                      estimatedDry = Math.round(sum);
+                      usedStrainGpp = true;
+                    }
+                  }
+                  if (estimatedDry == null) {
+                    const avgGppVal = total.avgGramsPerPlant != null ? Number(total.avgGramsPerPlant) : null;
+                    estimatedDry = room.plantsCount && avgGppVal ? Math.round(room.plantsCount * avgGppVal) : null;
+                  }
                   return (
                     <div
                       key={room._id}
                       className="flex flex-wrap items-center justify-between gap-3 py-3 border-b border-dark-700 last:border-0"
                     >
-                      <div className="font-medium text-white">{room.name}</div>
+                      <div>
+                        <div className="font-medium text-white">{room.name}</div>
+                        {roomStrains.length > 0 && (
+                          <div className="text-dark-500 text-xs mt-0.5">
+                            {roomStrains.map((rs) => rs.strain).filter(Boolean).join(', ')}
+                          </div>
+                        )}
+                      </div>
                       <div className="flex flex-wrap items-center gap-4 text-sm">
                         <span className="text-dark-400">
                           {t('stats.harvestLabel')} <span className="text-white">{formatDate(room.expectedHarvestDate, locale)}</span>
@@ -842,7 +916,10 @@ const Statistics = () => {
                           </span>
                         )}
                         {estimatedDry != null && (
-                          <span className="text-green-400">{t('stats.estimatedDry', { weight: formatNum(estimatedDry, locale) })}</span>
+                          <span className="text-green-400">
+                            {t('stats.estimatedDry', { weight: formatNum(estimatedDry, locale) })}
+                            {usedStrainGpp && <span className="text-dark-500 ml-1 text-xs">{t('stats.byStrainEst')}</span>}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -853,29 +930,15 @@ const Statistics = () => {
         </div>
       </div>
 
-      {/* Гипотетическое планирование */}
-      <div className="bg-dark-800 rounded-xl border border-dark-700 p-5">
-        <h2 className="text-lg font-semibold text-white mb-1">{t('stats.hypotheticalPlanning')}</h2>
-        <p className="text-dark-400 text-sm mb-4">
-          {t('stats.hypotheticalDesc')}
-        </p>
-        <ul className="space-y-2 text-dark-300 text-sm">
-          <li>• {t('stats.avgCycleFromArchive')} <span className="text-white">{avgCycleDays != null ? t('stats.avgCycleDays', { days: avgCycleDays }) : '—'}</span></li>
-          <li>• {t('stats.roomsCount')} <span className="text-white">{safeRooms.length}</span></li>
-          <li>• {t('stats.hypotheticalPerRoom')} <span className="text-primary-400">{avgCycleDays > 0 ? `~${(DAYS_PER_YEAR / avgCycleDays).toFixed(1)}` : '—'}</span></li>
-          <li>• {t('stats.hypotheticalTotal')} <span className="text-primary-400">{cyclesPerYearFarm != null ? `~${Math.round(cyclesPerYearFarm)}` : '—'}</span></li>
-          <li>• {t('stats.avgGPerPlantLabel')} <span className="text-blue-400">{avgGpp ?? '—'}</span></li>
-          <li>• {t('stats.avgGPerWattLabel')} <span className="text-amber-400">{avgGpw && avgGpw > 0 ? avgGpw : '—'}</span></li>
-        </ul>
-        <div className="mt-4 pt-4 border-t border-dark-700">
-          <Link to="/" className="text-primary-400 hover:text-primary-300 font-medium text-sm">
-            {t('stats.farmOverview')}
-          </Link>
-          <span className="text-dark-500 mx-2">·</span>
-          <Link to="/archive" className="text-primary-400 hover:text-primary-300 font-medium text-sm">
-            {t('stats.cycleArchive')}
-          </Link>
-        </div>
+      {/* Links */}
+      <div className="flex items-center gap-2 text-sm">
+        <Link to="/" className="text-primary-400 hover:text-primary-300 font-medium">
+          {t('stats.farmOverview')}
+        </Link>
+        <span className="text-dark-500">·</span>
+        <Link to="/archive" className="text-primary-400 hover:text-primary-300 font-medium">
+          {t('stats.cycleArchive')}
+        </Link>
       </div>
     </div>
   );

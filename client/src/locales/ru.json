@@ -1431,7 +1431,13 @@
     "noDataShort": "Нет данных",
     "gPerPlant": "г/куст",
     "gPerWatt": "г/ватт",
-    "dryG": "Сухой вес"
+    "dryG": "Сухой вес",
+    "harvestWet": "Урожай (мокрый)",
+    "trimWeight": "Трим",
+    "trimEntries": "записей",
+    "shrinkage": "Усушка",
+    "totalPlants": "Всего кустов",
+    "byStrainEst": "(по сорту)"
   },
   "labels": {
     "title": "Печать этикеток",

@@ -1432,7 +1432,13 @@
     "noDataShort": "No data",
     "gPerPlant": "g/plant",
     "gPerWatt": "g/watt",
-    "dryG": "Dry Weight"
+    "dryG": "Dry Weight",
+    "harvestWet": "Harvest (wet)",
+    "trimWeight": "Trim",
+    "trimEntries": "entries",
+    "shrinkage": "Shrinkage",
+    "totalPlants": "Total Plants",
+    "byStrainEst": "(by strain)"
   },
   "labels": {
     "title": "Print Labels",
