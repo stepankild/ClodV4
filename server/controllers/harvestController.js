@@ -825,6 +825,9 @@ export const getSessions = async (req, res) => {
     }
     if (status && typeof status === 'string') query.status = status;
 
+    // Only show sessions that have at least one plant recorded
+    query['plants.0'] = { $exists: true };
+
     const sessions = await HarvestSession.find(query)
       .sort({ startedAt: -1 })
       .limit(parseInt(limit))

@@ -218,6 +218,18 @@ server.listen(PORT, '0.0.0.0', () => {
       if (emptyArchives.deletedCount > 0) {
         console.log(`Migration: deleted ${emptyArchives.deletedCount} empty archive(s) without harvest data`);
       }
+
+      // 3. Delete harvest sessions without plants (empty/test sessions)
+      const HarvestSession = (await import('./models/HarvestSession.js')).default;
+      const emptySessions = await HarvestSession.deleteMany({
+        $or: [
+          { plants: { $size: 0 } },
+          { plants: { $exists: false } }
+        ]
+      });
+      if (emptySessions.deletedCount > 0) {
+        console.log(`Migration: deleted ${emptySessions.deletedCount} empty harvest session(s)`);
+      }
     } catch (e) { console.error('Migration error:', e.message); }
   }).catch((err) => {
     console.error('MongoDB connection failed:', err.message);
