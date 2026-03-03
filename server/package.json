@@ -10,6 +10,8 @@
     "seed": "node seeds/initial.js",
     "clear-data": "node scripts/clearUserData.js",
     "reset-all": "node scripts/reset-all-data.js",
+    "backup": "node scripts/backup.js",
+    "restore": "node scripts/restore.js",
     "test": "node --experimental-vm-modules ./node_modules/jest/bin/jest.js --forceExit --detectOpenHandles"
   },
   "dependencies": {
