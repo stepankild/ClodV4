@@ -3,8 +3,7 @@ import FlowerRoom from '../models/FlowerRoom.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
-
-const ACTIVE_ROOM_MESSAGE = 'В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.';
+import { t } from '../utils/i18n.js';
 
 const normalizeStrains = (strains, legacyStrain, legacyQuantity) => {
   if (Array.isArray(strains) && strains.length > 0) {
@@ -67,7 +66,7 @@ const reduceStrainsBySent = (doc, newSentToFlowerStrains, oldSentStrains) => {
   }
 };
 
-// Остаток в бэтче (доступных): всего − погибло − утилизировано (не выросшие остаются доступны)
+// Остаток в бэтче (доступных): всего - погибло - утилизировано (не выросшие остаются доступны)
 const getDocRemainder = (doc) => {
   const total = getDocTotal(doc);
   const died = parseInt(doc.diedCount, 10) || 0;
@@ -104,7 +103,7 @@ export const getVegBatches = async (req, res) => {
     res.json(normalized);
   } catch (error) {
     console.error('Get veg batches error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -114,7 +113,7 @@ export const createVegBatch = async (req, res) => {
   try {
     const { name, sourceCloneCut, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, notes } = req.body;
     if (!cutDate || !transplantedToVegAt) {
-      return res.status(400).json({ message: 'Укажите дату нарезки и дату пересадки в вегетацию' });
+      return res.status(400).json({ message: t('veg.specifyDates', req.lang) });
     }
     const { strains: normalizedStrains, strain: derivedStrain, quantity: derivedQuantity } = normalizeStrains(strains, strain, quantity);
     const { diedCount, notGrownCount, lightChanges, sentToFlowerCount } = req.body;
@@ -178,7 +177,7 @@ export const createVegBatch = async (req, res) => {
     res.status(201).json(doc);
   } catch (error) {
     console.error('Create veg batch error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -187,7 +186,7 @@ export const createVegBatch = async (req, res) => {
 export const updateVegBatch = async (req, res) => {
   try {
     const doc = await VegBatch.findOne({ _id: req.params.id, ...notDeleted });
-    if (!doc) return res.status(404).json({ message: 'Бэтч не найден' });
+    if (!doc) return res.status(404).json({ message: t('veg.notFound', req.lang) });
     const { name, strain, quantity, strains, cutDate, transplantedToVegAt, vegDaysTarget, flowerRoom, transplantedToFlowerAt, notes, diedCount, notGrownCount, lightChanges, sentToFlowerCount, sentToFlowerStrains, disposeRemaining, disposedCount } = req.body;
     if (name !== undefined) doc.name = String(name).trim();
     if (strains !== undefined) {
@@ -209,7 +208,7 @@ export const updateVegBatch = async (req, res) => {
       if (roomId && mongoose.Types.ObjectId.isValid(roomId)) {
         const room = await FlowerRoom.findById(roomId).select('isActive').lean();
         if (room && room.isActive === true) {
-          return res.status(400).json({ message: ACTIVE_ROOM_MESSAGE });
+          return res.status(400).json({ message: t('veg.activeRoom', req.lang) });
         }
       }
       doc.flowerRoom = roomId;
@@ -265,7 +264,7 @@ export const updateVegBatch = async (req, res) => {
     res.json(doc);
   } catch (error) {
     console.error('Update veg batch error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -274,16 +273,16 @@ export const updateVegBatch = async (req, res) => {
 export const deleteVegBatch = async (req, res) => {
   try {
     const doc = await VegBatch.findOne({ _id: req.params.id, ...notDeleted });
-    if (!doc) return res.status(404).json({ message: 'Бэтч не найден' });
+    if (!doc) return res.status(404).json({ message: t('veg.notFound', req.lang) });
     const id = doc._id;
     const details = { name: doc.name, quantity: doc.quantity, flowerRoom: doc.flowerRoom?.toString?.() || doc.flowerRoom };
     await createAuditLog(req, { action: 'veg_batch.delete', entityType: 'VegBatch', entityId: id, details });
     doc.deletedAt = new Date();
     await doc.save();
-    res.json({ message: 'Удалено (можно восстановить)' });
+    res.json({ message: t('veg.deleted', req.lang) });
   } catch (error) {
     console.error('Delete veg batch error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -296,14 +295,14 @@ export const getDeletedVegBatches = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get deleted veg batches error:', error);
-    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
 export const restoreVegBatch = async (req, res) => {
   try {
     const doc = await VegBatch.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!doc) return res.status(404).json({ message: 'Бэтч не найден или уже восстановлен' });
+    if (!doc) return res.status(404).json({ message: t('veg.notFoundOrRestored', req.lang) });
     doc.deletedAt = null;
     doc.disposedCount = 0;
     await doc.save();
@@ -313,6 +312,6 @@ export const restoreVegBatch = async (req, res) => {
     res.json(doc);
   } catch (error) {
     console.error('Restore veg batch error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

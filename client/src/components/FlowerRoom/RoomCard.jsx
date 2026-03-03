@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
+  const { t, i18n } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [isStarting, setIsStarting] = useState(false);
   const [formData, setFormData] = useState({
@@ -38,9 +40,11 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
     setStartData({ strain: '', plantsCount: 0, floweringDays: 56, notes: '' });
   };
 
+  const locale = i18n.language === 'en' ? 'en-US' : 'ru-RU';
+
   const formatDate = (date) => {
     if (!date) return '—';
-    return new Date(date).toLocaleDateString('ru-RU');
+    return new Date(date).toLocaleDateString(locale);
   };
 
   const getProgressColor = (progress) => {
@@ -68,20 +72,20 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-dark-400 mb-1">Сорт</label>
+            <label className="block text-sm text-dark-400 mb-1">{t('rooms.strainLabel')}</label>
             <input
               type="text"
               name="strain"
               value={startData.strain}
               onChange={handleStartChange}
               className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-              placeholder="Название сорта"
+              placeholder={t('rooms.strainLabel')}
             />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-dark-400 mb-1">Кустов</label>
+              <label className="block text-sm text-dark-400 mb-1">{t('rooms.plantsCount')}</label>
               <input
                 type="number"
                 name="plantsCount"
@@ -92,7 +96,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
               />
             </div>
             <div>
-              <label className="block text-sm text-dark-400 mb-1">Дней цветения</label>
+              <label className="block text-sm text-dark-400 mb-1">{t('rooms.floweringDays')}</label>
               <input
                 type="number"
                 name="floweringDays"
@@ -105,14 +109,14 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
           </div>
 
           <div>
-            <label className="block text-sm text-dark-400 mb-1">Заметки</label>
+            <label className="block text-sm text-dark-400 mb-1">{t('rooms.notesLabel')}</label>
             <textarea
               name="notes"
               value={startData.notes}
               onChange={handleStartChange}
               rows={2}
               className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
-              placeholder="Заметки по комнате..."
+              placeholder={t('rooms.cycleNotesPlaceholder')}
             />
           </div>
 
@@ -120,7 +124,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
             onClick={handleStart}
             className="w-full bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-500 transition font-medium"
           >
-            Начать цикл
+            {t('rooms.startCycle')}
           </button>
         </div>
       </div>
@@ -145,7 +149,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
 
         <div className="space-y-4">
           <div>
-            <label className="block text-sm text-dark-400 mb-1">Сорт</label>
+            <label className="block text-sm text-dark-400 mb-1">{t('rooms.strainLabel')}</label>
             <input
               type="text"
               name="strain"
@@ -157,7 +161,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm text-dark-400 mb-1">Кустов</label>
+              <label className="block text-sm text-dark-400 mb-1">{t('rooms.plantsCount')}</label>
               <input
                 type="number"
                 name="plantsCount"
@@ -168,7 +172,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
               />
             </div>
             <div>
-              <label className="block text-sm text-dark-400 mb-1">Дней цветения</label>
+              <label className="block text-sm text-dark-400 mb-1">{t('rooms.floweringDays')}</label>
               <input
                 type="number"
                 name="floweringDays"
@@ -181,7 +185,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
           </div>
 
           <div>
-            <label className="block text-sm text-dark-400 mb-1">Дата заезда</label>
+            <label className="block text-sm text-dark-400 mb-1">{t('rooms.startDate')}</label>
             <input
               type="date"
               name="startDate"
@@ -192,7 +196,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
           </div>
 
           <div>
-            <label className="block text-sm text-dark-400 mb-1">Заметки</label>
+            <label className="block text-sm text-dark-400 mb-1">{t('rooms.notesLabel')}</label>
             <textarea
               name="notes"
               value={formData.notes}
@@ -206,7 +210,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
             onClick={handleSave}
             className="w-full bg-primary-600 text-white py-2 rounded-lg hover:bg-primary-500 transition font-medium"
           >
-            Сохранить
+            {t('common.save')}
           </button>
         </div>
       </div>
@@ -243,11 +247,11 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
             {/* Strain & Plants */}
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm text-dark-400">Сорт</div>
+                <div className="text-sm text-dark-400">{t('rooms.strainLabel')}</div>
                 <div className="text-white font-medium">{room.strain || '—'}</div>
               </div>
               <div className="text-right">
-                <div className="text-sm text-dark-400">Кустов</div>
+                <div className="text-sm text-dark-400">{t('rooms.plantsCount')}</div>
                 <div className="text-white font-medium">{room.plantsCount}</div>
               </div>
             </div>
@@ -255,11 +259,11 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
             {/* Dates */}
             <div className="flex items-center justify-between text-sm">
               <div>
-                <div className="text-dark-400">Заезд</div>
+                <div className="text-dark-400">{t('rooms.startDate')}</div>
                 <div className="text-white">{formatDate(room.startDate)}</div>
               </div>
               <div className="text-right">
-                <div className="text-dark-400">Урожай</div>
+                <div className="text-dark-400">{t('rooms.harvestLabel')}</div>
                 <div className="text-white">{formatDate(room.expectedHarvestDate)}</div>
               </div>
             </div>
@@ -267,7 +271,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
             {/* Progress bar */}
             <div>
               <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-dark-400">День {room.currentDay} из {room.floweringDays}</span>
+                <span className="text-dark-400">{t('rooms.day')} {room.currentDay} {t('common.of')} {room.floweringDays}</span>
                 <span className="text-white font-medium">{room.progress}%</span>
               </div>
               <div className="w-full h-2 bg-dark-700 rounded-full overflow-hidden">
@@ -278,7 +282,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
               </div>
               {room.daysRemaining !== null && room.daysRemaining > 0 && (
                 <div className="text-xs text-dark-500 mt-1">
-                  Осталось {room.daysRemaining} дней
+                  {t('rooms.daysRemaining', { days: room.daysRemaining })}
                 </div>
               )}
             </div>
@@ -286,7 +290,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
             {/* Notes */}
             {room.notes && (
               <div className="bg-dark-700/50 rounded-lg p-3">
-                <div className="text-xs text-dark-400 mb-1">Заметки</div>
+                <div className="text-xs text-dark-400 mb-1">{t('rooms.notesLabel')}</div>
                 <div className="text-sm text-dark-200">{room.notes}</div>
               </div>
             )}
@@ -300,7 +304,7 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                 </svg>
-                <span>Собрать урожай</span>
+                <span>{t('rooms.harvestBtn')}</span>
               </button>
             )}
           </div>
@@ -314,12 +318,12 @@ const RoomCard = ({ room, onUpdate, onStartCycle, onHarvest }) => {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
               </svg>
             </div>
-            <p className="text-dark-400 mb-4">Комната свободна</p>
+            <p className="text-dark-400 mb-4">{t('rooms.roomIsFree')}</p>
             <button
               onClick={() => setIsStarting(true)}
               className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-500 transition font-medium"
             >
-              Начать цикл
+              {t('rooms.startCycle')}
             </button>
           </div>
         </>

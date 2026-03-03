@@ -9,6 +9,7 @@ import TrimLog from '../models/TrimLog.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 import { escapeRegex } from '../utils/escapeRegex.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get all archives
 // @route   GET /api/archive
@@ -52,7 +53,7 @@ export const getArchives = async (req, res) => {
     res.json({ archives, total });
   } catch (error) {
     console.error('Get archives error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -64,13 +65,13 @@ export const getArchive = async (req, res) => {
       .populate('completedTasks.completedBy', 'name');
 
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
     res.json(archive);
   } catch (error) {
     console.error('Get archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -221,7 +222,7 @@ export const getArchiveStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Get archive stats error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -242,11 +243,11 @@ export const harvestAndArchive = async (req, res) => {
 
     const room = await FlowerRoom.findById(roomId);
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     if (!room.isActive) {
-      return res.status(400).json({ message: 'Комната не активна' });
+      return res.status(400).json({ message: t('archive.roomNotActive', req.lang) });
     }
 
     // Получаем все выполненные задачи этого цикла
@@ -335,7 +336,7 @@ export const harvestAndArchive = async (req, res) => {
     });
     if (existingArchive) {
       return res.status(409).json({
-        message: 'Архив для этого цикла уже существует',
+        message: t('archive.alreadyExists', req.lang),
         archive: existingArchive
       });
     }
@@ -457,7 +458,7 @@ export const harvestAndArchive = async (req, res) => {
     res.json({ archive, room });
   } catch (error) {
     console.error('Harvest and archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -470,7 +471,7 @@ export const updateArchive = async (req, res) => {
     const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
     // Обновление данных клонов
@@ -487,7 +488,7 @@ export const updateArchive = async (req, res) => {
       const perms = await req.user.getPermissions();
       const hasWeightEdit = perms.includes('*') || perms.includes('harvest:edit_weights');
       if (!hasWeightEdit && (harvestData.wetWeight !== undefined || harvestData.dryWeight !== undefined || harvestData.trimWeight !== undefined)) {
-        return res.status(403).json({ message: 'Нет прав на изменение весов при сборе урожая' });
+        return res.status(403).json({ message: t('archive.noWeightPermission', req.lang) });
       }
       archive.harvestData = { ...archive.harvestData, ...harvestData };
       // Пересчитываем метрики
@@ -512,7 +513,7 @@ export const updateArchive = async (req, res) => {
     res.json(archive);
   } catch (error) {
     console.error('Update archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -523,7 +524,7 @@ export const deleteArchive = async (req, res) => {
     const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
     const roomId = archive.room?.toString?.() || archive.room;
@@ -531,10 +532,10 @@ export const deleteArchive = async (req, res) => {
     archive.deletedAt = new Date();
     await archive.save();
 
-    res.json({ message: 'Архив удалён (можно восстановить)' });
+    res.json({ message: t('archive.deleted', req.lang) });
   } catch (error) {
     console.error('Delete archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -556,7 +557,7 @@ export const getRoomLogs = async (req, res) => {
     res.json(logs);
   } catch (error) {
     console.error('Get room logs error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -705,7 +706,7 @@ export const getStrainDetailStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Get strain detail stats error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -877,7 +878,7 @@ export const getRoomDetailStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Get room detail stats error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -887,21 +888,21 @@ export const getDeletedArchives = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get deleted archives error:', error);
-    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
 export const restoreArchive = async (req, res) => {
   try {
     const doc = await CycleArchive.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!doc) return res.status(404).json({ message: 'РђСЂС…РёРІ РЅРµ РЅР°Р№РґРµРЅ РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ' });
+    if (!doc) return res.status(404).json({ message: t('archive.notFoundOrRestored', req.lang) });
     doc.deletedAt = null;
     await doc.save();
     await createAuditLog(req, { action: 'archive.restore', entityType: 'CycleArchive', entityId: doc._id, details: { cycleName: doc.cycleName } });
     res.json(doc);
   } catch (error) {
     console.error('Restore archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 

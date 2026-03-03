@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import PlantCell, { STRAIN_COLORS } from './PlantCell';
 import RoomMapSetup from './RoomMapSetup';
 import { roomTemplateService } from '../../services/roomTemplateService';
@@ -49,7 +50,7 @@ function migrateLayout(layout) {
 }
 
 // PDF export — Cyrillic font, auto-fit to one page
-async function exportToPDF(room, customRows, plantPositions, flowerStrains) {
+async function exportToPDF(room, customRows, plantPositions, flowerStrains, t) {
   const [{ jsPDF }, { RobotoRegular }, { RobotoBold }] = await Promise.all([
     import('jspdf'),
     import('../../fonts/Roboto-Regular'),
@@ -76,7 +77,7 @@ async function exportToPDF(room, customRows, plantPositions, flowerStrains) {
   doc.setFont('Roboto', 'bold');
   doc.setFontSize(14);
   doc.setTextColor(30, 30, 30);
-  doc.text(`${room.name || 'Room'} - Карта`, margin, margin + 5);
+  doc.text(`${room.name || 'Room'} - ${t('roomMap.pdfHeaderMap')}`, margin, margin + 5);
 
   doc.setFont('Roboto', 'normal');
   doc.setFontSize(8);
@@ -203,7 +204,7 @@ async function exportToPDF(room, customRows, plantPositions, flowerStrains) {
   doc.setFontSize(7);
   doc.setTextColor(140, 140, 140);
   doc.text(
-    `Размещено: ${totalPlaced} из ${getTotalPlants(flowerStrains)} | Мест: ${totalSpots} | ${dateStr}`,
+    t('roomMap.pdfPlaced', { placed: totalPlaced, total: getTotalPlants(flowerStrains), spots: totalSpots, date: dateStr }),
     margin, pageH - margin + 2
   );
 
@@ -218,6 +219,7 @@ function hexToRgb(hex) {
 }
 
 export default function RoomMap({ room, onSave, saving }) {
+  const { t } = useTranslation();
   const layout = migrateLayout(room.roomLayout);
   const flowerStrains = room.flowerStrains || [];
   const totalPlants = getTotalPlants(flowerStrains);
@@ -263,7 +265,7 @@ export default function RoomMap({ room, onSave, saving }) {
       fillDirection: r.fillDirection || 'topDown'
     }));
     if (plantPositions.length > 0) {
-      if (!window.confirm(`Применить шаблон «${template.name}»? Размещённые кусты будут очищены, если не поместятся в новую раскладку.`)) return;
+      if (!window.confirm(t('roomMap.applyTemplateConfirm', { name: template.name }))) return;
     }
     const cleaned = plantPositions.filter(p => {
       if (p.row >= rows.length) return false;
@@ -424,10 +426,10 @@ export default function RoomMap({ room, onSave, saving }) {
     setExporting(true);
     setPdfError('');
     try {
-      await exportToPDF(room, customRows, plantPositions, flowerStrains);
+      await exportToPDF(room, customRows, plantPositions, flowerStrains, t);
     } catch (e) {
       console.error('PDF export error:', e);
-      setPdfError(e.message || 'Ошибка экспорта PDF');
+      setPdfError(e.message || t('roomMap.pdfExportError'));
     } finally {
       setExporting(false);
     }
@@ -452,33 +454,33 @@ export default function RoomMap({ room, onSave, saving }) {
       {/* Заголовок + кнопки */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h4 className="text-sm font-medium text-white">
-          Карта комнаты
-          <span className="text-dark-400 font-normal ml-2">{customRows.length} рядов</span>
+          {t('roomMap.roomMapTitle')}
+          <span className="text-dark-400 font-normal ml-2">{t('roomMap.rowsCount', { count: customRows.length })}</span>
         </h4>
         <div className="flex gap-2 flex-wrap">
           {editMode ? (
             <>
               <button type="button" onClick={handleAutoFill}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition"
-                title="Разместить всех кустов автоматически">Авто</button>
+                title={t('roomMap.autoFillTitle')}>{t('roomMap.auto')}</button>
               <button type="button" onClick={handleClearAll}
-                className="px-2 py-1 text-xs bg-dark-700 text-red-400 rounded hover:bg-dark-600 transition">Очистить</button>
+                className="px-2 py-1 text-xs bg-dark-700 text-red-400 rounded hover:bg-dark-600 transition">{t('roomMap.clear')}</button>
               <button type="button" onClick={() => setShowSetup(true)}
-                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
+                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">{t('roomMap.rows')}</button>
               {templates.length > 0 && (
                 <div className="relative" ref={templateDropdownRef}>
                   <button type="button" onClick={() => setShowTemplates(!showTemplates)}
-                    className="px-2 py-1 text-xs bg-dark-700 text-primary-400 rounded hover:bg-dark-600 transition">Шаблоны</button>
+                    className="px-2 py-1 text-xs bg-dark-700 text-primary-400 rounded hover:bg-dark-600 transition">{t('roomMap.templates')}</button>
                   {showTemplates && (
                     <div className="absolute right-0 top-full mt-1 w-56 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 py-1 max-h-60 overflow-y-auto">
-                      {templates.map(t => {
-                        const spots = t.customRows.reduce((s, r) => s + (r.cols || 1) * (r.rows || 1), 0);
+                      {templates.map(tpl => {
+                        const spots = tpl.customRows.reduce((s, r) => s + (r.cols || 1) * (r.rows || 1), 0);
                         return (
-                          <button key={t._id} type="button"
-                            onClick={() => handleApplyTemplate(t)}
+                          <button key={tpl._id} type="button"
+                            onClick={() => handleApplyTemplate(tpl)}
                             className="w-full text-left px-3 py-2 text-xs hover:bg-dark-700 transition">
-                            <div className="text-white">{t.name}</div>
-                            <div className="text-dark-500">{t.customRows.length} рядов, {spots} мест</div>
+                            <div className="text-white">{tpl.name}</div>
+                            <div className="text-dark-500">{t('roomMap.templateRowsSpots', { rows: tpl.customRows.length, spots })}</div>
                           </button>
                         );
                       })}
@@ -489,7 +491,7 @@ export default function RoomMap({ room, onSave, saving }) {
 
               <button type="button" onClick={handleSave} disabled={saving}
                 className="px-3 py-1 text-xs bg-primary-600 text-white rounded hover:bg-primary-500 disabled:opacity-50 transition">
-                {saving ? '...' : 'Сохранить'}</button>
+                {saving ? '...' : t('common.save')}</button>
               <button type="button" onClick={() => {
                   setEditMode(false);
                   const restored = migrateLayout(room.roomLayout);
@@ -501,28 +503,28 @@ export default function RoomMap({ room, onSave, saving }) {
                   setAssignRowIdx(null);
                   setAssignCell(null);
                 }}
-                className="px-3 py-1 text-xs text-dark-400 hover:bg-dark-700 rounded transition">Отмена</button>
+                className="px-3 py-1 text-xs text-dark-400 hover:bg-dark-700 rounded transition">{t('common.cancel')}</button>
             </>
           ) : (
             <>
               <button type="button" onClick={() => setEditMode(true)}
-                className="px-3 py-1 text-xs bg-dark-700 text-white rounded hover:bg-dark-600 transition">Редактировать</button>
+                className="px-3 py-1 text-xs bg-dark-700 text-white rounded hover:bg-dark-600 transition">{t('common.edit')}</button>
               <button type="button" onClick={() => setShowSetup(true)}
-                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">Ряды</button>
+                className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">{t('roomMap.rows')}</button>
               {templates.length > 0 && (
                 <div className="relative" ref={templateDropdownRef}>
                   <button type="button" onClick={() => setShowTemplates(!showTemplates)}
-                    className="px-2 py-1 text-xs bg-dark-700 text-primary-400 rounded hover:bg-dark-600 transition">Шаблоны</button>
+                    className="px-2 py-1 text-xs bg-dark-700 text-primary-400 rounded hover:bg-dark-600 transition">{t('roomMap.templates')}</button>
                   {showTemplates && (
                     <div className="absolute right-0 top-full mt-1 w-56 bg-dark-800 border border-dark-600 rounded-lg shadow-xl z-50 py-1 max-h-60 overflow-y-auto">
-                      {templates.map(t => {
-                        const spots = t.customRows.reduce((s, r) => s + (r.cols || 1) * (r.rows || 1), 0);
+                      {templates.map(tpl => {
+                        const spots = tpl.customRows.reduce((s, r) => s + (r.cols || 1) * (r.rows || 1), 0);
                         return (
-                          <button key={t._id} type="button"
-                            onClick={() => handleApplyTemplate(t)}
+                          <button key={tpl._id} type="button"
+                            onClick={() => handleApplyTemplate(tpl)}
                             className="w-full text-left px-3 py-2 text-xs hover:bg-dark-700 transition">
-                            <div className="text-white">{t.name}</div>
-                            <div className="text-dark-500">{t.customRows.length} рядов, {spots} мест</div>
+                            <div className="text-white">{tpl.name}</div>
+                            <div className="text-dark-500">{t('roomMap.templateRowsSpots', { rows: tpl.customRows.length, spots })}</div>
                           </button>
                         );
                       })}
@@ -532,7 +534,7 @@ export default function RoomMap({ room, onSave, saving }) {
               )}
               <button type="button" onClick={handleExportPDF} disabled={exporting}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition disabled:opacity-50"
-                title="Скачать PDF для печати">
+                title={t('roomMap.downloadPdfTitle')}>
                 {exporting ? '...' : 'PDF'}
               </button>
             </>
@@ -543,7 +545,7 @@ export default function RoomMap({ room, onSave, saving }) {
       {/* Успешное сохранение */}
       {saveSuccess && (
         <div className="bg-green-900/30 border border-green-800 text-green-400 px-3 py-2 rounded-lg text-xs flex items-center justify-between">
-          <span>Карта сохранена!</span>
+          <span>{t('roomMap.mapSaved')}</span>
           <button type="button" onClick={() => setSaveSuccess(false)} className="text-green-500 hover:text-green-300 ml-2">✕</button>
         </div>
       )}
@@ -568,7 +570,7 @@ export default function RoomMap({ room, onSave, saving }) {
               {/* Заголовок ряда */}
               <div className="flex items-center gap-1 mb-1.5">
                 <span className="text-xs text-dark-400 font-medium whitespace-nowrap">
-                  {row.name || `Ряд ${rowIdx + 1}`}
+                  {row.name || t('roomMap.rowDefault', { num: rowIdx + 1 })}
                 </span>
                 {editMode && (
                   <>
@@ -582,7 +584,7 @@ export default function RoomMap({ room, onSave, saving }) {
                           ? 'bg-primary-600 text-white'
                           : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
                       }`}
-                      title="Назначить ряд сортом">&#9998;</button>
+                      title={t('roomMap.assignRowStrain')}>&#9998;</button>
                     <button type="button"
                       onClick={() => handleToggleRowDirection(rowIdx)}
                       className={`text-[10px] px-1 py-0.5 rounded transition ${
@@ -590,7 +592,7 @@ export default function RoomMap({ room, onSave, saving }) {
                           ? 'bg-primary-600/30 text-primary-400'
                           : 'text-dark-500 hover:text-dark-300 hover:bg-dark-700'
                       }`}
-                      title={isBottomUp ? 'Снизу вверх' : 'Сверху вниз'}>
+                      title={isBottomUp ? t('roomMap.fillBottomUp') : t('roomMap.fillTopDown')}>
                       {isBottomUp ? '↑' : '↓'}
                     </button>
                   </>
@@ -642,10 +644,10 @@ export default function RoomMap({ room, onSave, saving }) {
         <div className="bg-dark-700/50 border border-dark-600 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs text-dark-300">
-              Назначить «{customRows[assignRowIdx]?.name || `Ряд ${assignRowIdx + 1}`}» сортом:
+              {t('roomMap.assignRowLabel', { name: customRows[assignRowIdx]?.name || t('roomMap.rowDefault', { num: assignRowIdx + 1 }) })}
             </span>
             <button type="button" onClick={() => handleClearRow(assignRowIdx)}
-              className="text-xs text-red-400 hover:text-red-300">Очистить ряд</button>
+              className="text-xs text-red-400 hover:text-red-300">{t('roomMap.clearRow')}</button>
           </div>
           <div className="flex flex-wrap gap-2">
             {flowerStrains.map((fs, idx) => {
@@ -654,7 +656,7 @@ export default function RoomMap({ room, onSave, saving }) {
                 <button key={idx} type="button"
                   onClick={() => handleAssignRow(assignRowIdx, idx)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition hover:brightness-125 ${color.bg} ${color.border} ${color.text}`}>
-                  {fs.strain || `Сорт ${idx + 1}`} ({fs.quantity})
+                  {fs.strain || t('roomMap.strainDefault', { num: idx + 1 })} ({fs.quantity})
                 </button>
               );
             })}
@@ -667,10 +669,10 @@ export default function RoomMap({ room, onSave, saving }) {
         <div className="bg-dark-700/50 border border-dark-600 rounded-lg p-3 space-y-2">
           <div className="flex items-center justify-between">
             <span className="text-xs text-dark-300">
-              {customRows[assignCell.row]?.name || `Ряд ${assignCell.row + 1}`}, позиция {assignCell.position + 1}
+              {t('roomMap.positionLabel', { name: customRows[assignCell.row]?.name || t('roomMap.rowDefault', { num: assignCell.row + 1 }), pos: assignCell.position + 1 })}
             </span>
             <button type="button" onClick={() => setAssignCell(null)}
-              className="text-xs text-dark-500 hover:text-dark-300">Закрыть</button>
+              className="text-xs text-dark-500 hover:text-dark-300">{t('common.close')}</button>
           </div>
           <div className="space-y-2 max-h-40 overflow-y-auto">
             {flowerStrains.map((fs, strIdx) => {
@@ -684,7 +686,7 @@ export default function RoomMap({ room, onSave, saving }) {
               if (unplaced.length === 0) return null;
               return (
                 <div key={strIdx}>
-                  <div className={`text-xs font-medium mb-1 ${color.text}`}>{fs.strain || `Сорт ${strIdx + 1}`}</div>
+                  <div className={`text-xs font-medium mb-1 ${color.text}`}>{fs.strain || t('roomMap.strainDefault', { num: strIdx + 1 })}</div>
                   <div className="flex flex-wrap gap-1">
                     {unplaced.map(n => (
                       <button key={n} type="button"
@@ -713,7 +715,7 @@ export default function RoomMap({ room, onSave, saving }) {
             return (
               <div key={idx} className="flex items-center gap-1.5">
                 <span className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
-                <span className="text-dark-300">{fs.strain || `Сорт ${idx + 1}`}</span>
+                <span className="text-dark-300">{fs.strain || t('roomMap.strainDefault', { num: idx + 1 })}</span>
                 <span className="text-dark-500">{placed}/{fs.quantity}</span>
               </div>
             );
@@ -724,24 +726,24 @@ export default function RoomMap({ room, onSave, saving }) {
       {/* Неразмещённые */}
       {unplacedPlants.length > 0 && (
         <div className="text-xs text-dark-500">
-          Не размещено: <span className="text-amber-400">{unplacedPlants.length}</span> из {totalPlants} кустов
+          {t('roomMap.unplacedCount')} <span className="text-amber-400">{unplacedPlants.length}</span> {t('roomMap.ofTotal', { total: totalPlants })}
         </div>
       )}
 
       {/* Сводка по рядам */}
       {!editMode && plantPositions.length > 0 && (
         <div className="space-y-1">
-          <div className="text-xs text-dark-500 mb-1">По рядам:</div>
+          <div className="text-xs text-dark-500 mb-1">{t('roomMap.byRows')}</div>
           {rowSummaries.map((summary, idx) => {
             if (summary.count === 0) return null;
-            const rowName = customRows[idx]?.name || `Ряд ${idx + 1}`;
+            const rowName = customRows[idx]?.name || t('roomMap.rowDefault', { num: idx + 1 });
             const parts = Object.entries(summary.byStrain)
               .map(([name, count]) => `${name}: ${count}`)
               .join(', ');
             return (
               <div key={idx} className="text-xs text-dark-400">
                 <span className="text-dark-500">{rowName}:</span>{' '}
-                <span className="text-dark-300">{summary.count} кустов</span>
+                <span className="text-dark-300">{t('roomMap.plantsCountLabel', { count: summary.count })}</span>
                 {parts && <span className="text-dark-500 ml-1">({parts})</span>}
               </div>
             );

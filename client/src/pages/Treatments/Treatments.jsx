@@ -1,49 +1,25 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { treatmentService } from '../../services/treatmentService';
 import { treatmentProductService } from '../../services/treatmentProductService';
 import { roomService } from '../../services/roomService';
 import { useAuth } from '../../context/AuthContext';
 
-const PRODUCT_TYPES = {
-  insecticide: { label: 'Инсектицид', color: 'bg-red-500', dot: 'bg-red-400', text: 'text-red-400' },
-  fungicide: { label: 'Фунгицид', color: 'bg-blue-500', dot: 'bg-blue-400', text: 'text-blue-400' },
-  acaricide: { label: 'Акарицид', color: 'bg-orange-500', dot: 'bg-orange-400', text: 'text-orange-400' },
-  bio: { label: 'Биопрепарат', color: 'bg-green-500', dot: 'bg-green-400', text: 'text-green-400' },
-  fertilizer: { label: 'Удобрение', color: 'bg-purple-500', dot: 'bg-purple-400', text: 'text-purple-400' },
-  ph_adjuster: { label: 'pH корр.', color: 'bg-cyan-500', dot: 'bg-cyan-400', text: 'text-cyan-400' },
-  other: { label: 'Другое', color: 'bg-gray-500', dot: 'bg-gray-400', text: 'text-gray-400' }
+const PRODUCT_TYPE_STYLES = {
+  insecticide: { color: 'bg-red-500', dot: 'bg-red-400', text: 'text-red-400' },
+  fungicide: { color: 'bg-blue-500', dot: 'bg-blue-400', text: 'text-blue-400' },
+  acaricide: { color: 'bg-orange-500', dot: 'bg-orange-400', text: 'text-orange-400' },
+  bio: { color: 'bg-green-500', dot: 'bg-green-400', text: 'text-green-400' },
+  fertilizer: { color: 'bg-purple-500', dot: 'bg-purple-400', text: 'text-purple-400' },
+  ph_adjuster: { color: 'bg-cyan-500', dot: 'bg-cyan-400', text: 'text-cyan-400' },
+  other: { color: 'bg-gray-500', dot: 'bg-gray-400', text: 'text-gray-400' }
 };
 
-const APPLICATION_METHODS = {
-  spray: 'Опрыскивание',
-  drench: 'Пролив',
-  fogger: 'Фоггер',
-  granular: 'Гранулы',
-  other: 'Другое'
-};
-
-const STATUS_BADGES = {
-  planned: { label: 'Запланировано', cls: 'bg-yellow-900/40 text-yellow-400 border border-yellow-800' },
-  completed: { label: 'Выполнено', cls: 'bg-green-900/40 text-green-400 border border-green-800' },
-  skipped: { label: 'Пропущено', cls: 'bg-dark-600 text-dark-400 border border-dark-500' }
-};
-
-const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
-const MONTH_NAMES = [
-  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
-];
-
-const formatDate = (d) => {
-  const date = new Date(d);
-  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
-};
-
-const formatDateFull = (d) => {
-  const date = new Date(d);
-  return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' });
+const STATUS_STYLES = {
+  planned: 'bg-yellow-900/40 text-yellow-400 border border-yellow-800',
+  completed: 'bg-green-900/40 text-green-400 border border-green-800',
+  skipped: 'bg-dark-600 text-dark-400 border border-dark-500'
 };
 
 const isSameDay = (a, b) => {
@@ -69,7 +45,6 @@ const isOverdue = (record) => {
   return scheduled < today;
 };
 
-// Получить массив дней для месячной сетки (Пн предыдущего → Вс следующего)
 const getMonthGrid = (year, month) => {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
@@ -103,6 +78,7 @@ const getMonthGrid = (year, month) => {
 };
 
 const Treatments = () => {
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const [records, setRecords] = useState([]);
   const [products, setProducts] = useState([]);
@@ -110,7 +86,18 @@ const Treatments = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Первое число текущего месяца
+  const locale = i18n.language === 'en' ? 'en-US' : 'ru-RU';
+
+  const formatDate = (d) => {
+    const date = new Date(d);
+    return date.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+  };
+
+  const formatDateFull = (d) => {
+    const date = new Date(d);
+    return date.toLocaleDateString(locale, { day: 'numeric', month: 'long', year: 'numeric' });
+  };
+
   const [currentMonth, setCurrentMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -152,11 +139,11 @@ const Treatments = () => {
       setProducts(prods);
       setRooms(rms);
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка загрузки');
+      setError(err.response?.data?.message || t('treatments.loadError'));
     } finally {
       setLoading(false);
     }
-  }, [dateRange]);
+  }, [dateRange, t]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -227,7 +214,7 @@ const Treatments = () => {
       setShowModal(false);
       await loadData();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('treatments.saveError'));
     } finally {
       setModalSaving(false);
     }
@@ -235,18 +222,18 @@ const Treatments = () => {
 
   const handleComplete = async (id) => {
     try { await treatmentService.complete(id); await loadData(); }
-    catch (err) { setError(err.response?.data?.message || 'Ошибка'); }
+    catch (err) { setError(err.response?.data?.message || t('treatments.error')); }
   };
 
   const handleSkip = async (id) => {
     try { await treatmentService.skip(id); await loadData(); }
-    catch (err) { setError(err.response?.data?.message || 'Ошибка'); }
+    catch (err) { setError(err.response?.data?.message || t('treatments.error')); }
   };
 
   const handleDeleteRecord = async (id) => {
-    if (!confirm('Удалить запись обработки?')) return;
+    if (!confirm(t('treatments.deleteRecordConfirm'))) return;
     try { await treatmentService.delete(id); await loadData(); }
-    catch (err) { setError(err.response?.data?.message || 'Ошибка'); }
+    catch (err) { setError(err.response?.data?.message || t('treatments.error')); }
   };
 
   const activeRooms = useMemo(() => rooms.filter(r => r.status !== 'empty'), [rooms]);
@@ -262,12 +249,24 @@ const Treatments = () => {
     });
   }, [selectedDay, recordsByDay]);
 
-  // Карточка обработки в боковой панели
+  const getTreatmentCountText = (count) => {
+    if (count === 0) return t('treatments.noTreatments');
+    if (i18n.language === 'ru') {
+      const mod10 = count % 10;
+      const mod100 = count % 100;
+      if (mod10 === 1 && mod100 !== 11) return t('treatments.treatmentCount_one', { count });
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return t('treatments.treatmentCount_few', { count });
+      return t('treatments.treatmentCount_many', { count });
+    }
+    return t(count === 1 ? 'treatments.treatmentCount_one' : 'treatments.treatmentCount_other', { count });
+  };
+
+  // Record detail card in side panel
   const RecordDetail = ({ record }) => {
-    const typeInfo = PRODUCT_TYPES[record.productType] || PRODUCT_TYPES.other;
+    const typeInfo = PRODUCT_TYPE_STYLES[record.productType] || PRODUCT_TYPE_STYLES.other;
     const overdue = isOverdue(record);
-    const statusInfo = STATUS_BADGES[record.status] || STATUS_BADGES.planned;
-    const roomName = record.room?.name || `Комната ${record.room?.roomNumber || '?'}`;
+    const statusCls = STATUS_STYLES[record.status] || STATUS_STYLES.planned;
+    const roomName = record.room?.name || t('treatments.roomDefault', { number: record.room?.roomNumber || '?' });
     const isExp = expandedId === record._id;
 
     return (
@@ -283,13 +282,13 @@ const Treatments = () => {
             <div className="flex-1 min-w-0">
               <div className="text-white text-sm font-medium">{roomName}</div>
               <div className="text-dark-400 text-xs">
-                {record.productName || 'Без препарата'}
+                {record.productName || t('treatments.noProduct')}
                 {record.dosage && ` · ${record.dosage}`}
-                {record.applicationMethod && record.applicationMethod !== 'spray' && ` · ${APPLICATION_METHODS[record.applicationMethod]}`}
+                {record.applicationMethod && record.applicationMethod !== 'spray' && ` · ${t(`treatments.applicationMethods.${record.applicationMethod}`)}`}
               </div>
             </div>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap ${statusInfo.cls}`}>
-              {overdue ? '⚠ Просрочено' : statusInfo.label}
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap ${statusCls}`}>
+              {overdue ? `⚠ ${t('treatments.overdue')}` : t(`treatments.statuses.${record.status}`)}
             </span>
           </div>
         </div>
@@ -297,33 +296,33 @@ const Treatments = () => {
         {isExp && (
           <div className="px-3 pb-3 border-t border-dark-700 space-y-1.5 pt-2" onClick={(e) => e.stopPropagation()}>
             {record.worker && (
-              <div className="text-xs"><span className="text-dark-500">Работник: </span><span className="text-dark-300">{record.worker.name}</span></div>
+              <div className="text-xs"><span className="text-dark-500">{t('treatments.workerLabel')}: </span><span className="text-dark-300">{record.worker.name}</span></div>
             )}
             {record.completedBy && (
               <div className="text-xs">
-                <span className="text-dark-500">Выполнил: </span><span className="text-dark-300">{record.completedBy.name}</span>
+                <span className="text-dark-500">{t('treatments.completedByLabel')}: </span><span className="text-dark-300">{record.completedBy.name}</span>
                 {record.completedAt && <span className="text-dark-500"> ({formatDateFull(record.completedAt)})</span>}
               </div>
             )}
             {record.notes && (
-              <div className="text-xs"><span className="text-dark-500">Примечание: </span><span className="text-dark-300">{record.notes}</span></div>
+              <div className="text-xs"><span className="text-dark-500">{t('treatments.noteLabel')}: </span><span className="text-dark-300">{record.notes}</span></div>
             )}
             <div className="flex flex-wrap gap-2 pt-1">
               {record.status === 'planned' && hasPermission('treatments:create') && (
                 <button type="button" onClick={() => handleComplete(record._id)}
-                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium">✓ Выполнено</button>
+                  className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium">{t('treatments.markComplete')}</button>
               )}
               {record.status === 'planned' && hasPermission('treatments:edit') && (
                 <button type="button" onClick={() => handleSkip(record._id)}
-                  className="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-xs">Пропустить</button>
+                  className="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-xs">{t('treatments.skip')}</button>
               )}
               {hasPermission('treatments:edit') && (
                 <button type="button" onClick={() => openEditModal(record)}
-                  className="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-xs">Изменить</button>
+                  className="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-xs">{t('treatments.edit')}</button>
               )}
               {hasPermission('treatments:delete') && (
                 <button type="button" onClick={() => handleDeleteRecord(record._id)}
-                  className="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs">Удалить</button>
+                  className="px-3 py-1.5 text-red-400 hover:text-red-300 text-xs">{t('treatments.delete')}</button>
               )}
             </div>
           </div>
@@ -332,7 +331,9 @@ const Treatments = () => {
     );
   };
 
-  const monthTitle = `${MONTH_NAMES[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
+  const monthNames = t('treatments.monthNames', { returnObjects: true });
+  const dayNames = t('treatments.dayNames', { returnObjects: true });
+  const monthTitle = `${monthNames[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
 
   if (loading && records.length === 0) {
     return (
@@ -347,21 +348,21 @@ const Treatments = () => {
       {/* Header */}
       <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">Обработки</h1>
+          <h1 className="text-2xl font-bold text-white">{t('treatments.title')}</h1>
           <p className="text-dark-400 mt-1 text-sm">
-            Планирование и учёт обработок
-            {overdueCount > 0 && <span className="text-red-400 ml-2">({overdueCount} просрочено)</span>}
+            {t('treatments.subtitle')}
+            {overdueCount > 0 && <span className="text-red-400 ml-2">({t('treatments.overdueCount', { count: overdueCount })})</span>}
           </p>
         </div>
         <div className="flex gap-2 shrink-0 flex-wrap">
           <Link to="/treatments/products"
             className="px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-300 border border-dark-600 rounded-lg text-sm font-medium transition">
-            База препаратов
+            {t('treatments.productsDatabase')}
           </Link>
           {hasPermission('treatments:create') && (
             <button type="button" onClick={() => openCreateModal()}
               className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition">
-              + Новая обработка
+              {t('treatments.newTreatment')}
             </button>
           )}
         </div>
@@ -379,18 +380,18 @@ const Treatments = () => {
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setViewMode('calendar')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${viewMode === 'calendar' ? 'bg-primary-600 text-white' : 'bg-dark-700 text-dark-400 hover:bg-dark-600'}`}>
-            Календарь
+            {t('treatments.calendar')}
           </button>
           <button type="button" onClick={() => setViewMode('list')}
             className={`px-3 py-1.5 rounded-lg text-sm font-medium transition ${viewMode === 'list' ? 'bg-primary-600 text-white' : 'bg-dark-700 text-dark-400 hover:bg-dark-600'}`}>
-            Список
+            {t('treatments.list')}
           </button>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => navigateMonth(-1)}
             className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm">&larr;</button>
           <button type="button" onClick={goToday}
-            className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm">Сегодня</button>
+            className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm">{t('treatments.today')}</button>
           <span className="text-white text-sm font-medium min-w-[160px] text-center">{monthTitle}</span>
           <button type="button" onClick={() => navigateMonth(1)}
             className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 rounded-lg text-sm">&rarr;</button>
@@ -399,10 +400,10 @@ const Treatments = () => {
 
       {/* Legend */}
       <div className="flex flex-wrap gap-x-4 gap-y-1 mb-3 text-xs text-dark-400">
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400" /> Запланировано</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-400" /> Выполнено</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" /> Просрочено</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-dark-500" /> Пропущено</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-yellow-400" /> {t('treatments.legendPlanned')}</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-green-400" /> {t('treatments.legendCompleted')}</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" /> {t('treatments.legendOverdue')}</span>
+        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-dark-500" /> {t('treatments.legendSkipped')}</span>
       </div>
 
       {/* Calendar view */}
@@ -411,7 +412,7 @@ const Treatments = () => {
           {/* Month grid */}
           <div className="flex-1 min-w-0">
             <div className="grid grid-cols-7 mb-1">
-              {DAY_NAMES.map(name => (
+              {dayNames.map(name => (
                 <div key={name} className="text-center text-dark-500 text-xs font-medium py-1">{name}</div>
               ))}
             </div>
@@ -446,7 +447,7 @@ const Treatments = () => {
 
                     {dayRecords.length > 0 && (
                       <div className="space-y-0.5">
-                        {/* Desktop: mini-карточки */}
+                        {/* Desktop: mini-cards */}
                         <div className="hidden sm:block space-y-0.5">
                           {dayRecords.slice(0, 3).map(r => {
                             const overdue = isOverdue(r);
@@ -463,7 +464,7 @@ const Treatments = () => {
                                   r.status === 'skipped' ? 'bg-dark-500' :
                                   'bg-yellow-400'
                                 }`} />
-                                <span className="truncate">{r.room?.name || 'К' + (r.room?.roomNumber || '?')}</span>
+                                <span className="truncate">{r.room?.name || (i18n.language === 'ru' ? 'К' : 'R') + (r.room?.roomNumber || '?')}</span>
                               </div>
                             );
                           })}
@@ -471,7 +472,7 @@ const Treatments = () => {
                             <div className="text-[10px] text-dark-500 px-1">+{dayRecords.length - 3}</div>
                           )}
                         </div>
-                        {/* Mobile: точки */}
+                        {/* Mobile: dots */}
                         <div className="sm:hidden flex flex-wrap gap-0.5">
                           {dayRecords.slice(0, 6).map(r => (
                             <span key={r._id} className={`w-1.5 h-1.5 rounded-full ${
@@ -491,7 +492,7 @@ const Treatments = () => {
             </div>
           </div>
 
-          {/* Боковая панель выбранного дня */}
+          {/* Side panel for selected day */}
           <div className="lg:w-80 shrink-0">
             {selectedDay ? (
               <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden sticky top-4">
@@ -499,21 +500,19 @@ const Treatments = () => {
                   <div>
                     <div className="text-white font-medium text-sm">{formatDateFull(selectedDay)}</div>
                     <div className="text-dark-500 text-xs mt-0.5">
-                      {selectedDayRecords.length > 0
-                        ? `${selectedDayRecords.length} обработ${selectedDayRecords.length === 1 ? 'ка' : selectedDayRecords.length < 5 ? 'ки' : 'ок'}`
-                        : 'Нет обработок'}
+                      {getTreatmentCountText(selectedDayRecords.length)}
                     </div>
                   </div>
                   {hasPermission('treatments:create') && (
                     <button type="button" onClick={() => openCreateModal(new Date(selectedDay + 'T12:00:00'))}
                       className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-medium">
-                      + Добавить
+                      {t('treatments.addBtn')}
                     </button>
                   )}
                 </div>
                 <div className="p-3 space-y-2 max-h-[60vh] overflow-y-auto">
                   {selectedDayRecords.length === 0 ? (
-                    <div className="text-dark-500 text-sm text-center py-6">Нет обработок на этот день</div>
+                    <div className="text-dark-500 text-sm text-center py-6">{t('treatments.noTreatmentsForDay')}</div>
                   ) : (
                     selectedDayRecords.map(r => <RecordDetail key={r._id} record={r} />)
                   )}
@@ -521,7 +520,7 @@ const Treatments = () => {
               </div>
             ) : (
               <div className="bg-dark-800/50 rounded-xl border border-dark-700 p-6 text-center">
-                <div className="text-dark-500 text-sm">Нажмите на день<br />чтобы увидеть обработки</div>
+                <div className="text-dark-500 text-sm">{t('treatments.clickDayHint').split('\n').map((line, i) => <span key={i}>{line}<br /></span>)}</div>
               </div>
             )}
           </div>
@@ -540,7 +539,7 @@ const Treatments = () => {
               .sort((a, b) => new Date(a.scheduledDate) - new Date(b.scheduledDate));
 
             if (monthRecords.length === 0) {
-              return <div className="px-4 py-8 text-center text-dark-500">Нет обработок за {monthTitle.toLowerCase()}</div>;
+              return <div className="px-4 py-8 text-center text-dark-500">{t('treatments.noTreatmentsForMonth', { month: monthTitle.toLowerCase() })}</div>;
             }
 
             let lastDateKey = '';
@@ -551,10 +550,10 @@ const Treatments = () => {
                   const showDateHeader = dateKey !== lastDateKey;
                   lastDateKey = dateKey;
 
-                  const typeInfo = PRODUCT_TYPES[r.productType] || PRODUCT_TYPES.other;
+                  const typeInfo = PRODUCT_TYPE_STYLES[r.productType] || PRODUCT_TYPE_STYLES.other;
                   const overdue = isOverdue(r);
-                  const statusInfo = STATUS_BADGES[r.status] || STATUS_BADGES.planned;
-                  const roomName = r.room?.name || `Комната ${r.room?.roomNumber || '?'}`;
+                  const statusCls = STATUS_STYLES[r.status] || STATUS_STYLES.planned;
+                  const roomName = r.room?.name || t('treatments.roomDefault', { number: r.room?.roomNumber || '?' });
 
                   return (
                     <div key={r._id}>
@@ -579,29 +578,29 @@ const Treatments = () => {
                             <span className="text-dark-400 ml-2">{r.productName || ''}</span>
                             {r.dosage && <span className="text-dark-500 ml-1">({r.dosage})</span>}
                           </div>
-                          <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${statusInfo.cls}`}>
-                            {overdue ? '⚠ Просрочено' : statusInfo.label}
+                          <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${statusCls}`}>
+                            {overdue ? `⚠ ${t('treatments.overdue')}` : t(`treatments.statuses.${r.status}`)}
                           </span>
                         </div>
 
                         {expandedId === r._id && (
                           <div className="mt-2 pt-2 border-t border-dark-700 ml-5 space-y-1" onClick={(e) => e.stopPropagation()}>
-                            {r.applicationMethod && <div className="text-xs text-dark-400">Способ: {APPLICATION_METHODS[r.applicationMethod] || r.applicationMethod}</div>}
-                            {r.worker && <div className="text-xs text-dark-400">Работник: {r.worker.name}</div>}
-                            {r.notes && <div className="text-xs text-dark-400">Примечание: {r.notes}</div>}
+                            {r.applicationMethod && <div className="text-xs text-dark-400">{t('treatments.methodLabel')}: {t(`treatments.applicationMethods.${r.applicationMethod}`) || r.applicationMethod}</div>}
+                            {r.worker && <div className="text-xs text-dark-400">{t('treatments.workerLabel')}: {r.worker.name}</div>}
+                            {r.notes && <div className="text-xs text-dark-400">{t('treatments.noteLabel')}: {r.notes}</div>}
                             <div className="flex flex-wrap gap-2 pt-1">
                               {r.status === 'planned' && hasPermission('treatments:create') && (
                                 <button type="button" onClick={() => handleComplete(r._id)}
-                                  className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium">✓ Выполнено</button>
+                                  className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-xs font-medium">{t('treatments.markComplete')}</button>
                               )}
                               {r.status === 'planned' && hasPermission('treatments:edit') && (
-                                <button type="button" onClick={() => handleSkip(r._id)} className="px-3 py-1 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-xs">Пропустить</button>
+                                <button type="button" onClick={() => handleSkip(r._id)} className="px-3 py-1 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-xs">{t('treatments.skip')}</button>
                               )}
                               {hasPermission('treatments:edit') && (
-                                <button type="button" onClick={() => openEditModal(r)} className="px-3 py-1 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-xs">Изменить</button>
+                                <button type="button" onClick={() => openEditModal(r)} className="px-3 py-1 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-xs">{t('treatments.edit')}</button>
                               )}
                               {hasPermission('treatments:delete') && (
-                                <button type="button" onClick={() => handleDeleteRecord(r._id)} className="px-3 py-1 text-red-400 hover:text-red-300 text-xs">Удалить</button>
+                                <button type="button" onClick={() => handleDeleteRecord(r._id)} className="px-3 py-1 text-red-400 hover:text-red-300 text-xs">{t('treatments.delete')}</button>
                               )}
                             </div>
                           </div>
@@ -625,18 +624,18 @@ const Treatments = () => {
             <form onSubmit={handleModalSubmit} className="p-5 space-y-4">
               <div className="flex items-center justify-between mb-1">
                 <h3 className="text-white font-semibold text-lg">
-                  {editingRecord ? 'Редактировать обработку' : 'Новая обработка'}
+                  {editingRecord ? t('treatments.editTitle') : t('treatments.createTitle')}
                 </h3>
                 <button type="button" onClick={() => setShowModal(false)}
                   className="text-dark-400 hover:text-dark-300 text-2xl leading-none">&times;</button>
               </div>
 
               <div>
-                <label className="block text-dark-400 text-sm mb-1">Комната *</label>
+                <label className="block text-dark-400 text-sm mb-1">{t('treatments.roomRequired')}</label>
                 <select value={modalForm.roomId}
                   onChange={(e) => setModalForm(f => ({ ...f, roomId: e.target.value }))}
                   className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500" required>
-                  <option value="">Выберите комнату</option>
+                  <option value="">{t('treatments.selectRoom')}</option>
                   {(activeRooms.length > 0 ? activeRooms : rooms).map(r => (
                     <option key={r._id} value={r._id}>{r.name} {r.strain ? `(${r.strain})` : ''}</option>
                   ))}
@@ -644,11 +643,11 @@ const Treatments = () => {
               </div>
 
               <div>
-                <label className="block text-dark-400 text-sm mb-1">Препарат</label>
+                <label className="block text-dark-400 text-sm mb-1">{t('treatments.productLabel')}</label>
                 <select value={modalForm.productId}
                   onChange={(e) => handleProductChange(e.target.value)}
                   className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500">
-                  <option value="">Без препарата / Другое</option>
+                  <option value="">{t('treatments.noProductOption')}</option>
                   {products.map(p => (
                     <option key={p._id} value={p._id}>{p.name} {p.concentration ? `(${p.concentration})` : ''}</option>
                   ))}
@@ -657,33 +656,33 @@ const Treatments = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-dark-400 text-sm mb-1">Дозировка</label>
+                  <label className="block text-dark-400 text-sm mb-1">{t('treatments.dosage')}</label>
                   <input type="text" value={modalForm.dosage}
                     onChange={(e) => setModalForm(f => ({ ...f, dosage: e.target.value }))}
-                    placeholder="2 мл/л"
+                    placeholder={t('treatments.dosagePlaceholder')}
                     className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent" />
                 </div>
                 <div>
-                  <label className="block text-dark-400 text-sm mb-1">Способ</label>
+                  <label className="block text-dark-400 text-sm mb-1">{t('treatments.method')}</label>
                   <select value={modalForm.applicationMethod}
                     onChange={(e) => setModalForm(f => ({ ...f, applicationMethod: e.target.value }))}
                     className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500">
-                    {Object.entries(APPLICATION_METHODS).map(([key, label]) => (
-                      <option key={key} value={key}>{label}</option>
+                    {['spray', 'drench', 'fogger', 'granular', 'other'].map(key => (
+                      <option key={key} value={key}>{t(`treatments.applicationMethods.${key}`)}</option>
                     ))}
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-dark-400 text-sm mb-1">Дата *</label>
+                <label className="block text-dark-400 text-sm mb-1">{t('treatments.dateRequired')}</label>
                 <input type="date" value={modalForm.scheduledDate}
                   onChange={(e) => setModalForm(f => ({ ...f, scheduledDate: e.target.value }))}
                   className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500" required />
               </div>
 
               <div>
-                <label className="block text-dark-400 text-sm mb-1">Примечание</label>
+                <label className="block text-dark-400 text-sm mb-1">{t('treatments.noteField')}</label>
                 <textarea value={modalForm.notes}
                   onChange={(e) => setModalForm(f => ({ ...f, notes: e.target.value }))}
                   rows={2}
@@ -697,25 +696,25 @@ const Treatments = () => {
                       checked={modalForm.status === 'planned'}
                       onChange={(e) => setModalForm(f => ({ ...f, status: e.target.value }))}
                       className="text-primary-500 focus:ring-primary-500 bg-dark-700 border-dark-600" />
-                    <span className="text-dark-300 text-sm">Запланировать</span>
+                    <span className="text-dark-300 text-sm">{t('treatments.statusPlan')}</span>
                   </label>
                   <label className="flex items-center gap-2 cursor-pointer">
                     <input type="radio" name="status" value="completed"
                       checked={modalForm.status === 'completed'}
                       onChange={(e) => setModalForm(f => ({ ...f, status: e.target.value }))}
                       className="text-green-500 focus:ring-green-500 bg-dark-700 border-dark-600" />
-                    <span className="text-dark-300 text-sm">Записать выполненную</span>
+                    <span className="text-dark-300 text-sm">{t('treatments.statusRecord')}</span>
                   </label>
                 </div>
               )}
 
               <div className="flex gap-2 justify-end pt-2">
                 <button type="button" onClick={() => setShowModal(false)}
-                  className="px-4 py-2 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded-lg text-sm">Отмена</button>
+                  className="px-4 py-2 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded-lg text-sm">{t('treatments.cancel')}</button>
                 <button type="submit" disabled={!modalForm.roomId || !modalForm.scheduledDate || modalSaving}
                   className="px-6 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-medium text-sm transition flex items-center gap-2">
                   {modalSaving && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
-                  {editingRecord ? 'Сохранить' : modalForm.status === 'completed' ? 'Записать' : 'Запланировать'}
+                  {editingRecord ? t('treatments.save') : modalForm.status === 'completed' ? t('treatments.record') : t('treatments.plan')}
                 </button>
               </div>
             </form>

@@ -1,30 +1,14 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { trimService } from '../../services/trimService';
 
-const formatDate = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-};
-
 const fmt = (v, decimals = 1) => {
   if (v == null || isNaN(v)) return '—';
   return Number(v).toFixed(decimals);
-};
-
-const formatLogDate = (dateStr) => {
-  if (!dateStr) return '—';
-  const d = new Date(dateStr);
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const logDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diff = Math.floor((today - logDay) / (24 * 60 * 60 * 1000));
-  if (diff === 0) return 'Сегодня';
-  if (diff === 1) return 'Вчера';
-  return d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
 };
 
 const progressColor = (pct) => {
@@ -34,12 +18,7 @@ const progressColor = (pct) => {
 };
 
 // ─── Phase detection ───
-const PHASES = [
-  { key: 'drying', label: 'Сушка' },
-  { key: 'dry_weight', label: 'Сухой вес' },
-  { key: 'trimming', label: 'Трим' },
-  { key: 'completed', label: 'Готово' }
-];
+const PHASE_KEYS = ['drying', 'dry_weight', 'trimming', 'completed'];
 
 const derivePhase = (a) => {
   if (a.trimStatus === 'completed') return 'completed';
@@ -50,7 +29,7 @@ const derivePhase = (a) => {
   return 'trimming';
 };
 
-const phaseIndex = (phase) => PHASES.findIndex(p => p.key === phase);
+const phaseIndex = (phase) => PHASE_KEYS.indexOf(phase);
 
 // ─── Metrics ───
 const calcMetrics = (a) => {
@@ -66,9 +45,29 @@ const calcMetrics = (a) => {
 };
 
 const Trim = () => {
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const canCreate = hasPermission && hasPermission('trim:create');
   const canEdit = hasPermission && hasPermission('trim:edit');
+
+  const PHASES = PHASE_KEYS.map(key => ({ key, label: t(`trim.phase_${key}`) }));
+
+  const formatDate = (date) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
+
+  const formatLogDate = (dateStr) => {
+    if (!dateStr) return '—';
+    const d = new Date(dateStr);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const logDay = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const diff = Math.floor((today - logDay) / (24 * 60 * 60 * 1000));
+    if (diff === 0) return t('trim.today');
+    if (diff === 1) return t('trim.yesterday');
+    return d.toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit' });
+  };
 
   const [archives, setArchives] = useState([]);
   const [dailyStats, setDailyStats] = useState([]);
@@ -120,7 +119,7 @@ const Trim = () => {
       const archivesData = await trimService.getActiveArchives(statusFilter);
       setArchives(Array.isArray(archivesData) ? archivesData : []);
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка загрузки');
+      setError(err.response?.data?.message || t('common.loadError'));
     } finally {
       setLoading(false);
     }
@@ -169,7 +168,7 @@ const Trim = () => {
       closeDryWeightForm(archiveId);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('trim.saveError'));
     } finally {
       setDryWeightSaving(prev => ({ ...prev, [archiveId]: false }));
     }
@@ -210,7 +209,7 @@ const Trim = () => {
       setPopcornOpen(prev => ({ ...prev, [archiveId]: false }));
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('trim.saveError'));
     } finally {
       setPopcornSaving(prev => ({ ...prev, [archiveId]: false }));
     }
@@ -226,7 +225,7 @@ const Trim = () => {
     const strain = strainsList.length === 1 ? null : (inlineStrains[archiveId] || '');
 
     if (strainsList.length > 1 && !strain) {
-      setError('Выберите сорт');
+      setError(t('trim.selectStrain'));
       return;
     }
 
@@ -240,7 +239,7 @@ const Trim = () => {
         setArchiveLogs(prev => ({ ...prev, [archiveId]: Array.isArray(data) ? data : [] }));
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('trim.saveError'));
     } finally {
       setInlineSaving(prev => ({ ...prev, [archiveId]: false }));
     }
@@ -266,7 +265,7 @@ const Trim = () => {
 
   // ─── Delete log ───
   const handleDeleteLog = async (logId, archiveId) => {
-    if (!confirm('Удалить запись трима?')) return;
+    if (!confirm(t('trim.deleteLogConfirm'))) return;
     try {
       await trimService.deleteLog(logId);
       await load();
@@ -275,18 +274,18 @@ const Trim = () => {
         setArchiveLogs(prev => ({ ...prev, [archiveId]: Array.isArray(data) ? data : [] }));
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка удаления');
+      setError(err.response?.data?.message || t('trim.deleteError'));
     }
   };
 
   // ─── Complete trim ───
   const handleCompleteTrim = async (archiveId) => {
-    if (!confirm('Завершить трим? Архив уйдёт из списка «В работе».')) return;
+    if (!confirm(t('trim.completeTrimConfirm'))) return;
     try {
       await trimService.completeTrim(archiveId);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('common.error'));
     }
   };
 
@@ -320,7 +319,7 @@ const Trim = () => {
       setEditModal(null);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('trim.saveError'));
     } finally {
       setEditSaving(false);
     }
@@ -336,17 +335,17 @@ const Trim = () => {
   }
 
   const tabs = [
-    { key: 'active', label: 'В работе' },
-    { key: 'completed', label: 'Завершённые' },
-    { key: 'all', label: 'Все' }
+    { key: 'active', label: t('trim.tabActive') },
+    { key: 'completed', label: t('trim.tabCompleted') },
+    { key: 'all', label: t('trim.tabAll') }
   ];
 
   return (
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Трим</h1>
-        <p className="text-dark-400 mt-1 text-sm">Сушка &rarr; Сухой вес &rarr; Ручной трим &rarr; Сортировка</p>
+        <h1 className="text-2xl font-bold text-white">{t('trim.title')}</h1>
+        <p className="text-dark-400 mt-1 text-sm">{t('trim.subtitle')}</p>
       </div>
 
       {error && (
@@ -363,13 +362,13 @@ const Trim = () => {
         className="mb-4 px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-dark-300 hover:text-white hover:border-dark-500 transition text-sm font-medium flex items-center gap-2"
       >
         <span className={`transition-transform ${chartOpen ? 'rotate-180' : ''}`}>&#9662;</span>
-        <span>Статистика по дням</span>
+        <span>{t('trim.dailyStats')}</span>
       </button>
 
       {chartOpen && (
         <div className="mb-6 bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h2 className="text-sm font-semibold text-white">Трим по дням</h2>
+            <h2 className="text-sm font-semibold text-white">{t('trim.trimByDays')}</h2>
             <select
               value={statsDays}
               onChange={(e) => {
@@ -379,24 +378,24 @@ const Trim = () => {
               }}
               className="px-3 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
             >
-              <option value={7}>7 дней</option>
-              <option value={30}>30 дней</option>
-              <option value={90}>90 дней</option>
+              <option value={7}>{t('trim.days7')}</option>
+              <option value={30}>{t('trim.days30')}</option>
+              <option value={90}>{t('trim.days90')}</option>
             </select>
           </div>
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={dailyStats.map(d => ({ ...d, day: new Date(d.date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' }) }))} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
+              <BarChart data={dailyStats.map(d => ({ ...d, day: new Date(d.date).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit' }) }))} margin={{ top: 8, right: 8, left: 0, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
                 <XAxis dataKey="day" tick={{ fill: '#9ca3af', fontSize: 11 }} stroke="#6b7280" />
-                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} stroke="#6b7280" unit=" г" />
+                <YAxis tick={{ fill: '#9ca3af', fontSize: 11 }} stroke="#6b7280" unit={` ${t('trim.grams')}`} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #4b5563', borderRadius: '8px' }}
                   labelStyle={{ color: '#d1d5db' }}
-                  formatter={(value) => [`${Number(value).toFixed(0)} г`, 'Потримлено']}
+                  formatter={(value) => [`${Number(value).toFixed(0)} ${t('trim.grams')}`, t('trim.trimmed')]}
                   labelFormatter={(_, payload) => payload[0]?.payload?.date ? formatDate(payload[0].payload.date) : ''}
                 />
-                <Bar dataKey="weight" fill="#22c55e" radius={[4, 4, 0, 0]} name="Потримлено" />
+                <Bar dataKey="weight" fill="#22c55e" radius={[4, 4, 0, 0]} name={t('trim.trimmed')} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -405,17 +404,17 @@ const Trim = () => {
 
       {/* Filter tabs */}
       <div className="flex gap-2 mb-5">
-        {tabs.map(t => (
+        {tabs.map(tab => (
           <button
-            key={t.key}
-            onClick={() => setStatusFilter(t.key)}
+            key={tab.key}
+            onClick={() => setStatusFilter(tab.key)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition ${
-              statusFilter === t.key
+              statusFilter === tab.key
                 ? 'bg-primary-600 text-white'
                 : 'bg-dark-800 text-dark-400 hover:bg-dark-700 hover:text-dark-200'
             }`}
           >
-            {t.label}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -424,10 +423,10 @@ const Trim = () => {
       {archives.length === 0 && (
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-8 text-center text-dark-400">
           {statusFilter === 'active'
-            ? 'Нет архивов в работе. Трим появится после сбора урожая.'
+            ? t('trim.emptyActive')
             : statusFilter === 'completed'
-              ? 'Нет завершённых тримов.'
-              : 'Нет архивов.'}
+              ? t('trim.emptyCompleted')
+              : t('trim.emptyAll')}
         </div>
       )}
 
@@ -461,8 +460,8 @@ const Trim = () => {
                 <div className="min-w-0">
                   <h3 className="text-white font-semibold truncate">{a.roomName}</h3>
                   <p className="text-dark-400 text-xs truncate">
-                    {strainsList.join(' / ')} &middot; {a.plantsCount || '?'} кустов
-                    {a.harvestDate && <span className="text-dark-500"> &middot; Сбор {formatDate(a.harvestDate)}</span>}
+                    {strainsList.join(' / ')} &middot; {a.plantsCount || '?'} {t('trim.plants')}
+                    {a.harvestDate && <span className="text-dark-500"> &middot; {t('trim.harvest')} {formatDate(a.harvestDate)}</span>}
                   </p>
                 </div>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 ml-2 ${
@@ -471,7 +470,7 @@ const Trim = () => {
                     : phase === 'drying' ? 'bg-dark-700 text-dark-400'
                     : 'bg-blue-900/40 text-blue-400'
                 }`}>
-                  {PHASES.find(p => p.key === phase)?.label || ''}
+                  {t(`trim.phase_${phase}`)}
                 </span>
               </div>
 
@@ -511,7 +510,7 @@ const Trim = () => {
                 {/* ════════════════════════════════════════════ */}
                 {phase === 'drying' && !hasDryForm && (
                   <div className="space-y-2">
-                    <p className="text-dark-400 text-sm">Кусты сушатся. Мокрый вес по сортам:</p>
+                    <p className="text-dark-400 text-sm">{t('trim.dryingDesc')}</p>
                     <div className="flex flex-wrap gap-2">
                       {sd.map((s, i) => (
                         <div key={i} className="bg-dark-700/60 rounded-lg px-3 py-2 text-sm">
@@ -526,7 +525,7 @@ const Trim = () => {
                         onClick={() => openDryWeightForm(a)}
                         className="mt-1 px-4 py-2 bg-blue-600/80 text-white rounded-lg text-sm font-medium hover:bg-blue-500 transition"
                       >
-                        Внести сухой вес
+                        {t('trim.enterDryWeight')}
                       </button>
                     )}
                   </div>
@@ -537,14 +536,14 @@ const Trim = () => {
                 {/* ════════════════════════════════════════════ */}
                 {hasDryForm && (
                   <div className="space-y-2 bg-dark-900/50 rounded-lg p-3 border border-dark-600">
-                    <p className="text-sm text-white font-medium">Сухой вес по сортам (после претрима в машине)</p>
+                    <p className="text-sm text-white font-medium">{t('trim.dryWeightByStrains')}</p>
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="text-dark-500 text-xs">
-                          <th className="text-left py-1 pr-2">Сорт</th>
-                          <th className="text-right py-1 px-1 w-24">Мокрый</th>
-                          <th className="text-right py-1 px-1 w-24">Сухой</th>
-                          <th className="text-right py-1 pl-1 w-20">Усушка</th>
+                          <th className="text-left py-1 pr-2">{t('common.strain')}</th>
+                          <th className="text-right py-1 px-1 w-24">{t('trim.wet')}</th>
+                          <th className="text-right py-1 px-1 w-24">{t('trim.dry')}</th>
+                          <th className="text-right py-1 pl-1 w-20">{t('trim.shrinkage')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -584,7 +583,7 @@ const Trim = () => {
                         onClick={() => closeDryWeightForm(a._id)}
                         className="px-3 py-1.5 text-dark-400 hover:text-white text-sm rounded"
                       >
-                        Отмена
+                        {t('common.cancel')}
                       </button>
                       <button
                         type="button"
@@ -592,7 +591,7 @@ const Trim = () => {
                         disabled={!!dryWeightSaving[a._id]}
                         className="px-4 py-1.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-500 disabled:opacity-50 ml-auto"
                       >
-                        {dryWeightSaving[a._id] ? 'Сохранение...' : 'Сохранить сухой вес'}
+                        {dryWeightSaving[a._id] ? t('common.saving') : t('trim.saveDryWeight')}
                       </button>
                     </div>
                   </div>
@@ -607,7 +606,7 @@ const Trim = () => {
                     {m.dry > 0 && (
                       <div>
                         <div className="flex justify-between text-xs mb-1">
-                          <span className="text-dark-400">Потримлено</span>
+                          <span className="text-dark-400">{t('trim.trimmed')}</span>
                           <span className="text-dark-300">
                             <span className="text-green-400 font-medium">{fmt(m.trim, 0)}г</span>
                             <span className="text-dark-500"> / {fmt(m.dry, 0)}г</span>
@@ -628,11 +627,11 @@ const Trim = () => {
                         <table className="w-full text-xs">
                           <thead>
                             <tr className="text-dark-500">
-                              <th className="text-left py-1 pr-1">Сорт</th>
-                              <th className="text-right py-1 px-1">Сухой</th>
-                              <th className="text-right py-1 px-1">Потримлено</th>
-                              <th className="text-right py-1 px-1">Попкорн</th>
-                              <th className="text-right py-1 pl-1">Остаток</th>
+                              <th className="text-left py-1 pr-1">{t('common.strain')}</th>
+                              <th className="text-right py-1 px-1">{t('trim.dry')}</th>
+                              <th className="text-right py-1 px-1">{t('trim.trimmed')}</th>
+                              <th className="text-right py-1 px-1">{t('trim.popcorn')}</th>
+                              <th className="text-right py-1 pl-1">{t('trim.remaining')}</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -668,14 +667,14 @@ const Trim = () => {
                             onChange={e => setInlineStrains(prev => ({ ...prev, [a._id]: e.target.value }))}
                             className="px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-0 flex-shrink"
                           >
-                            <option value="">Сорт</option>
+                            <option value="">{t('common.strain')}</option>
                             {strainsList.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         )}
                         <input
                           type="number"
                           min="1"
-                          placeholder="Вес (г)"
+                          placeholder={t('trim.weightG')}
                           value={inlineWeights[a._id] || ''}
                           onChange={e => setInlineWeights(prev => ({ ...prev, [a._id]: e.target.value }))}
                           onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleInlineLog(a._id); } }}
@@ -687,7 +686,7 @@ const Trim = () => {
                           onClick={() => handleInlineLog(a._id)}
                           className="px-3 py-1.5 bg-green-600/80 text-white rounded-lg hover:bg-green-500 disabled:opacity-40 text-sm font-medium whitespace-nowrap"
                         >
-                          {isSaving ? '...' : 'Записать'}
+                          {isSaving ? '...' : t('trim.record')}
                         </button>
                       </div>
                     )}
@@ -711,12 +710,12 @@ const Trim = () => {
                         onClick={() => openPopcornForm(a)}
                         className="text-xs text-amber-400 hover:text-amber-300"
                       >
-                        + Внести попкорн
+                        + {t('trim.enterPopcorn')}
                       </button>
                     )}
                     {hasPopcornForm && popcornForms[a._id] && (
                       <div className="bg-dark-900/50 rounded-lg p-3 border border-dark-600 space-y-2">
-                        <p className="text-xs text-white font-medium">Попкорн по сортам</p>
+                        <p className="text-xs text-white font-medium">{t('trim.popcornByStrains')}</p>
                         {popcornForms[a._id].map((row, i) => (
                           <div key={i} className="flex items-center gap-2">
                             <span className="text-xs text-dark-400 w-20 truncate">{row.strain}</span>
@@ -739,7 +738,7 @@ const Trim = () => {
                             onClick={() => setPopcornOpen(prev => ({ ...prev, [a._id]: false }))}
                             className="px-3 py-1 text-dark-400 hover:text-white text-xs rounded"
                           >
-                            Отмена
+                            {t('common.cancel')}
                           </button>
                           <button
                             type="button"
@@ -747,7 +746,7 @@ const Trim = () => {
                             disabled={!!popcornSaving[a._id]}
                             className="px-3 py-1 bg-amber-600/80 text-white rounded text-xs font-medium hover:bg-amber-500 disabled:opacity-50 ml-auto"
                           >
-                            {popcornSaving[a._id] ? '...' : 'Сохранить попкорн'}
+                            {popcornSaving[a._id] ? '...' : t('trim.savePopcorn')}
                           </button>
                         </div>
                       </div>
@@ -765,12 +764,12 @@ const Trim = () => {
                       <table className="w-full text-xs">
                         <thead>
                           <tr className="text-dark-500">
-                            <th className="text-left py-1 pr-1">Сорт</th>
-                            <th className="text-right py-1 px-1">Мокрый</th>
-                            <th className="text-right py-1 px-1">Сухой</th>
-                            <th className="text-right py-1 px-1">Потримлено</th>
-                            <th className="text-right py-1 px-1">Попкорн</th>
-                            <th className="text-right py-1 pl-1">Потеря</th>
+                            <th className="text-left py-1 pr-1">{t('common.strain')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.wet')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.dry')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.trimmed')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.popcorn')}</th>
+                            <th className="text-right py-1 pl-1">{t('trim.loss')}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -794,7 +793,7 @@ const Trim = () => {
                           {/* Totals row */}
                           {sd.length > 1 && (
                             <tr className="border-t border-dark-600 font-medium">
-                              <td className="py-1 pr-1 text-dark-200">Итого</td>
+                              <td className="py-1 pr-1 text-dark-200">{t('common.total')}</td>
                               <td className="py-1 px-1 text-right text-cyan-400">{m.wet > 0 ? `${fmt(m.wet, 0)}г` : '—'}</td>
                               <td className="py-1 px-1 text-right text-blue-400">{m.dry > 0 ? `${fmt(m.dry, 0)}г` : '—'}</td>
                               <td className="py-1 px-1 text-right text-green-400">{m.trim > 0 ? `${fmt(m.trim, 0)}г` : '—'}</td>
@@ -816,22 +815,22 @@ const Trim = () => {
                 {(m.wet > 0 || m.dry > 0 || m.trim > 0) && (
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs pt-2 border-t border-dark-700/50">
                     {m.wet > 0 && (
-                      <span><span className="text-dark-500">Мокрый: </span><span className="text-cyan-400">{fmt(m.wet, 0)}г</span></span>
+                      <span><span className="text-dark-500">{t('trim.wet')}: </span><span className="text-cyan-400">{fmt(m.wet, 0)}{t('trim.grams')}</span></span>
                     )}
                     {m.dry > 0 && (
-                      <span><span className="text-dark-500">Сухой: </span><span className="text-blue-400">{fmt(m.dry, 0)}г</span></span>
+                      <span><span className="text-dark-500">{t('trim.dry')}: </span><span className="text-blue-400">{fmt(m.dry, 0)}{t('trim.grams')}</span></span>
                     )}
                     {m.trim > 0 && (
-                      <span><span className="text-dark-500">Потримлено: </span><span className="text-green-400">{fmt(m.trim, 0)}г</span></span>
+                      <span><span className="text-dark-500">{t('trim.trimmed')}: </span><span className="text-green-400">{fmt(m.trim, 0)}{t('trim.grams')}</span></span>
                     )}
                     {m.popcorn > 0 && (
-                      <span><span className="text-dark-500">Попкорн: </span><span className="text-amber-400">{fmt(m.popcorn, 0)}г</span></span>
+                      <span><span className="text-dark-500">{t('trim.popcorn')}: </span><span className="text-amber-400">{fmt(m.popcorn, 0)}{t('trim.grams')}</span></span>
                     )}
                     {m.shrinkage != null && (
-                      <span><span className="text-dark-500">Усушка: </span><span className="text-red-400">{fmt(m.shrinkage, 0)}%</span></span>
+                      <span><span className="text-dark-500">{t('trim.shrinkage')}: </span><span className="text-red-400">{fmt(m.shrinkage, 0)}%</span></span>
                     )}
                     {m.trimLoss != null && (
-                      <span><span className="text-dark-500">Потеря: </span><span className="text-red-400">{fmt(m.trimLoss, 1)}%</span></span>
+                      <span><span className="text-dark-500">{t('trim.loss')}: </span><span className="text-red-400">{fmt(m.trimLoss, 1)}%</span></span>
                     )}
                   </div>
                 )}
@@ -846,7 +845,7 @@ const Trim = () => {
                       onClick={() => toggleLogs(a._id)}
                       className="px-3 py-1.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded text-xs font-medium transition"
                     >
-                      {logsOpen ? 'Свернуть ▴' : 'Все записи ▸'}
+                      {logsOpen ? t('trim.collapse') : t('trim.allRecords')}
                     </button>
                   )}
                   {canEdit && (
@@ -854,7 +853,7 @@ const Trim = () => {
                       type="button"
                       onClick={() => openEditModal(a._id)}
                       className="px-2 py-1.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded text-xs transition"
-                      title="Редактировать данные по сортам"
+                      title={t('trim.editStrainData')}
                     >
                       &#9881;
                     </button>
@@ -865,7 +864,7 @@ const Trim = () => {
                       onClick={() => handleCompleteTrim(a._id)}
                       className="px-3 py-1.5 bg-green-600/80 text-white rounded text-xs hover:bg-green-500 ml-auto font-medium"
                     >
-                      &#10003; Завершить
+                      &#10003; {t('trim.complete')}
                     </button>
                   )}
                 </div>
@@ -876,16 +875,16 @@ const Trim = () => {
                 {logsOpen && (
                   <div className="bg-dark-900 rounded-lg overflow-hidden">
                     {cardLogsLoading ? (
-                      <div className="text-center text-dark-500 py-4 text-sm">Загрузка...</div>
+                      <div className="text-center text-dark-500 py-4 text-sm">{t('common.loading')}</div>
                     ) : cardLogs.length === 0 ? (
-                      <div className="text-center text-dark-500 py-4 text-sm">Нет записей</div>
+                      <div className="text-center text-dark-500 py-4 text-sm">{t('trim.noRecords')}</div>
                     ) : (
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-dark-400 text-xs uppercase">
-                            <th className="px-3 py-2 text-left">Дата</th>
-                            <th className="px-3 py-2 text-left">Сорт</th>
-                            <th className="px-3 py-2 text-right">Вес</th>
+                            <th className="px-3 py-2 text-left">{t('common.date')}</th>
+                            <th className="px-3 py-2 text-left">{t('common.strain')}</th>
+                            <th className="px-3 py-2 text-right">{t('trim.weight')}</th>
                             {canEdit && <th className="px-3 py-2 w-8" />}
                           </tr>
                         </thead>
@@ -927,7 +926,7 @@ const Trim = () => {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-semibold text-white">Данные по сортам</h3>
+              <h3 className="text-lg font-semibold text-white">{t('trim.strainDataTitle')}</h3>
               <button type="button" onClick={() => setEditModal(null)} className="text-dark-400 hover:text-white text-xl">&times;</button>
             </div>
 
@@ -935,10 +934,10 @@ const Trim = () => {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-dark-500 text-xs">
-                    <th className="text-left py-1 pr-2">Сорт</th>
-                    <th className="text-right py-1 px-1 w-20">Мокрый (г)</th>
-                    <th className="text-right py-1 px-1 w-20">Сухой (г)</th>
-                    <th className="text-right py-1 pl-1 w-20">Попкорн (г)</th>
+                    <th className="text-left py-1 pr-2">{t('common.strain')}</th>
+                    <th className="text-right py-1 px-1 w-20">{t('trim.wetG')}</th>
+                    <th className="text-right py-1 px-1 w-20">{t('trim.dryG')}</th>
+                    <th className="text-right py-1 pl-1 w-20">{t('trim.popcornG')}</th>
                     <th className="w-8" />
                   </tr>
                 </thead>
@@ -950,7 +949,7 @@ const Trim = () => {
                           type="text"
                           value={s.strain}
                           onChange={e => setEditStrainData(prev => prev.map((r, j) => j === i ? { ...r, strain: e.target.value } : r))}
-                          placeholder="Сорт"
+                          placeholder={t('common.strain')}
                           className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm"
                         />
                       </td>
@@ -961,7 +960,7 @@ const Trim = () => {
                           readOnly
                           tabIndex={-1}
                           className="w-full px-2 py-1.5 bg-dark-900 border border-dark-700 rounded text-dark-400 text-sm text-right cursor-default"
-                          title="Мокрый вес берётся из данных харвеста"
+                          title={t('trim.wetWeightFromHarvest')}
                         />
                       </td>
                       <td className="py-1 px-1">
@@ -1000,7 +999,7 @@ const Trim = () => {
               onClick={() => setEditStrainData(prev => [...prev, { strain: '', wetWeight: 0, dryWeight: 0, popcornWeight: 0 }])}
               className="text-xs text-primary-400 hover:text-primary-300 mb-4"
             >
-              + Добавить сорт
+              + {t('trim.addStrain')}
             </button>
 
             <div className="flex gap-2 pt-3 border-t border-dark-700">
@@ -1009,7 +1008,7 @@ const Trim = () => {
                 onClick={() => setEditModal(null)}
                 className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg text-sm"
               >
-                Отмена
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
@@ -1017,7 +1016,7 @@ const Trim = () => {
                 disabled={editSaving}
                 className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 text-sm ml-auto"
               >
-                {editSaving ? 'Сохранение...' : 'Сохранить'}
+                {editSaving ? t('common.saving') : t('common.save')}
               </button>
             </div>
           </div>

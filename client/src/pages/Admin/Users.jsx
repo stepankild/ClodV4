@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { userService } from '../../services/userService';
 import UserForm from './UserForm';
 
 const Users = () => {
+  const { t, i18n } = useTranslation();
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -25,7 +27,7 @@ const Users = () => {
       setUsers(usersData);
       setRoles(rolesData);
     } catch (err) {
-      setError('Ошибка загрузки данных');
+      setError(t('admin.loadError'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -48,7 +50,7 @@ const Users = () => {
       setUsers(users.filter(u => u._id !== userId));
       setDeleteConfirm(null);
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка удаления');
+      setError(err.response?.data?.message || t('admin.deleteError'));
     }
   };
 
@@ -81,8 +83,8 @@ const Users = () => {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Пользователи</h1>
-          <p className="text-dark-400 mt-1">Управление пользователями системы</p>
+          <h1 className="text-2xl font-bold text-white">{t('admin.usersTitle')}</h1>
+          <p className="text-dark-400 mt-1">{t('admin.usersSubtitle')}</p>
         </div>
         <button
           onClick={handleCreate}
@@ -91,7 +93,7 @@ const Users = () => {
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
-          <span>Добавить</span>
+          <span>{t('admin.addUser')}</span>
         </button>
       </div>
 
@@ -109,19 +111,19 @@ const Users = () => {
             <thead className="bg-dark-900">
               <tr>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">
-                  Пользователь
+                  {t('admin.userCol')}
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">
-                  Роли
+                  {t('admin.rolesCol')}
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">
-                  Статус
+                  {t('admin.statusCol')}
                 </th>
                 <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">
-                  Дата создания
+                  {t('admin.createdAtCol')}
                 </th>
                 <th className="px-6 py-4 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">
-                  Действия
+                  {t('admin.actionsCol')}
                 </th>
               </tr>
             </thead>
@@ -161,11 +163,11 @@ const Users = () => {
                           : 'bg-red-900/50 text-red-400'
                       }`}
                     >
-                      {user.isActive ? 'Активен' : 'Неактивен'}
+                      {user.isActive ? t('admin.activeStatus') : t('admin.inactiveStatus')}
                     </span>
                   </td>
                   <td className="px-6 py-4 text-sm text-dark-400">
-                    {new Date(user.createdAt).toLocaleDateString('ru-RU')}
+                    {new Date(user.createdAt).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU')}
                   </td>
                   <td className="px-6 py-4">
                     <div className="flex items-center justify-end space-x-2">
@@ -195,7 +197,7 @@ const Users = () => {
 
         {users.length === 0 && (
           <div className="text-center py-12 text-dark-400">
-            Пользователи не найдены
+            {t('admin.noUsersFound')}
           </div>
         )}
       </div>
@@ -218,24 +220,23 @@ const Users = () => {
         <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50">
           <div className="bg-dark-800 rounded-xl p-6 max-w-md w-full mx-4 border border-dark-700">
             <h3 className="text-lg font-semibold text-white mb-2">
-              Удалить пользователя?
+              {t('admin.deleteUserConfirm')}
             </h3>
             <p className="text-dark-400 mb-6">
-              Вы уверены, что хотите удалить пользователя "{deleteConfirm.name}"?
-              Это действие нельзя отменить.
+              {t('admin.deleteUserMessage', { name: deleteConfirm.name })}
             </p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setDeleteConfirm(null)}
                 className="px-4 py-2 text-dark-300 hover:bg-dark-700 rounded-lg transition"
               >
-                Отмена
+                {t('common.cancel')}
               </button>
               <button
                 onClick={() => handleDelete(deleteConfirm._id)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition"
               >
-                Удалить
+                {t('common.delete')}
               </button>
             </div>
           </div>

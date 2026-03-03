@@ -2,6 +2,7 @@ import CloneCut from '../models/CloneCut.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
+import { t } from '../utils/i18n.js';
 
 const normalizeStrains = (strains, legacyStrain, legacyQuantity) => {
   if (Array.isArray(strains) && strains.length > 0) {
@@ -24,7 +25,7 @@ export const getCloneCuts = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get clone cuts error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -37,7 +38,7 @@ export const upsertCloneCut = async (req, res) => {
 
     if (isOrderBatch) {
       if (!cutDate) {
-        return res.status(400).json({ message: 'Укажите дату нарезки (cutDate)' });
+        return res.status(400).json({ message: t('clones.specifyDate', req.lang) });
       }
       const { strains: normalizedStrains, strain: derivedStrain, quantity: derivedQuantity } = normalizeStrains(strains, strain, quantity);
       const doc = new CloneCut({
@@ -56,10 +57,10 @@ export const upsertCloneCut = async (req, res) => {
     }
 
     if (!roomId || !mongoose.Types.ObjectId.isValid(roomId)) {
-      return res.status(400).json({ message: 'Укажите комнату (roomId)' });
+      return res.status(400).json({ message: t('clones.specifyRoom', req.lang) });
     }
     if (!cutDate) {
-      return res.status(400).json({ message: 'Укажите дату нарезки (cutDate)' });
+      return res.status(400).json({ message: t('clones.specifyDate', req.lang) });
     }
     const { strains: normalizedStrains, strain: derivedStrain, quantity: derivedQuantity } = normalizeStrains(strains, strain, quantity);
 
@@ -100,11 +101,11 @@ export const upsertCloneCut = async (req, res) => {
             await CloneCut.collection.dropIndex(idx.name);
           }
         }
-        return res.status(409).json({ message: 'Конфликт ключа. Проблемный индекс удалён — попробуйте снова.' });
+        return res.status(409).json({ message: t('clones.indexConflict', req.lang) });
       } catch (_) {}
-      return res.status(409).json({ message: 'Бэтч для этой комнаты уже существует. Попробуйте ещё раз.' });
+      return res.status(409).json({ message: t('clones.batchConflict', req.lang) });
     }
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -114,7 +115,7 @@ export const updateCloneCut = async (req, res) => {
   try {
     const { cutDate, strain, quantity, strains, isDone, notes } = req.body;
     const doc = await CloneCut.findOne({ _id: req.params.id, ...notDeleted });
-    if (!doc) return res.status(404).json({ message: 'Запись не найдена' });
+    if (!doc) return res.status(404).json({ message: t('clones.notFound', req.lang) });
 
     // Списать остатки (утилизация)
     if (req.body.disposeRemaining === true) {
@@ -122,7 +123,7 @@ export const updateCloneCut = async (req, res) => {
       await createAuditLog(req, { action: 'clone_cut.dispose', entityType: 'CloneCut', entityId: doc._id, details });
       doc.deletedAt = new Date();
       await doc.save();
-      return res.json({ message: 'Остатки списаны' });
+      return res.json({ message: t('clones.remainingDisposed', req.lang) });
     }
 
     if (cutDate !== undefined) doc.cutDate = new Date(cutDate);
@@ -146,7 +147,7 @@ export const updateCloneCut = async (req, res) => {
     res.json(doc);
   } catch (error) {
     console.error('Update clone cut error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -156,16 +157,16 @@ export const updateCloneCut = async (req, res) => {
 export const deleteCloneCut = async (req, res) => {
   try {
     const doc = await CloneCut.findOne({ _id: req.params.id, ...notDeleted });
-    if (!doc) return res.status(404).json({ message: 'Запись не найдена' });
+    if (!doc) return res.status(404).json({ message: t('clones.notFound', req.lang) });
     const id = doc._id;
     const details = { cutDate: doc.cutDate, strain: doc.strain, quantity: doc.quantity, isOrder: !doc.room };
     await createAuditLog(req, { action: 'clone_cut.delete', entityType: 'CloneCut', entityId: id, details });
     doc.deletedAt = new Date();
     await doc.save();
-    res.json({ message: 'Удалено (можно восстановить)' });
+    res.json({ message: t('clones.deleted', req.lang) });
   } catch (error) {
     console.error('Delete clone cut error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -177,7 +178,7 @@ export const getDeletedCloneCuts = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get deleted clone cuts error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -186,7 +187,7 @@ export const getDeletedCloneCuts = async (req, res) => {
 export const restoreCloneCut = async (req, res) => {
   try {
     const doc = await CloneCut.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!doc) return res.status(404).json({ message: 'Запись не найдена или уже восстановлена' });
+    if (!doc) return res.status(404).json({ message: t('clones.notFoundOrRestored', req.lang) });
     doc.deletedAt = null;
     await doc.save();
     await doc.populate('room', 'name roomNumber');
@@ -194,7 +195,6 @@ export const restoreCloneCut = async (req, res) => {
     res.json(doc);
   } catch (error) {
     console.error('Restore clone cut error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
-

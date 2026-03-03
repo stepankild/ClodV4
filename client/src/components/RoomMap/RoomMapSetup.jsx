@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { roomTemplateService } from '../../services/roomTemplateService';
 
 export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
+  const { t } = useTranslation();
   const [customRows, setCustomRows] = useState(
     currentRows && currentRows.length > 0
       ? currentRows.map(r => ({
@@ -10,7 +12,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
           rows: r.rows || 1,
           fillDirection: r.fillDirection || 'topDown'
         }))
-      : [{ name: 'Ряд 1', cols: 4, rows: 1, fillDirection: 'topDown' }]
+      : [{ name: t('roomMap.rowDefault', { num: 1 }), cols: 4, rows: 1, fillDirection: 'topDown' }]
   );
 
   const [templates, setTemplates] = useState([]);
@@ -19,6 +21,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
   const [templateName, setTemplateName] = useState('');
   const [showSaveInput, setShowSaveInput] = useState(false);
   const [templateMsg, setTemplateMsg] = useState('');
+  const [templateMsgIsError, setTemplateMsgIsError] = useState(false);
 
   const totalPositions = customRows.reduce((sum, r) => sum + (r.cols || 1) * (r.rows || 1), 0);
   const diff = totalPositions - (plantsCount || 0);
@@ -40,9 +43,9 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
   };
 
   const handleLoadTemplate = (templateId) => {
-    const t = templates.find(t => t._id === templateId);
-    if (!t) return;
-    const rows = t.customRows.map(r => ({
+    const tpl = templates.find(tpl => tpl._id === templateId);
+    if (!tpl) return;
+    const rows = tpl.customRows.map(r => ({
       name: r.name || '',
       cols: r.cols || 4,
       rows: r.rows || 1,
@@ -61,11 +64,13 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
       });
       setTemplateName('');
       setShowSaveInput(false);
-      setTemplateMsg('Шаблон сохранён!');
+      setTemplateMsg(t('roomMap.templateSaved'));
+      setTemplateMsgIsError(false);
       setTimeout(() => setTemplateMsg(''), 3000);
       await loadTemplates();
     } catch (err) {
-      setTemplateMsg(err.response?.data?.message || 'Ошибка сохранения');
+      setTemplateMsg(err.response?.data?.message || t('roomMap.templateSaveError'));
+      setTemplateMsgIsError(true);
       setTimeout(() => setTemplateMsg(''), 3000);
     } finally {
       setSavingTemplate(false);
@@ -91,7 +96,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
   };
 
   const addRow = () => {
-    setCustomRows(prev => [...prev, { name: `Ряд ${prev.length + 1}`, cols: 4, rows: 1, fillDirection: 'topDown' }]);
+    setCustomRows(prev => [...prev, { name: t('roomMap.rowDefault', { num: prev.length + 1 }), cols: 4, rows: 1, fillDirection: 'topDown' }]);
   };
 
   const removeRow = (idx) => {
@@ -101,7 +106,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
 
   return (
     <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
-      <h3 className="text-white font-semibold text-sm mb-3">Настройка рядов комнаты</h3>
+      <h3 className="text-white font-semibold text-sm mb-3">{t('roomMap.setupTitle')}</h3>
 
       {/* Шаблоны */}
       {(templates.length > 0 || loadingTemplates) && (
@@ -115,26 +120,26 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
             }}
           >
             <option value="" disabled>
-              {loadingTemplates ? 'Загрузка...' : 'Загрузить из шаблона...'}
+              {loadingTemplates ? t('roomMap.loadingTemplates') : t('roomMap.loadFromTemplate')}
             </option>
-            {templates.map(t => {
-              const spots = t.customRows.reduce((s, r) => s + (r.cols || 1) * (r.rows || 1), 0);
+            {templates.map(tpl => {
+              const spots = tpl.customRows.reduce((s, r) => s + (r.cols || 1) * (r.rows || 1), 0);
               return (
-                <option key={t._id} value={t._id}>
-                  {t.name} ({t.customRows.length} рядов, {spots} мест)
+                <option key={tpl._id} value={tpl._id}>
+                  {tpl.name} ({t('roomMap.templateRowsSpots', { rows: tpl.customRows.length, spots })})
                 </option>
               );
             })}
           </select>
           <div className="flex flex-wrap gap-1">
-            {templates.map(t => (
-              <span key={t._id} className="inline-flex items-center gap-1 bg-dark-700/50 rounded px-1.5 py-0.5 text-xs">
-                <span className="text-dark-400">{t.name}</span>
+            {templates.map(tpl => (
+              <span key={tpl._id} className="inline-flex items-center gap-1 bg-dark-700/50 rounded px-1.5 py-0.5 text-xs">
+                <span className="text-dark-400">{tpl.name}</span>
                 <button
                   type="button"
-                  onClick={(e) => handleDeleteTemplate(t._id, e)}
+                  onClick={(e) => handleDeleteTemplate(tpl._id, e)}
                   className="text-dark-600 hover:text-red-400 text-xs leading-none ml-0.5"
-                  title="Удалить шаблон"
+                  title={t('roomMap.deleteTemplate')}
                 >&#10005;</button>
               </span>
             ))}
@@ -152,7 +157,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
                   type="text"
                   value={row.name}
                   onChange={(e) => updateRow(idx, 'name', e.target.value)}
-                  placeholder={`Ряд ${idx + 1}`}
+                  placeholder={t('roomMap.rowDefault', { num: idx + 1 })}
                   className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded-lg px-3 py-1.5 text-white text-sm"
                 />
                 {customRows.length > 1 && (
@@ -160,7 +165,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
                     type="button"
                     onClick={() => removeRow(idx)}
                     className="text-dark-500 hover:text-red-400 text-lg leading-none px-1 shrink-0"
-                    title="Удалить ряд"
+                    title={t('roomMap.deleteRowTitle')}
                   >
                     &#10005;
                   </button>
@@ -176,7 +181,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
                     onChange={(e) => updateRow(idx, 'cols', Math.max(1, Math.min(30, parseInt(e.target.value) || 1)))}
                     className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
                   />
-                  <span className="text-dark-500">по горизонтали</span>
+                  <span className="text-dark-500">{t('roomMap.horizontal')}</span>
                 </div>
                 <span className="text-dark-600">×</span>
                 <div className="flex items-center gap-1">
@@ -188,12 +193,12 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
                     onChange={(e) => updateRow(idx, 'rows', Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
                     className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
                   />
-                  <span className="text-dark-500">по вертикали</span>
+                  <span className="text-dark-500">{t('roomMap.vertical')}</span>
                 </div>
-                <span className="text-dark-400 ml-auto">= <span className="text-white font-medium">{positions}</span> мест</span>
+                <span className="text-dark-400 ml-auto">= <span className="text-white font-medium">{positions}</span> {t('roomMap.spots')}</span>
               </div>
               <div className="flex items-center gap-2 text-xs">
-                <span className="text-dark-500">Нумерация:</span>
+                <span className="text-dark-500">{t('roomMap.numbering')}</span>
                 <button
                   type="button"
                   onClick={() => updateRow(idx, 'fillDirection', row.fillDirection === 'bottomUp' ? 'topDown' : 'bottomUp')}
@@ -203,7 +208,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
                       : 'bg-dark-700 text-dark-400 border border-dark-600'
                   }`}
                 >
-                  {row.fillDirection === 'bottomUp' ? '↑ снизу вверх' : '↓ сверху вниз'}
+                  {row.fillDirection === 'bottomUp' ? t('roomMap.fillBottomUpBtn') : t('roomMap.fillTopDownBtn')}
                 </button>
               </div>
             </div>
@@ -216,16 +221,16 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
         onClick={addRow}
         className="text-sm text-primary-400 hover:text-primary-300 mb-3 block"
       >
-        + Добавить ряд
+        {t('roomMap.addRowBtn')}
       </button>
 
       <div className="text-dark-400 text-xs mb-3">
-        <span className="text-white font-medium">{customRows.length}</span> рядов, <span className="text-white font-medium">{totalPositions}</span> мест всего
+        <span className="text-white font-medium">{customRows.length}</span> {t('roomMap.rowsSummary')}, <span className="text-white font-medium">{totalPositions}</span> {t('roomMap.spotsTotal')}
         {plantsCount > 0 && (
           <>
-            {' '}для <span className="text-primary-400 font-medium">{plantsCount}</span> кустов
-            {diff > 0 && <span className="text-dark-500"> ({diff} свободных)</span>}
-            {diff < 0 && <span className="text-red-400"> (не хватает {Math.abs(diff)} мест!)</span>}
+            {' '}{t('roomMap.forPlants')} <span className="text-primary-400 font-medium">{plantsCount}</span> {t('roomMap.plantsWord')}
+            {diff > 0 && <span className="text-dark-500"> {t('roomMap.freeSpots', { count: diff })}</span>}
+            {diff < 0 && <span className="text-red-400"> {t('roomMap.missingSpots', { count: Math.abs(diff) })}</span>}
           </>
         )}
       </div>
@@ -237,7 +242,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
           onClick={() => onApply(customRows)}
           className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm hover:bg-primary-500 transition"
         >
-          Применить
+          {t('roomMap.apply')}
         </button>
 
         {showSaveInput ? (
@@ -246,7 +251,7 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
               type="text"
               value={templateName}
               onChange={(e) => setTemplateName(e.target.value)}
-              placeholder="Название шаблона"
+              placeholder={t('roomMap.templateNamePlaceholder')}
               className="bg-dark-700 border border-dark-600 rounded-lg px-2 py-1.5 text-white text-sm w-40"
               onKeyDown={(e) => e.key === 'Enter' && handleSaveAsTemplate()}
               autoFocus
@@ -271,14 +276,14 @@ export default function RoomMapSetup({ currentRows, plantsCount, onApply }) {
             onClick={() => setShowSaveInput(true)}
             className="px-3 py-2 text-dark-400 hover:text-dark-200 text-sm transition"
           >
-            Сохранить как шаблон
+            {t('roomMap.saveAsTemplate')}
           </button>
         )}
       </div>
 
       {/* Тост-сообщение */}
       {templateMsg && (
-        <div className={`text-xs mt-2 ${templateMsg.includes('Ошибка') ? 'text-red-400' : 'text-green-400'}`}>
+        <div className={`text-xs mt-2 ${templateMsgIsError ? 'text-red-400' : 'text-green-400'}`}>
           {templateMsg}
         </div>
       )}

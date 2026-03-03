@@ -1,33 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { harvestService } from '../../services/harvestService';
-
-const formatDate = (date) => {
-  if (!date) return '';
-  return new Date(date).toLocaleDateString('ru-RU', {
-    day: '2-digit', month: '2-digit', year: '2-digit'
-  });
-};
-
-const formatTime = (date) => {
-  if (!date) return '';
-  return new Date(date).toLocaleTimeString('ru-RU', {
-    hour: '2-digit', minute: '2-digit'
-  });
-};
-
-const formatDuration = (ms) => {
-  if (!ms || ms <= 0) return '';
-  const totalMin = Math.round(ms / 60000);
-  if (totalMin < 60) return `${totalMin}мин`;
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return m > 0 ? `${h}ч ${m}мин` : `${h}ч`;
-};
 
 const formatWeight = (g) => {
   if (g == null || !Number.isFinite(g) || g <= 0) return '';
-  if (g >= 1000) return `${(g / 1000).toFixed(1)}кг`;
-  return `${Math.round(g)}г`;
+  if (g >= 1000) return `${(g / 1000).toFixed(1)}kg`;
+  return `${Math.round(g)}g`;
 };
 
 function computeMetrics(session) {
@@ -83,10 +61,36 @@ function computeMetrics(session) {
 }
 
 const HarvestHistory = () => {
+  const { t, i18n } = useTranslation();
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [collapsed, setCollapsed] = useState(false);
+
+  const formatDate = (date) => {
+    if (!date) return '';
+    const locale = i18n.language === 'en' ? 'en-US' : 'ru-RU';
+    return new Date(date).toLocaleDateString(locale, {
+      day: '2-digit', month: '2-digit', year: '2-digit'
+    });
+  };
+
+  const formatTime = (date) => {
+    if (!date) return '';
+    const locale = i18n.language === 'en' ? 'en-US' : 'ru-RU';
+    return new Date(date).toLocaleTimeString(locale, {
+      hour: '2-digit', minute: '2-digit'
+    });
+  };
+
+  const formatDuration = (ms) => {
+    if (!ms || ms <= 0) return '';
+    const totalMin = Math.round(ms / 60000);
+    if (totalMin < 60) return `${totalMin}min`;
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
+    return m > 0 ? `${h}h ${m}min` : `${h}h`;
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -113,9 +117,9 @@ const HarvestHistory = () => {
       <div className="mt-6">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-lg">📦</span>
-          <h2 className="text-lg font-semibold text-white">Архив сборов</h2>
+          <h2 className="text-lg font-semibold text-white">{t('harvestHistory.title')}</h2>
         </div>
-        <div className="text-dark-500 text-sm py-4 text-center">Загрузка...</div>
+        <div className="text-dark-500 text-sm py-4 text-center">{t('common.loading')}</div>
       </div>
     );
   }
@@ -125,9 +129,9 @@ const HarvestHistory = () => {
       <div className="mt-6">
         <div className="flex items-center gap-2 mb-3">
           <span className="text-lg">📦</span>
-          <h2 className="text-lg font-semibold text-white">Архив сборов</h2>
+          <h2 className="text-lg font-semibold text-white">{t('harvestHistory.title')}</h2>
         </div>
-        <div className="text-dark-500 text-sm py-4 text-center">Нет завершённых сборов</div>
+        <div className="text-dark-500 text-sm py-4 text-center">{t('harvestHistory.noSessions')}</div>
       </div>
     );
   }
@@ -141,7 +145,7 @@ const HarvestHistory = () => {
       >
         <span className="text-lg">📦</span>
         <h2 className="text-lg font-semibold text-white group-hover:text-primary-400 transition-colors">
-          Архив сборов
+          {t('harvestHistory.title')}
         </h2>
         <span className="text-dark-500 text-sm">({sessionsWithMetrics.length})</span>
         <svg
@@ -168,7 +172,7 @@ const HarvestHistory = () => {
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-white font-medium text-sm truncate">
-                        {s.roomName || `Комната ${s.roomNumber}`}
+                        {s.roomName || `${t('harvest.room')} ${s.roomNumber}`}
                       </span>
                       {s.cycleName && (
                         <span className="text-dark-400 text-xs truncate">
@@ -198,18 +202,18 @@ const HarvestHistory = () => {
                       </span>
                     )}
                     <span className="text-dark-400">
-                      {m.count} <span className="text-dark-600">кустов</span>
+                      {m.count} <span className="text-dark-600">{t('harvestHistory.plantsUnit')}</span>
                     </span>
                     {m.plantsPerMin > 0 && (
                       <span className="text-blue-400">
-                        {m.plantsPerMin.toFixed(1)}<span className="text-dark-600">/мин</span>
+                        {m.plantsPerMin.toFixed(1)}<span className="text-dark-600">{t('harvestHistory.perMin')}</span>
                       </span>
                     )}
                     <span className="text-primary-400 font-medium">
                       {formatWeight(m.totalWet)}
                     </span>
                     <span className="text-dark-400">
-                      {m.avgWeight}<span className="text-dark-600">г/куст</span>
+                      {m.avgWeight}<span className="text-dark-600">{t('harvest.perPlant')}</span>
                     </span>
                   </div>
                 </button>
@@ -220,16 +224,16 @@ const HarvestHistory = () => {
                     {/* Strain breakdown */}
                     {m.strains.length > 0 && (
                       <div className="mt-2.5">
-                        <div className="text-dark-500 text-xs mb-1.5 font-medium">Разбивка по сортам</div>
+                        <div className="text-dark-500 text-xs mb-1.5 font-medium">{t('harvestHistory.strainBreakdown')}</div>
                         <div className="overflow-x-auto">
                           <table className="w-full text-xs">
                             <thead>
                               <tr className="text-dark-500 border-b border-dark-700/50">
-                                <th className="text-left py-1 pr-3 font-medium">Сорт</th>
-                                <th className="text-right py-1 px-2 font-medium">Кустов</th>
-                                <th className="text-right py-1 px-2 font-medium">Общий</th>
-                                <th className="text-right py-1 px-2 font-medium">Ср. вес</th>
-                                <th className="text-right py-1 pl-2 font-medium">%</th>
+                                <th className="text-left py-1 pr-3 font-medium">{t('harvestHistory.strainCol')}</th>
+                                <th className="text-right py-1 px-2 font-medium">{t('harvestHistory.plantsCol')}</th>
+                                <th className="text-right py-1 px-2 font-medium">{t('harvestHistory.totalCol')}</th>
+                                <th className="text-right py-1 px-2 font-medium">{t('harvestHistory.avgCol')}</th>
+                                <th className="text-right py-1 pl-2 font-medium">{t('harvestHistory.pctCol')}</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -238,7 +242,7 @@ const HarvestHistory = () => {
                                   <td className="py-1 pr-3 text-white truncate max-w-[120px]">{st.strain || '—'}</td>
                                   <td className="py-1 px-2 text-right text-dark-400">{st.count}</td>
                                   <td className="py-1 px-2 text-right text-primary-400">{formatWeight(st.totalWet)}</td>
-                                  <td className="py-1 px-2 text-right text-dark-300">{st.avgWeight}г</td>
+                                  <td className="py-1 px-2 text-right text-dark-300">{st.avgWeight}{t('common.grams')}</td>
                                   <td className="py-1 pl-2 text-right text-dark-500">{st.pct}%</td>
                                 </tr>
                               ))}
@@ -251,22 +255,22 @@ const HarvestHistory = () => {
                     {/* Additional info */}
                     <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
                       <span className="text-dark-400">
-                        <span className="text-dark-600">Мин: </span>
-                        <span className="text-dark-300">{m.minWeight}г</span>
+                        <span className="text-dark-600">{t('harvestHistory.minLabel')}</span>
+                        <span className="text-dark-300">{m.minWeight}{t('common.grams')}</span>
                       </span>
                       <span className="text-dark-400">
-                        <span className="text-dark-600">Макс: </span>
-                        <span className="text-dark-300">{m.maxWeight}г</span>
+                        <span className="text-dark-600">{t('harvestHistory.maxLabel')}</span>
+                        <span className="text-dark-300">{m.maxWeight}{t('common.grams')}</span>
                       </span>
                       {m.collectors.length > 0 && (
                         <span className="text-dark-400">
-                          <span className="text-dark-600">Сборщики: </span>
+                          <span className="text-dark-600">{t('harvestHistory.collectors')}</span>
                           <span className="text-dark-300">{m.collectors.join(', ')}</span>
                         </span>
                       )}
                       {m.errorCount > 0 && (
                         <span className="text-amber-400">
-                          <span className="text-dark-600">Ошибки: </span>
+                          <span className="text-dark-600">{t('harvestHistory.errors')}</span>
                           {m.errorCount}
                         </span>
                       )}

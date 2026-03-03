@@ -1,18 +1,17 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { archiveService } from '../../services/archiveService';
 import { roomService } from '../../services/roomService';
 
-const formatDate = (date) => {
+const formatDate = (date, locale) => {
   if (!date) return '—';
-  return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  return new Date(date).toLocaleDateString(locale === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
 };
 
-const formatNum = (n) => (n != null && Number.isFinite(n) ? Number(n).toLocaleString('ru-RU') : '—');
-const formatG = (n) => (n != null && Number.isFinite(n) && n > 0 ? `${Number(n).toLocaleString('ru-RU')}г` : '—');
+const formatNum = (n, locale) => (n != null && Number.isFinite(n) ? Number(n).toLocaleString(locale === 'en' ? 'en-US' : 'ru-RU') : '—');
+const formatG = (n, locale) => (n != null && Number.isFinite(n) && n > 0 ? `${Number(n).toLocaleString(locale === 'en' ? 'en-US' : 'ru-RU')}${locale === 'en' ? 'g' : 'г'}` : '—');
 const pct = (a, b) => (a > 0 && b > 0 ? ((a / b) * 100).toFixed(1) : null);
-
-const MONTH_NAMES = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
 
 /* ── Helpers ── */
 const daysBetween = (a, b) => {
@@ -35,10 +34,12 @@ const QualityDot = ({ quality }) => {
 };
 
 /* ── Timeline bar for a single archive ── */
-const TimelineBar = ({ archive }) => {
+const TimelineBar = ({ archive, t, i18n }) => {
   const a = archive;
   const clone = a.cloneData || {};
   const veg = a.vegData || {};
+  const lang = i18n.language;
+  const MONTH_NAMES = t('archive.monthNames', { returnObjects: true });
 
   // Collect phase dates
   const cutDate = clone.cutDate ? new Date(clone.cutDate) : null;
@@ -72,25 +73,25 @@ const TimelineBar = ({ archive }) => {
   if (cutDate && (vegStart || flowerStart)) {
     const end = vegStart || flowerStart;
     const d = daysBetween(cutDate, end);
-    phases.push({ key: 'clone', ...pctOf(cutDate, end), color: 'bg-purple-500', label: 'Клоны', days: d });
+    phases.push({ key: 'clone', ...pctOf(cutDate, end), color: 'bg-purple-500', label: t('archive.phaseClones'), days: d });
   }
 
   // Veg phase
   if (vegStart && flowerStart) {
     const d = daysBetween(vegStart, flowerStart);
-    phases.push({ key: 'veg', ...pctOf(vegStart, flowerStart), color: 'bg-green-500', label: 'Вега', days: d });
+    phases.push({ key: 'veg', ...pctOf(vegStart, flowerStart), color: 'bg-green-500', label: t('archive.phaseVeg'), days: d });
   }
 
   // Flower phase
   if (flowerStart && harvestDate) {
     const d = daysBetween(flowerStart, harvestDate);
-    phases.push({ key: 'flower', ...pctOf(flowerStart, harvestDate), color: 'bg-yellow-500', label: 'Цвет', days: d });
+    phases.push({ key: 'flower', ...pctOf(flowerStart, harvestDate), color: 'bg-yellow-500', label: t('archive.phaseFlower'), days: d });
   }
 
   // Drying + trim (harvest to trim end)
   if (harvestDate && trimEnd && trimEnd > harvestDate) {
     const d = daysBetween(harvestDate, trimEnd);
-    phases.push({ key: 'dry', ...pctOf(harvestDate, trimEnd), color: 'bg-orange-500', label: 'Сушка/Трим', days: d });
+    phases.push({ key: 'dry', ...pctOf(harvestDate, trimEnd), color: 'bg-orange-500', label: t('archive.phaseDryTrim'), days: d });
   }
 
   const totalDays = daysBetween(timelineStart, timelineEnd);
@@ -104,7 +105,7 @@ const TimelineBar = ({ archive }) => {
             key={p.key}
             className={`absolute top-0 h-full ${p.color} opacity-80`}
             style={{ left: `${p.left}%`, width: `${p.width}%` }}
-            title={`${p.label}: ${p.days || '?'} дн`}
+            title={t('archive.phaseDaysTitle', { label: p.label, days: p.days || '?' })}
           />
         ))}
       </div>
@@ -113,11 +114,11 @@ const TimelineBar = ({ archive }) => {
         {phases.map((p) => (
           <span key={p.key} className="flex items-center gap-1 text-[10px] text-dark-400">
             <span className={`w-2 h-2 rounded-sm ${p.color}`} />
-            {p.label} {p.days != null ? `${p.days}дн` : ''}
+            {p.label} {p.days != null ? t('archive.phaseDaysLabel', { days: p.days }) : ''}
           </span>
         ))}
         {totalDays != null && (
-          <span className="text-[10px] text-dark-500 ml-auto">Всего: {totalDays} дн</span>
+          <span className="text-[10px] text-dark-500 ml-auto">{t('archive.totalDays', { days: totalDays })}</span>
         )}
       </div>
     </div>
@@ -128,6 +129,7 @@ const TimelineBar = ({ archive }) => {
 /*              MAIN PAGE              */
 /* ═══════════════════════════════════ */
 export default function Archives() {
+  const { t, i18n } = useTranslation();
   const [data, setData] = useState({ archives: [], total: 0 });
   const [stats, setStats] = useState(null);
   const [rooms, setRooms] = useState([]);
@@ -142,6 +144,9 @@ export default function Archives() {
   const [sortOrder, setSortOrder] = useState('desc');
   const [showStats, setShowStats] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
+
+  const lang = i18n.language;
+  const MONTH_NAMES = t('archive.monthNames', { returnObjects: true });
 
   const load = async () => {
     try {
@@ -190,7 +195,7 @@ export default function Archives() {
 
       setData({ archives, total: archives.length });
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Ошибка загрузки архива');
+      setError(err.response?.data?.message || err.message || t('archive.loadError'));
       setData({ archives: [], total: 0 });
     } finally {
       setLoading(false);
@@ -213,22 +218,22 @@ export default function Archives() {
   }, []);
 
   const archives = data.archives;
-  const t = stats?.total || {};
-  const shrinkagePct = pct(t.totalDryWeight, t.totalWetWeight);
+  const st = stats?.total || {};
+  const shrinkagePct = pct(st.totalDryWeight, st.totalWetWeight);
 
   return (
     <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
       {/* ─── Header ─── */}
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-white">Архив циклов</h1>
-          <p className="text-dark-500 text-xs mt-0.5">{data.total} завершённых циклов</p>
+          <h1 className="text-xl font-bold text-white">{t('archive.title')}</h1>
+          <p className="text-dark-500 text-xs mt-0.5">{t('archive.completedCycles', { count: data.total })}</p>
         </div>
         <button
           onClick={() => setShowStats(!showStats)}
           className="px-3 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-dark-400 hover:text-white text-sm transition"
         >
-          {showStats ? 'Скрыть статистику' : 'Статистика'}
+          {showStats ? t('archive.hideStats') : t('archive.showStats')}
         </button>
       </div>
 
@@ -237,20 +242,20 @@ export default function Archives() {
         <div className="mb-5 space-y-4">
           {/* Summary cards */}
           <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-8 gap-2">
-            <StatCard label="Циклов" value={t.totalCycles || 0} />
-            <StatCard label="Растений" value={formatNum(t.totalPlants)} />
-            <StatCard label="Сухой вес" value={formatG(t.totalDryWeight)} color="text-green-400" />
-            <StatCard label="Сырой вес" value={formatG(t.totalWetWeight)} color="text-blue-400" />
-            <StatCard label="Ср. г/куст" value={formatNum(Math.round(t.avgGramsPerPlant || 0))} color="text-primary-400" />
-            <StatCard label="Ср. цикл" value={`${Math.round(t.avgDaysFlowering || 0)}дн`} />
-            {shrinkagePct && <StatCard label="Усушка" value={`${shrinkagePct}%`} color="text-red-400" />}
-            {t.avgGramsPerWatt > 0 && <StatCard label="г/ватт" value={(t.avgGramsPerWatt).toFixed(2)} color="text-amber-400" />}
+            <StatCard label={t('archive.cycles')} value={st.totalCycles || 0} />
+            <StatCard label={t('archive.plantsLabel')} value={formatNum(st.totalPlants, lang)} />
+            <StatCard label={t('archive.dryWeight')} value={formatG(st.totalDryWeight, lang)} color="text-green-400" />
+            <StatCard label={t('archive.wetWeight')} value={formatG(st.totalWetWeight, lang)} color="text-blue-400" />
+            <StatCard label={t('archive.avgGPerPlant')} value={formatNum(Math.round(st.avgGramsPerPlant || 0), lang)} color="text-primary-400" />
+            <StatCard label={t('archive.avgCycle')} value={t('archive.avgCycleDays', { days: Math.round(st.avgDaysFlowering || 0) })} />
+            {shrinkagePct && <StatCard label={t('archive.shrinkage')} value={t('archive.shrinkagePct', { pct: shrinkagePct })} color="text-red-400" />}
+            {st.avgGramsPerWatt > 0 && <StatCard label={t('archive.gramsPerWatt')} value={(st.avgGramsPerWatt).toFixed(2)} color="text-amber-400" />}
           </div>
 
           {/* Top strains */}
           {stats?.byStrain?.length > 0 && (
             <div className="bg-dark-800 rounded-lg border border-dark-700 p-3">
-              <div className="text-dark-400 text-xs font-medium mb-2">Топ сортов</div>
+              <div className="text-dark-400 text-xs font-medium mb-2">{t('archive.topStrains')}</div>
               <div className="flex flex-wrap gap-1.5">
                 {stats.byStrain.slice(0, 8).map((s, i) => (
                   <button
@@ -263,7 +268,7 @@ export default function Archives() {
                     }`}
                   >
                     <span className="font-medium">{s._id || 'N/A'}</span>
-                    <span className="text-dark-500 ml-1.5">{formatG(s.totalWeight)} · {s.cycles}ц</span>
+                    <span className="text-dark-500 ml-1.5">{formatG(s.totalWeight, lang)} · {s.cycles}{lang === 'en' ? 'c' : 'ц'}</span>
                   </button>
                 ))}
               </div>
@@ -275,24 +280,24 @@ export default function Archives() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {stats.byRoom?.length > 0 && (
                 <div className="bg-dark-800 rounded-lg border border-dark-700 overflow-hidden">
-                  <div className="text-dark-400 text-xs font-medium px-3 py-2 border-b border-dark-700">По комнатам</div>
+                  <div className="text-dark-400 text-xs font-medium px-3 py-2 border-b border-dark-700">{t('archive.byRooms')}</div>
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-dark-600">
-                        <th className="px-3 py-1.5 text-left font-normal">Комната</th>
-                        <th className="px-2 py-1.5 text-right font-normal">Ц</th>
-                        <th className="px-2 py-1.5 text-right font-normal">Вес</th>
-                        <th className="px-2 py-1.5 text-right font-normal">Ср.</th>
-                        <th className="px-2 py-1.5 text-right font-normal">Дн</th>
+                        <th className="px-3 py-1.5 text-left font-normal">{t('archive.roomCol')}</th>
+                        <th className="px-2 py-1.5 text-right font-normal">{t('archive.cyclesCol')}</th>
+                        <th className="px-2 py-1.5 text-right font-normal">{t('archive.weightCol')}</th>
+                        <th className="px-2 py-1.5 text-right font-normal">{t('archive.avgCol')}</th>
+                        <th className="px-2 py-1.5 text-right font-normal">{t('archive.daysCol')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-dark-700/50">
                       {stats.byRoom.map((r, i) => (
                         <tr key={i} className="hover:bg-dark-700/30">
-                          <td className="px-3 py-1.5 text-white">К{r._id}</td>
+                          <td className="px-3 py-1.5 text-white">{t('archive.roomPrefix', { num: r._id })}</td>
                           <td className="px-2 py-1.5 text-right text-dark-400">{r.cycles}</td>
-                          <td className="px-2 py-1.5 text-right text-green-400">{formatG(r.totalWeight)}</td>
-                          <td className="px-2 py-1.5 text-right text-dark-300">{formatG(Math.round(r.avgWeight || 0))}</td>
+                          <td className="px-2 py-1.5 text-right text-green-400">{formatG(r.totalWeight, lang)}</td>
+                          <td className="px-2 py-1.5 text-right text-dark-300">{formatG(Math.round(r.avgWeight || 0), lang)}</td>
                           <td className="px-2 py-1.5 text-right text-dark-500">{Math.round(r.avgDays || 0)}</td>
                         </tr>
                       ))}
@@ -303,14 +308,14 @@ export default function Archives() {
 
               {stats.byMonth?.length > 0 && (
                 <div className="bg-dark-800 rounded-lg border border-dark-700 overflow-hidden">
-                  <div className="text-dark-400 text-xs font-medium px-3 py-2 border-b border-dark-700">По месяцам</div>
+                  <div className="text-dark-400 text-xs font-medium px-3 py-2 border-b border-dark-700">{t('archive.byMonths')}</div>
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-dark-600">
-                        <th className="px-3 py-1.5 text-left font-normal">Месяц</th>
-                        <th className="px-2 py-1.5 text-right font-normal">Ц</th>
-                        <th className="px-2 py-1.5 text-right font-normal">Вес</th>
-                        <th className="px-2 py-1.5 text-right font-normal">г/к</th>
+                        <th className="px-3 py-1.5 text-left font-normal">{t('archive.monthCol')}</th>
+                        <th className="px-2 py-1.5 text-right font-normal">{t('archive.cyclesCol')}</th>
+                        <th className="px-2 py-1.5 text-right font-normal">{t('archive.weightCol')}</th>
+                        <th className="px-2 py-1.5 text-right font-normal">{t('archive.gPerPlantCol')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-dark-700/50">
@@ -318,8 +323,8 @@ export default function Archives() {
                         <tr key={i} className="hover:bg-dark-700/30">
                           <td className="px-3 py-1.5 text-white">{MONTH_NAMES[(m._id?.month || 1) - 1]} {m._id?.year}</td>
                           <td className="px-2 py-1.5 text-right text-dark-400">{m.cycles}</td>
-                          <td className="px-2 py-1.5 text-right text-green-400">{formatG(m.totalWeight)}</td>
-                          <td className="px-2 py-1.5 text-right text-primary-400">{formatNum(Math.round(m.avgGramsPerPlant || 0))}</td>
+                          <td className="px-2 py-1.5 text-right text-green-400">{formatG(m.totalWeight, lang)}</td>
+                          <td className="px-2 py-1.5 text-right text-primary-400">{formatNum(Math.round(m.avgGramsPerPlant || 0), lang)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -334,24 +339,24 @@ export default function Archives() {
       {/* ─── Filters ─── */}
       <div className="mb-4 flex flex-wrap items-end gap-2">
         <div>
-          <label className="block text-dark-500 text-[10px] mb-0.5">Комната</label>
+          <label className="block text-dark-500 text-[10px] mb-0.5">{t('archive.roomFilter')}</label>
           <select
             value={roomId}
             onChange={(e) => setRoomId(e.target.value)}
             className="bg-dark-800 border border-dark-700 rounded-lg px-2.5 py-1.5 text-white text-sm min-w-[120px]"
           >
-            <option value="">Все</option>
+            <option value="">{t('archive.allRooms')}</option>
             {rooms.map((r) => (
-              <option key={r._id} value={r._id}>{r.name || `Комната ${r.roomNumber}`}</option>
+              <option key={r._id} value={r._id}>{r.name || `${t('archive.room')} ${r.roomNumber}`}</option>
             ))}
           </select>
         </div>
 
         <div>
-          <label className="block text-dark-500 text-[10px] mb-0.5">Сорт</label>
+          <label className="block text-dark-500 text-[10px] mb-0.5">{t('archive.strainFilter')}</label>
           <input
             type="text"
-            placeholder="Поиск..."
+            placeholder={t('archive.searchPlaceholder')}
             value={strain}
             onChange={(e) => setStrain(e.target.value)}
             className="bg-dark-800 border border-dark-700 rounded-lg px-2.5 py-1.5 text-white text-sm w-28"
@@ -359,39 +364,39 @@ export default function Archives() {
         </div>
 
         <div>
-          <label className="block text-dark-500 text-[10px] mb-0.5">Период</label>
+          <label className="block text-dark-500 text-[10px] mb-0.5">{t('archive.periodFilter')}</label>
           <select
             value={period}
             onChange={(e) => setPeriod(e.target.value)}
             className="bg-dark-800 border border-dark-700 rounded-lg px-2.5 py-1.5 text-white text-sm"
           >
-            <option value="all">Все</option>
-            <option value="year">Год</option>
-            <option value="6months">6 мес</option>
-            <option value="3months">3 мес</option>
-            <option value="month">Месяц</option>
+            <option value="all">{t('archive.periodAll')}</option>
+            <option value="year">{t('archive.periodYear')}</option>
+            <option value="6months">{t('archive.period6months')}</option>
+            <option value="3months">{t('archive.period3months')}</option>
+            <option value="month">{t('archive.periodMonth')}</option>
           </select>
         </div>
 
         <div>
-          <label className="block text-dark-500 text-[10px] mb-0.5">Сортировка</label>
+          <label className="block text-dark-500 text-[10px] mb-0.5">{t('archive.sortLabel')}</label>
           <select
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
             className="bg-dark-800 border border-dark-700 rounded-lg px-2.5 py-1.5 text-white text-sm"
           >
-            <option value="harvestDate">Дата</option>
-            <option value="dryWeight">Вес</option>
-            <option value="gramsPerPlant">г/куст</option>
-            <option value="actualDays">Дни</option>
-            <option value="shrinkage">Усушка</option>
+            <option value="harvestDate">{t('archive.sortDate')}</option>
+            <option value="dryWeight">{t('archive.sortWeight')}</option>
+            <option value="gramsPerPlant">{t('archive.sortGPerPlant')}</option>
+            <option value="actualDays">{t('archive.sortDays')}</option>
+            <option value="shrinkage">{t('archive.sortShrinkage')}</option>
           </select>
         </div>
 
         <button
           onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
           className="px-2 py-1.5 bg-dark-800 border border-dark-700 rounded-lg text-dark-400 hover:text-white text-sm transition"
-          title="Порядок сортировки"
+          title={t('archive.sortOrderTitle')}
         >
           {sortOrder === 'desc' ? '↓' : '↑'}
         </button>
@@ -401,7 +406,7 @@ export default function Archives() {
             onClick={() => { setRoomId(''); setStrain(''); setPeriod('all'); }}
             className="px-2.5 py-1.5 text-dark-500 hover:text-white text-sm"
           >
-            Сбросить
+            {t('archive.resetFilters')}
           </button>
         )}
       </div>
@@ -419,7 +424,7 @@ export default function Archives() {
       ) : archives.length === 0 ? (
         <div className="text-center py-16 bg-dark-800/50 rounded-xl border border-dark-700">
           <div className="text-4xl mb-3">📦</div>
-          <p className="text-dark-400">Нет завершённых циклов</p>
+          <p className="text-dark-400">{t('archive.noCompletedCycles')}</p>
         </div>
       ) : (
         /* ─── Archive Cards ─── */
@@ -444,7 +449,7 @@ export default function Archives() {
                   {/* Room + strain */}
                   <div className="min-w-[110px] shrink-0">
                     <div className="text-white text-sm font-medium leading-tight">
-                      {a.roomName || `К${a.roomNumber}`}
+                      {a.roomName || `${t('archive.roomPrefix', { num: a.roomNumber })}`}
                     </div>
                     <div className="text-dark-400 text-xs leading-tight truncate max-w-[140px]">
                       {a.strain || '—'}
@@ -454,39 +459,39 @@ export default function Archives() {
 
                   {/* Date range */}
                   <div className="min-w-[85px] shrink-0 text-center">
-                    <div className="text-dark-400 text-xs">{formatDate(a.startDate)}</div>
-                    <div className="text-dark-500 text-[10px]">{formatDate(a.harvestDate)}</div>
+                    <div className="text-dark-400 text-xs">{formatDate(a.startDate, lang)}</div>
+                    <div className="text-dark-500 text-[10px]">{formatDate(a.harvestDate, lang)}</div>
                   </div>
 
                   {/* Days */}
                   <div className="min-w-[40px] text-center shrink-0">
                     <div className="text-dark-300 text-sm font-medium">{a.actualDays || '—'}</div>
-                    <div className="text-dark-600 text-[10px]">дн</div>
+                    <div className="text-dark-600 text-[10px]">{t('archive.daysShort')}</div>
                   </div>
 
                   {/* Plants */}
                   <div className="min-w-[35px] text-center shrink-0">
                     <div className="text-dark-300 text-sm">{a.plantsCount || '—'}</div>
-                    <div className="text-dark-600 text-[10px]">куст</div>
+                    <div className="text-dark-600 text-[10px]">{t('archive.plantsShort')}</div>
                   </div>
 
                   {/* Weights */}
                   <div className="flex items-center gap-3 min-w-[180px] shrink-0">
                     <div className="text-center">
-                      <div className="text-blue-400 text-sm">{formatG(wet)}</div>
-                      <div className="text-dark-600 text-[10px]">сырой</div>
+                      <div className="text-blue-400 text-sm">{formatG(wet, lang)}</div>
+                      <div className="text-dark-600 text-[10px]">{t('archive.wet')}</div>
                     </div>
                     <div className="text-dark-700">→</div>
                     <div className="text-center">
-                      <div className="text-green-400 text-sm font-medium">{formatG(dry)}</div>
-                      <div className="text-dark-600 text-[10px]">сухой</div>
+                      <div className="text-green-400 text-sm font-medium">{formatG(dry, lang)}</div>
+                      <div className="text-dark-600 text-[10px]">{t('archive.dry')}</div>
                     </div>
                     {trim > 0 && (
                       <>
                         <div className="text-dark-700">+</div>
                         <div className="text-center">
-                          <div className="text-orange-400 text-xs">{formatG(trim)}</div>
-                          <div className="text-dark-600 text-[10px]">трим</div>
+                          <div className="text-orange-400 text-xs">{formatG(trim, lang)}</div>
+                          <div className="text-dark-600 text-[10px]">{t('archive.trimLabel')}</div>
                         </div>
                       </>
                     )}
@@ -496,20 +501,20 @@ export default function Archives() {
                   <div className="flex items-center gap-3 flex-1 min-w-0">
                     {gpp > 0 && (
                       <div className="text-center">
-                        <div className="text-primary-400 text-sm font-medium">{formatNum(gpp)}</div>
-                        <div className="text-dark-600 text-[10px]">г/к</div>
+                        <div className="text-primary-400 text-sm font-medium">{formatNum(gpp, lang)}</div>
+                        <div className="text-dark-600 text-[10px]">{t('archive.gPerPlantShort')}</div>
                       </div>
                     )}
                     {shrink && (
                       <div className="text-center">
                         <div className="text-dark-400 text-xs">{shrink}%</div>
-                        <div className="text-dark-600 text-[10px]">усуш</div>
+                        <div className="text-dark-600 text-[10px]">{t('archive.shrinkageShort')}</div>
                       </div>
                     )}
                     {gpw > 0 && (
                       <div className="text-center hidden sm:block">
                         <div className="text-amber-400 text-xs">{gpw.toFixed(2)}</div>
-                        <div className="text-dark-600 text-[10px]">г/вт</div>
+                        <div className="text-dark-600 text-[10px]">{t('archive.gPerWattShort')}</div>
                       </div>
                     )}
                   </div>
@@ -522,7 +527,7 @@ export default function Archives() {
                       onClick={(e) => e.stopPropagation()}
                       className="px-2.5 py-1 bg-primary-600/20 border border-primary-500/30 text-primary-400 hover:bg-primary-600/30 hover:text-primary-300 rounded-md text-xs font-medium transition"
                     >
-                      Подробнее
+                      {t('archive.viewDetails')}
                     </Link>
                     <svg
                       className={`w-4 h-4 text-dark-600 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
@@ -539,43 +544,43 @@ export default function Archives() {
                     <div className="pt-3">
                       {/* Timeline phases text */}
                       <div className="mb-3">
-                        <TimelinePhases archive={a} />
+                        <TimelinePhases archive={a} t={t} i18n={i18n} />
                       </div>
 
                       {/* Visual timeline bar */}
-                      <TimelineBar archive={a} />
+                      <TimelineBar archive={a} t={t} i18n={i18n} />
 
                       {/* Extra info */}
                       <div className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs">
                         {a.cycleName && (
-                          <span className="text-dark-500">Цикл: <span className="text-dark-300">{a.cycleName}</span></span>
+                          <span className="text-dark-500">{t('archive.cycleName')}: <span className="text-dark-300">{a.cycleName}</span></span>
                         )}
                         {a.environment?.medium && (
-                          <span className="text-dark-500">Субстрат: <span className="text-dark-300">
-                            {{ soil: 'Земля', coco: 'Кокос', hydro: 'Гидро', aero: 'Аэро' }[a.environment.medium] || a.environment.medium}
+                          <span className="text-dark-500">{t('archive.medium')}: <span className="text-dark-300">
+                            {{ soil: t('archive.mediumSoil'), coco: t('archive.mediumCoco'), hydro: t('archive.mediumHydro'), aero: t('archive.mediumAero') }[a.environment.medium] || a.environment.medium}
                           </span></span>
                         )}
                         {a.lighting?.totalWatts > 0 && (
-                          <span className="text-dark-500">Свет: <span className="text-dark-300">{a.lighting.totalWatts}W</span></span>
+                          <span className="text-dark-500">{t('archive.lightLabel')}: <span className="text-dark-300">{t('archive.lightWatts', { watts: a.lighting.totalWatts })}</span></span>
                         )}
                         {a.squareMeters > 0 && (
-                          <span className="text-dark-500">Площадь: <span className="text-dark-300">{a.squareMeters}м²</span></span>
+                          <span className="text-dark-500">{t('archive.areaLabel')}: <span className="text-dark-300">{t('archive.areaSqM', { area: a.squareMeters })}</span></span>
                         )}
                         {a.trimLogEntries > 0 && (
-                          <span className="text-dark-500">Трим записей: <span className="text-dark-300">{a.trimLogEntries}</span></span>
+                          <span className="text-dark-500">{t('archive.trimEntries')}: <span className="text-dark-300">{a.trimLogEntries}</span></span>
                         )}
                       </div>
 
                       {/* Strain data breakdown */}
                       {Array.isArray(a.strainData) && a.strainData.length > 1 && (
                         <div className="mt-3">
-                          <div className="text-dark-500 text-[10px] mb-1">По сортам:</div>
+                          <div className="text-dark-500 text-[10px] mb-1">{t('archive.byStrains')}</div>
                           <div className="flex flex-wrap gap-2">
                             {a.strainData.map((sd, i) => (
                               <div key={i} className="bg-dark-700/50 rounded px-2 py-1 text-xs">
                                 <span className="text-white font-medium">{sd.strain}</span>
-                                {sd.dryWeight > 0 && <span className="text-green-400 ml-1.5">{sd.dryWeight}г</span>}
-                                {sd.wetWeight > 0 && <span className="text-dark-500 ml-1">({sd.wetWeight}г сыр)</span>}
+                                {sd.dryWeight > 0 && <span className="text-green-400 ml-1.5">{sd.dryWeight}{lang === 'en' ? 'g' : 'г'}</span>}
+                                {sd.wetWeight > 0 && <span className="text-dark-500 ml-1">({sd.wetWeight}{lang === 'en' ? 'g' : 'г'} {t('archive.wetAbbr')})</span>}
                               </div>
                             ))}
                           </div>
@@ -588,7 +593,7 @@ export default function Archives() {
                           to={`/archive/${a._id}`}
                           className="inline-flex items-center gap-1 px-3 py-1.5 bg-primary-600/20 border border-primary-500/30 text-primary-400 hover:bg-primary-600/30 hover:text-primary-300 rounded-lg text-xs font-medium transition"
                         >
-                          Открыть полный отчёт →
+                          {t('archive.openFullReport')}
                         </Link>
                       </div>
                     </div>
@@ -601,17 +606,18 @@ export default function Archives() {
       )}
 
       {!loading && data.total > 0 && (
-        <p className="mt-3 text-dark-500 text-xs">Показано: {archives.length} из {data.total}</p>
+        <p className="mt-3 text-dark-500 text-xs">{t('archive.shown', { shown: archives.length, total: data.total })}</p>
       )}
     </div>
   );
 }
 
 /* ── Timeline text phases ── */
-function TimelinePhases({ archive }) {
+function TimelinePhases({ archive, t, i18n }) {
   const a = archive;
   const clone = a.cloneData || {};
   const veg = a.vegData || {};
+  const lang = i18n.language;
 
   const phases = [];
 
@@ -621,10 +627,10 @@ function TimelinePhases({ archive }) {
     const daysToVeg = daysBetween(clone.cutDate, veg.transplantedToVegAt);
     phases.push({
       icon: '✂️',
-      label: 'Клоны',
-      date: formatDate(clone.cutDate),
-      info: `${qty} шт`,
-      days: daysToVeg != null ? `${daysToVeg} дн` : null,
+      label: t('archive.phaseClones'),
+      date: formatDate(clone.cutDate, lang),
+      info: t('archive.phaseCloneInfo', { qty }),
+      days: daysToVeg != null ? t('archive.phaseDaysInfo', { days: daysToVeg }) : null,
       color: 'text-purple-400'
     });
   }
@@ -634,9 +640,9 @@ function TimelinePhases({ archive }) {
     const daysInVeg = veg.vegDaysActual || daysBetween(veg.transplantedToVegAt, veg.transplantedToFlowerAt);
     phases.push({
       icon: '🌱',
-      label: 'Вега',
-      date: formatDate(veg.transplantedToVegAt),
-      info: daysInVeg != null ? `${daysInVeg} дн` : null,
+      label: t('archive.phaseVeg'),
+      date: formatDate(veg.transplantedToVegAt, lang),
+      info: daysInVeg != null ? t('archive.phaseDaysInfo', { days: daysInVeg }) : null,
       days: null,
       color: 'text-green-400'
     });
@@ -647,9 +653,9 @@ function TimelinePhases({ archive }) {
   if (flowerStart) {
     phases.push({
       icon: '🌸',
-      label: 'Цветение',
-      date: formatDate(flowerStart),
-      info: a.actualDays ? `${a.actualDays} дн` : null,
+      label: t('archive.phaseFlowering'),
+      date: formatDate(flowerStart, lang),
+      info: a.actualDays ? t('archive.phaseDaysInfo', { days: a.actualDays }) : null,
       days: null,
       color: 'text-yellow-400'
     });
@@ -660,9 +666,9 @@ function TimelinePhases({ archive }) {
     const dryingDays = daysBetween(a.harvestDate, a.firstTrimDate || a.trimCompletedAt);
     phases.push({
       icon: '🌿',
-      label: 'Харвест',
-      date: formatDate(a.harvestDate),
-      info: a.harvestData?.wetWeight ? `${formatG(a.harvestData.wetWeight)} сыр` : null,
+      label: t('archive.phaseHarvest'),
+      date: formatDate(a.harvestDate, lang),
+      info: a.harvestData?.wetWeight ? t('archive.phaseWetInfo', { weight: formatG(a.harvestData.wetWeight, lang) }) : null,
       days: null,
       color: 'text-primary-400'
     });
@@ -671,9 +677,9 @@ function TimelinePhases({ archive }) {
     if (dryingDays != null && dryingDays > 0) {
       phases.push({
         icon: '🏜️',
-        label: 'Сушка',
+        label: t('archive.phaseDrying'),
         date: '',
-        info: `~${dryingDays} дн`,
+        info: t('archive.phaseDryingInfo', { days: dryingDays }),
         days: null,
         color: 'text-orange-400'
       });
@@ -686,9 +692,9 @@ function TimelinePhases({ archive }) {
     const trimW = a.trimLogWeight || a.harvestData?.trimWeight || 0;
     phases.push({
       icon: '✂️',
-      label: 'Трим',
-      date: a.firstTrimDate ? formatDate(a.firstTrimDate) : '',
-      info: trimW > 0 ? formatG(trimW) : (trimDays != null ? `${trimDays} дн` : null),
+      label: t('archive.phaseTrim'),
+      date: a.firstTrimDate ? formatDate(a.firstTrimDate, lang) : '',
+      info: trimW > 0 ? formatG(trimW, lang) : (trimDays != null ? t('archive.phaseDaysInfo', { days: trimDays }) : null),
       days: null,
       color: 'text-amber-400'
     });
@@ -698,9 +704,9 @@ function TimelinePhases({ archive }) {
   if (a.trimStatus === 'completed') {
     phases.push({
       icon: '✅',
-      label: 'Готово',
-      date: a.trimCompletedAt ? formatDate(a.trimCompletedAt) : '',
-      info: a.harvestData?.dryWeight ? `${formatG(a.harvestData.dryWeight)} итого` : null,
+      label: t('archive.phaseDone'),
+      date: a.trimCompletedAt ? formatDate(a.trimCompletedAt, lang) : '',
+      info: a.harvestData?.dryWeight ? t('archive.phaseTotalInfo', { weight: formatG(a.harvestData.dryWeight, lang) }) : null,
       days: null,
       color: 'text-green-400'
     });

@@ -3,6 +3,7 @@ import Role from '../models/Role.js';
 import Permission from '../models/Permission.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get all users
 // @route   GET /api/users
@@ -16,7 +17,7 @@ export const getUsers = async (req, res) => {
     res.json(users);
   } catch (error) {
     console.error('Get users error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -29,13 +30,13 @@ export const getUser = async (req, res) => {
       .populate('roles', 'name description');
 
     if (!user) {
-      return res.status(404).json({ message: 'Пользователь не найден' });
+      return res.status(404).json({ message: t('users.notFound', req.lang) });
     }
 
     res.json(user);
   } catch (error) {
     console.error('Get user error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -47,14 +48,14 @@ export const createUser = async (req, res) => {
 
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'Пользователь с таким email уже существует' });
+      return res.status(400).json({ message: t('users.emailExists', req.lang) });
     }
 
     // Validate roles
     if (roles && roles.length > 0) {
       const validRoles = await Role.find({ _id: { $in: roles } });
       if (validRoles.length !== roles.length) {
-        return res.status(400).json({ message: 'Одна или несколько ролей не найдены' });
+        return res.status(400).json({ message: t('users.rolesNotFound', req.lang) });
       }
     }
 
@@ -74,7 +75,7 @@ export const createUser = async (req, res) => {
     res.status(201).json(populatedUser);
   } catch (error) {
     console.error('Create user error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -86,14 +87,14 @@ export const updateUser = async (req, res) => {
 
     const user = await User.findById(req.params.id);
     if (!user) {
-      return res.status(404).json({ message: 'Пользователь не найден' });
+      return res.status(404).json({ message: t('users.notFound', req.lang) });
     }
 
     // Check email uniqueness
     if (email && email !== user.email) {
       const existingUser = await User.findOne({ email });
       if (existingUser) {
-        return res.status(400).json({ message: 'Пользователь с таким email уже существует' });
+        return res.status(400).json({ message: t('users.emailExists', req.lang) });
       }
     }
 
@@ -101,7 +102,7 @@ export const updateUser = async (req, res) => {
     if (roles && roles.length > 0) {
       const validRoles = await Role.find({ _id: { $in: roles } });
       if (validRoles.length !== roles.length) {
-        return res.status(400).json({ message: 'Одна или несколько ролей не найдены' });
+        return res.status(400).json({ message: t('users.rolesNotFound', req.lang) });
       }
     }
 
@@ -122,7 +123,7 @@ export const updateUser = async (req, res) => {
     res.json(updatedUser);
   } catch (error) {
     console.error('Update user error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -132,7 +133,7 @@ export const approveUser = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) {
-      return res.status(404).json({ message: 'Пользователь не найден' });
+      return res.status(404).json({ message: t('users.notFound', req.lang) });
     }
 
     user.isApproved = true;
@@ -146,7 +147,7 @@ export const approveUser = async (req, res) => {
     res.json(updatedUser);
   } catch (error) {
     console.error('Approve user error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -157,12 +158,12 @@ export const deleteUser = async (req, res) => {
     const user = await User.findById(req.params.id);
 
     if (!user) {
-      return res.status(404).json({ message: 'Пользователь не найден' });
+      return res.status(404).json({ message: t('users.notFound', req.lang) });
     }
 
     // Prevent deleting yourself
     if (user._id.toString() === req.user._id.toString()) {
-      return res.status(400).json({ message: 'Нельзя удалить самого себя' });
+      return res.status(400).json({ message: t('users.cannotDeleteSelf', req.lang) });
     }
 
     const deletedEmail = user.email;
@@ -172,10 +173,10 @@ export const deleteUser = async (req, res) => {
     await user.save();
 
     await createAuditLog(req, { action: 'user.delete', entityType: 'User', entityId: req.params.id, details: { email: deletedEmail, name: deletedName } });
-    res.json({ message: 'Пользователь удалён (можно восстановить)' });
+    res.json({ message: t('users.deleted', req.lang) });
   } catch (error) {
     console.error('Delete user error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -190,7 +191,7 @@ export const getRoles = async (req, res) => {
     res.json(roles);
   } catch (error) {
     console.error('Get roles error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -202,7 +203,7 @@ export const getPermissions = async (req, res) => {
     res.json(permissions);
   } catch (error) {
     console.error('Get permissions error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -214,7 +215,7 @@ export const updateRole = async (req, res) => {
     const role = await Role.findById(req.params.id);
 
     if (!role) {
-      return res.status(404).json({ message: 'Роль не найдена' });
+      return res.status(404).json({ message: t('roles.notFound', req.lang) });
     }
 
     if (name !== undefined && name.trim()) role.name = name.trim();
@@ -223,7 +224,7 @@ export const updateRole = async (req, res) => {
     if (permissionIds !== undefined && Array.isArray(permissionIds)) {
       const valid = await Permission.find({ _id: { $in: permissionIds } });
       if (valid.length !== permissionIds.length) {
-        return res.status(400).json({ message: 'Одна или несколько прав не найдены' });
+        return res.status(400).json({ message: t('roles.permissionsNotFound', req.lang) });
       }
       role.permissions = permissionIds;
     }
@@ -236,7 +237,7 @@ export const updateRole = async (req, res) => {
     res.json(updated);
   } catch (error) {
     console.error('Update role error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -247,19 +248,19 @@ export const createRole = async (req, res) => {
     const { name, description, permissions: permissionIds } = req.body;
 
     if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Укажите название роли' });
+      return res.status(400).json({ message: t('roles.nameRequired', req.lang) });
     }
 
     const existing = await Role.findOne({ name: name.trim() });
     if (existing) {
-      return res.status(400).json({ message: 'Роль с таким названием уже существует' });
+      return res.status(400).json({ message: t('roles.nameExists', req.lang) });
     }
 
     const permissions = Array.isArray(permissionIds) && permissionIds.length > 0
       ? await Permission.find({ _id: { $in: permissionIds } })
       : [];
     if (Array.isArray(permissionIds) && permissionIds.length > 0 && permissions.length !== permissionIds.length) {
-      return res.status(400).json({ message: 'Одна или несколько прав не найдены' });
+      return res.status(400).json({ message: t('roles.permissionsNotFound', req.lang) });
     }
 
     const role = await Role.create({
@@ -276,7 +277,7 @@ export const createRole = async (req, res) => {
     res.status(201).json(populated);
   } catch (error) {
     console.error('Create role error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -287,26 +288,26 @@ export const deleteRole = async (req, res) => {
     const role = await Role.findById(req.params.id);
 
     if (!role) {
-      return res.status(404).json({ message: 'Роль не найдена' });
+      return res.status(404).json({ message: t('roles.notFound', req.lang) });
     }
 
     if (role.isSystem) {
-      return res.status(400).json({ message: 'Системную роль удалить нельзя' });
+      return res.status(400).json({ message: t('roles.cannotDeleteSystem', req.lang) });
     }
 
     const usersWithRole = await User.countDocuments({ roles: role._id });
     if (usersWithRole > 0) {
-      return res.status(400).json({ message: 'Сначала снимите эту роль у всех пользователей' });
+      return res.status(400).json({ message: t('roles.hasUsers', req.lang) });
     }
 
     const roleName = role.name;
     role.deletedAt = new Date();
     await role.save();
     await createAuditLog(req, { action: 'role.delete', entityType: 'Role', entityId: req.params.id, details: { name: roleName } });
-    res.json({ message: 'Роль удалена (можно восстановить)' });
+    res.json({ message: t('roles.deleted', req.lang) });
   } catch (error) {
     console.error('Delete role error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -321,7 +322,7 @@ export const getDeletedUsers = async (req, res) => {
     res.json(users);
   } catch (error) {
     console.error('Get deleted users error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -330,7 +331,7 @@ export const getDeletedUsers = async (req, res) => {
 export const restoreUser = async (req, res) => {
   try {
     const user = await User.findOne({ _id: req.params.id, ...deletedOnly }).select('-password -refreshToken');
-    if (!user) return res.status(404).json({ message: 'Удалённый пользователь не найден' });
+    if (!user) return res.status(404).json({ message: t('users.deletedNotFound', req.lang) });
     user.deletedAt = null;
     user.isActive = true;
     await user.save();
@@ -338,7 +339,7 @@ export const restoreUser = async (req, res) => {
     res.json(user);
   } catch (error) {
     console.error('Restore user error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -352,7 +353,7 @@ export const getDeletedRoles = async (req, res) => {
     res.json(roles);
   } catch (error) {
     console.error('Get deleted roles error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -361,13 +362,13 @@ export const getDeletedRoles = async (req, res) => {
 export const restoreRole = async (req, res) => {
   try {
     const role = await Role.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!role) return res.status(404).json({ message: 'Удалённая роль не найдена' });
+    if (!role) return res.status(404).json({ message: t('roles.deletedNotFound', req.lang) });
     role.deletedAt = null;
     await role.save();
     await createAuditLog(req, { action: 'role.restore', entityType: 'Role', entityId: role._id, details: { name: role.name } });
     res.json(role);
   } catch (error) {
     console.error('Restore role error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

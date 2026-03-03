@@ -4,6 +4,7 @@ import FlowerRoom from '../models/FlowerRoom.js';
 import RoomLog from '../models/RoomLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get treatment records (with filters)
 // @route   GET /api/treatments
@@ -32,7 +33,7 @@ export const getRecords = async (req, res) => {
     res.json(records);
   } catch (error) {
     console.error('Get treatment records error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -42,7 +43,7 @@ export const getCalendar = async (req, res) => {
   try {
     const { from, to } = req.query;
     if (!from || !to) {
-      return res.status(400).json({ message: 'Параметры from и to обязательны' });
+      return res.status(400).json({ message: t('treatments.fromToRequired', req.lang) });
     }
 
     const records = await TreatmentRecord.find({
@@ -62,7 +63,7 @@ export const getCalendar = async (req, res) => {
     res.json(records);
   } catch (error) {
     console.error('Get treatment calendar error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -85,7 +86,7 @@ export const getRoomHistory = async (req, res) => {
     res.json(records);
   } catch (error) {
     console.error('Get room treatment history error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -105,12 +106,12 @@ export const createRecord = async (req, res) => {
     } = req.body;
 
     if (!roomId || !scheduledDate) {
-      return res.status(400).json({ message: 'Комната и дата обязательны' });
+      return res.status(400).json({ message: t('treatments.roomAndDateRequired', req.lang) });
     }
 
     const room = await FlowerRoom.findById(roomId);
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     // Денормализуем данные продукта
@@ -183,7 +184,7 @@ export const createRecord = async (req, res) => {
     res.status(201).json(record);
   } catch (error) {
     console.error('Create treatment record error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -202,7 +203,7 @@ export const updateRecord = async (req, res) => {
 
     const record = await TreatmentRecord.findOne({ _id: req.params.id, ...notDeleted });
     if (!record) {
-      return res.status(404).json({ message: 'Запись обработки не найдена' });
+      return res.status(404).json({ message: t('treatments.notFound', req.lang) });
     }
 
     if (productId !== undefined) {
@@ -239,7 +240,7 @@ export const updateRecord = async (req, res) => {
     res.json(record);
   } catch (error) {
     console.error('Update treatment record error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -249,7 +250,7 @@ export const completeRecord = async (req, res) => {
   try {
     const record = await TreatmentRecord.findOne({ _id: req.params.id, ...notDeleted });
     if (!record) {
-      return res.status(404).json({ message: 'Запись обработки не найдена' });
+      return res.status(404).json({ message: t('treatments.notFound', req.lang) });
     }
 
     const room = await FlowerRoom.findById(record.room);
@@ -293,7 +294,7 @@ export const completeRecord = async (req, res) => {
     res.json(record);
   } catch (error) {
     console.error('Complete treatment record error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -304,7 +305,7 @@ export const skipRecord = async (req, res) => {
     const { notes } = req.body;
     const record = await TreatmentRecord.findOne({ _id: req.params.id, ...notDeleted });
     if (!record) {
-      return res.status(404).json({ message: 'Запись обработки не найдена' });
+      return res.status(404).json({ message: t('treatments.notFound', req.lang) });
     }
 
     record.status = 'skipped';
@@ -324,7 +325,7 @@ export const skipRecord = async (req, res) => {
     res.json(record);
   } catch (error) {
     console.error('Skip treatment record error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -334,7 +335,7 @@ export const deleteRecord = async (req, res) => {
   try {
     const record = await TreatmentRecord.findOne({ _id: req.params.id, ...notDeleted });
     if (!record) {
-      return res.status(404).json({ message: 'Запись обработки не найдена' });
+      return res.status(404).json({ message: t('treatments.notFound', req.lang) });
     }
     record.deletedAt = new Date();
     await record.save();
@@ -344,10 +345,10 @@ export const deleteRecord = async (req, res) => {
       entityId: record._id,
       details: { productName: record.productName }
     });
-    res.json({ message: 'Запись удалена' });
+    res.json({ message: t('treatments.recordDeleted', req.lang) });
   } catch (error) {
     console.error('Delete treatment record error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -365,7 +366,7 @@ export const getDeletedRecords = async (req, res) => {
     res.json(records);
   } catch (error) {
     console.error('Get deleted treatment records error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -375,7 +376,7 @@ export const restoreRecord = async (req, res) => {
   try {
     const record = await TreatmentRecord.findOne({ _id: req.params.id, ...deletedOnly });
     if (!record) {
-      return res.status(404).json({ message: 'Запись не найдена в архиве' });
+      return res.status(404).json({ message: t('treatments.notFoundInArchive', req.lang) });
     }
     record.deletedAt = null;
     await record.save();
@@ -390,6 +391,6 @@ export const restoreRecord = async (req, res) => {
     res.json(record);
   } catch (error) {
     console.error('Restore treatment record error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

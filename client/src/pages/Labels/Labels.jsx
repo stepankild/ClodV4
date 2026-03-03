@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { roomService } from '../../services/roomService';
 import { STRAIN_COLORS } from '../../components/RoomMap/PlantCell';
 
@@ -77,7 +78,7 @@ function renderLogoToDataUrl(size = 64) {
 }
 
 // ── PDF generation ──
-async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, sheetH, perPage, marginLR, marginTB, gap }) {
+async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, sheetH, perPage, marginLR, marginTB, gap }, t) {
   const [{ jsPDF }, { RobotoRegular }, { RobotoBold }, JsBarcodeModule] = await Promise.all([
     import('jspdf'),
     import('../../fonts/Roboto-Regular'),
@@ -161,12 +162,12 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
 
       // ─ 4. Старт — отдельная строка ─
       doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(40, 40, 40);
-      const startStr = `Старт: ${startDateStr}`;
+      const startStr = t('labels.pdfStart', { date: startDateStr });
       doc.text(startStr, textX, curY, { angle: -90 });
       curY += doc.getTextWidth(startStr) + 4;
 
       // ─ 5. Урожай — отдельная строка ─
-      const harvestStr = `Урожай: ${harvestDateStr}`;
+      const harvestStr = t('labels.pdfHarvest', { date: harvestDateStr });
       doc.text(harvestStr, textX, curY, { angle: -90 });
       curY += doc.getTextWidth(harvestStr) + 12;
 
@@ -271,12 +272,12 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
         const pl = `#${plant.number}`;
         doc.text(pl, x + labelW - PAD - doc.getTextWidth(pl), y + PAD + 3.5);
         doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
-        doc.text(`Старт: ${startDateStr}`, x + PAD, y + PAD + 8);
+        doc.text(t('labels.pdfStart', { date: startDateStr }), x + PAD, y + PAD + 8);
         const maxTW = labelW - PAD * 2;
         let st = plant.strain || room.strain || '—';
         if (doc.getTextWidth(st) > maxTW) { while (doc.getTextWidth(st + '...') > maxTW && st.length > 10) st = st.slice(0, -1); st += '...'; }
         doc.text(st, x + PAD, y + PAD + 12);
-        doc.text(`Урожай: ${harvestDateStr}`, x + PAD, y + PAD + 16);
+        doc.text(t('labels.pdfHarvest', { date: harvestDateStr }), x + PAD, y + PAD + 16);
 
         const barcodeW = Math.min(50, labelW * 0.35);
         const barcodeH = Math.max(labelH - 22 - PAD, 8);
@@ -296,6 +297,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
 
 // ── Component ──
 const Labels = () => {
+  const { t } = useTranslation();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -337,7 +339,7 @@ const Labels = () => {
       const data = await roomService.getRooms();
       setRooms(Array.isArray(data) ? data : []);
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Ошибка загрузки');
+      setError(err.response?.data?.message || err.message || t('labels.loadError'));
     } finally { setLoading(false); }
   };
 
@@ -429,8 +431,8 @@ const Labels = () => {
         cols, labelW: layout.labelW, labelH: layout.labelH,
         sheetW, sheetH, perPage: layout.perPage,
         marginLR: layout.marginLR, marginTB: layout.marginTB, gap: layout.gap
-      });
-    } catch (err) { console.error('PDF generation error:', err); setError(`Ошибка генерации PDF: ${err.message || err}`); }
+      }, t);
+    } catch (err) { console.error('PDF generation error:', err); setError(t('labels.pdfError', { message: err.message || err })); }
     finally { setGenerating(false); }
   };
 
@@ -451,25 +453,25 @@ const Labels = () => {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
             </svg>
-            К выбору комнаты
+            {t('labels.backToRoomSelect')}
           </button>
-          <h1 className="text-2xl font-bold text-white">Печать этикеток — {selectedRoom.name}</h1>
+          <h1 className="text-2xl font-bold text-white">{t('labels.printLabelsFor', { name: selectedRoom.name })}</h1>
         </div>
 
         {/* Room info */}
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-4">
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
-            <span className="text-dark-400">Сорт: <span className="text-white">{selectedRoom.strain || selectedRoom.cycleName || '—'}</span></span>
-            <span className="text-dark-400">Старт: <span className="text-white">{formatDateShort(selectedRoom.startDate)}</span></span>
-            <span className="text-dark-400">Урожай: <span className="text-white">{formatDateShort(selectedRoom.expectedHarvestDate)}</span></span>
-            <span className="text-dark-400">Кустов: <span className="text-white">{allPlants.length}</span></span>
+            <span className="text-dark-400">{t('labels.strain')}: <span className="text-white">{selectedRoom.strain || selectedRoom.cycleName || '—'}</span></span>
+            <span className="text-dark-400">{t('labels.start')}: <span className="text-white">{formatDateShort(selectedRoom.startDate)}</span></span>
+            <span className="text-dark-400">{t('labels.harvest')}: <span className="text-white">{formatDateShort(selectedRoom.expectedHarvestDate)}</span></span>
+            <span className="text-dark-400">{t('labels.plantsCount')}: <span className="text-white">{allPlants.length}</span></span>
           </div>
         </div>
 
         {/* Room map visualization */}
         {roomLayout && roomLayout.customRows.length > 0 && (
           <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-4">
-            <div className="text-xs text-dark-400 font-medium mb-3">Карта комнаты — выбор по рядам</div>
+            <div className="text-xs text-dark-400 font-medium mb-3">{t('labels.roomMapSelect')}</div>
             <div className="flex gap-3 overflow-x-auto pb-2">
               {roomLayout.customRows.map((row, rowIdx) => {
                 const cols = row.cols || 1;
@@ -496,7 +498,7 @@ const Labels = () => {
                         {!allRowSelected && someRowSelected && <div className="w-2 h-0.5 bg-primary-500 rounded" />}
                       </div>
                       <span className="text-xs text-dark-400 font-medium whitespace-nowrap group-hover:text-dark-300 transition">
-                        {row.name || `Ряд ${rowIdx + 1}`}
+                        {row.name || t('labels.rowLabel', { num: rowIdx + 1 })}
                       </span>
                       <span className="text-[10px] text-dark-600">({rowPlants.length})</span>
                     </button>
@@ -559,7 +561,7 @@ const Labels = () => {
 
         {/* Label format settings */}
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-4">
-          <div className="text-xs text-dark-400 font-medium mb-3">Настройки печати</div>
+          <div className="text-xs text-dark-400 font-medium mb-3">{t('labels.printSettings')}</div>
 
           {/* Sheet size */}
           <div className="flex flex-wrap gap-2 mb-3">
@@ -576,20 +578,20 @@ const Labels = () => {
                 sheetIdx >= SHEET_SIZES.length
                   ? 'bg-primary-600/30 border-primary-500/50 text-primary-300'
                   : 'bg-dark-700 border-dark-600 text-dark-400 hover:border-dark-500'
-              }`}>Свой размер</button>
+              }`}>{t('labels.customSize')}</button>
           </div>
 
           <div className="flex flex-wrap gap-4 items-end">
             {sheetIdx >= SHEET_SIZES.length && (
               <>
                 <label className="text-xs">
-                  <span className="text-dark-400 block mb-1">Ширина листа (мм)</span>
+                  <span className="text-dark-400 block mb-1">{t('labels.sheetWidth')}</span>
                   <input type="number" min={50} max={500} value={sheetW}
                     onChange={e => setSheetW(Math.max(50, Math.min(500, +e.target.value || 50)))}
                     className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                 </label>
                 <label className="text-xs">
-                  <span className="text-dark-400 block mb-1">Высота листа (мм)</span>
+                  <span className="text-dark-400 block mb-1">{t('labels.sheetHeight')}</span>
                   <input type="number" min={50} max={500} value={sheetH}
                     onChange={e => setSheetH(Math.max(50, Math.min(500, +e.target.value || 50)))}
                     className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
@@ -597,31 +599,31 @@ const Labels = () => {
               </>
             )}
             <label className="text-xs">
-              <span className="text-dark-400 block mb-1">Колонок</span>
+              <span className="text-dark-400 block mb-1">{t('labels.columnsLabel')}</span>
               <input type="number" min={1} max={20} value={cols}
                 onChange={e => setCols(Math.max(1, Math.min(20, +e.target.value || 1)))}
                 className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </label>
             <label className="text-xs">
-              <span className="text-dark-400 block mb-1">Браслетов на лист</span>
+              <span className="text-dark-400 block mb-1">{t('labels.braceletsPerSheet')}</span>
               <input type="number" min={1} max={50} value={countPerSheet}
                 onChange={e => setCountPerSheet(Math.max(1, Math.min(50, +e.target.value || 1)))}
                 className="w-20 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </label>
             <label className="text-xs">
-              <span className="text-dark-400 block mb-1">Отступ Л/П (мм)</span>
+              <span className="text-dark-400 block mb-1">{t('labels.marginLR')}</span>
               <input type="number" min={0} max={50} step={0.5} value={marginLR}
                 onChange={e => setMarginLR(Math.max(0, Math.min(50, +e.target.value || 0)))}
                 className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </label>
             <label className="text-xs">
-              <span className="text-dark-400 block mb-1">Отступ В/Н (мм)</span>
+              <span className="text-dark-400 block mb-1">{t('labels.marginTB')}</span>
               <input type="number" min={0} max={50} step={0.5} value={marginTB}
                 onChange={e => setMarginTB(Math.max(0, Math.min(50, +e.target.value || 0)))}
                 className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
             </label>
             <label className="text-xs">
-              <span className="text-dark-400 block mb-1">Зазор (мм)</span>
+              <span className="text-dark-400 block mb-1">{t('labels.gap')}</span>
               <input type="number" min={0} max={20} step={0.5} value={labelGap}
                 onChange={e => setLabelGap(Math.max(0, Math.min(20, +e.target.value || 0)))}
                 className="w-16 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
@@ -629,11 +631,11 @@ const Labels = () => {
           </div>
 
           <div className="mt-3 text-xs text-dark-500">
-            Размер этикетки: <span className="text-dark-300 font-medium">{layout.labelW}x{layout.labelH} мм</span>
+            {t('labels.labelSize')} <span className="text-dark-300 font-medium">{t('labels.labelDimensions', { w: layout.labelW, h: layout.labelH })}</span>
             <span className="mx-2">|</span>
-            {cols} x {layout.rows} = <span className="text-dark-300 font-medium">{layout.perPage} шт/лист</span>
+            {cols} x {layout.rows} = <span className="text-dark-300 font-medium">{t('labels.perSheet', { count: layout.perPage })}</span>
             {selectedPlants.size > 0 && (
-              <span className="ml-2">= {Math.ceil(selectedPlants.size / layout.perPage)} лист.</span>
+              <span className="ml-2">= {t('labels.sheetsCount', { count: Math.ceil(selectedPlants.size / layout.perPage) })}</span>
             )}
           </div>
         </div>
@@ -641,10 +643,10 @@ const Labels = () => {
         {/* Actions bar */}
         <div className="flex flex-wrap items-center gap-3 mb-4">
           <button onClick={selectAll} className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded-lg text-sm transition">
-            Выбрать все
+            {t('labels.selectAll')}
           </button>
           <button onClick={deselectAll} className="px-3 py-1.5 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded-lg text-sm transition">
-            Снять все
+            {t('labels.deselectAll')}
           </button>
           <div className="flex-1" />
           <button onClick={handlePrint} disabled={selectedPlants.size === 0 || generating}
@@ -656,7 +658,7 @@ const Labels = () => {
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
             </svg>
-            {generating ? 'Генерация...' : `Печать PDF (${selectedPlants.size} шт)`}
+            {generating ? t('labels.generating') : t('labels.printPdfCount', { count: selectedPlants.size })}
           </button>
         </div>
 
@@ -679,7 +681,7 @@ const Labels = () => {
                     {!allSel && someSel && <div className="w-2.5 h-0.5 bg-primary-500 rounded" />}
                   </div>
                   <span className="text-white font-medium">{strain}</span>
-                  <span className="text-dark-500 text-sm">({plants.length} шт, №{plants[0].number}–{plants[plants.length - 1].number})</span>
+                  <span className="text-dark-500 text-sm">({t('labels.pcsCount', { count: plants.length })}, {t('labels.rangeLabel', { from: plants[0].number, to: plants[plants.length - 1].number })})</span>
                 </button>
                 <div className="flex flex-wrap gap-1.5">
                   {plants.map(p => (
@@ -703,19 +705,19 @@ const Labels = () => {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Печать этикеток</h1>
-        <p className="text-dark-400 mt-1 text-sm">Выберите комнату для генерации этикеток со штрихкодами</p>
+        <h1 className="text-2xl font-bold text-white">{t('labels.title')}</h1>
+        <p className="text-dark-400 mt-1 text-sm">{t('labels.subtitle')}</p>
       </div>
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex flex-wrap items-center gap-3">
           <span>{error}</span>
-          <button type="button" onClick={() => { setError(''); loadRooms(); }} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">Повторить</button>
+          <button type="button" onClick={() => { setError(''); loadRooms(); }} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">{t('common.retry')}</button>
         </div>
       )}
       {activeRooms.length === 0 ? (
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-8 text-center">
-          <p className="text-dark-400">Нет активных комнат с пронумерованными кустами</p>
-          <p className="text-dark-500 text-sm mt-1">Запустите цикл и укажите сорта с нумерацией в Активных комнатах</p>
+          <p className="text-dark-400">{t('labels.noActiveRooms')}</p>
+          <p className="text-dark-500 text-sm mt-1">{t('labels.noActiveRoomsHint')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -729,13 +731,13 @@ const Labels = () => {
                   <span className="text-white font-semibold group-hover:text-primary-400 transition">{room.name}</span>
                   <span className="inline-flex items-center gap-1.5 text-xs">
                     <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
-                    <span className="text-primary-400">Цветёт</span>
+                    <span className="text-primary-400">{t('labels.flowering')}</span>
                   </span>
                 </div>
                 <div className="space-y-1 text-sm">
-                  <div className="text-dark-400">Сорт: <span className="text-dark-300">{strainNames.join(', ') || room.strain || '—'}</span></div>
-                  <div className="text-dark-400">Кустов: <span className="text-dark-300">{totalPlants}</span></div>
-                  <div className="text-dark-400">Старт: <span className="text-dark-300">{formatDateShort(room.startDate)}</span></div>
+                  <div className="text-dark-400">{t('labels.strain')}: <span className="text-dark-300">{strainNames.join(', ') || room.strain || '—'}</span></div>
+                  <div className="text-dark-400">{t('labels.plantsCount')}: <span className="text-dark-300">{totalPlants}</span></div>
+                  <div className="text-dark-400">{t('labels.start')}: <span className="text-dark-300">{formatDateShort(room.startDate)}</span></div>
                 </div>
               </button>
             );

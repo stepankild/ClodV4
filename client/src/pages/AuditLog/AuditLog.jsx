@@ -1,186 +1,143 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { auditLogService } from '../../services/auditLogService';
 import { userService } from '../../services/userService';
 
-const formatDate = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
+// Icons and colors for actions (no translation needed)
+const ACTION_META = {
+  'auth.login': { icon: '🔑', color: 'text-green-400' },
+  'auth.logout': { icon: '🚪', color: 'text-dark-400' },
+  'auth.change_password': { icon: '🔐', color: 'text-yellow-400' },
+  'user.create': { icon: '👤', color: 'text-blue-400' },
+  'user.update': { icon: '✏️', color: 'text-yellow-400' },
+  'user.approve': { icon: '✅', color: 'text-green-400' },
+  'user.delete': { icon: '🗑️', color: 'text-red-400' },
+  'user.restore': { icon: '♻️', color: 'text-green-400' },
+  'role.create': { icon: '🛡️', color: 'text-blue-400' },
+  'role.update': { icon: '🛡️', color: 'text-yellow-400' },
+  'role.delete': { icon: '🛡️', color: 'text-red-400' },
+  'role.restore': { icon: '🛡️', color: 'text-green-400' },
+  'room.update': { icon: '🏠', color: 'text-yellow-400' },
+  'room.cycle_start': { icon: '🌱', color: 'text-green-400' },
+  'room.note': { icon: '📝', color: 'text-blue-400' },
+  'room.harvest_reset': { icon: '🏠', color: 'text-orange-400' },
+  'task.create': { icon: '📋', color: 'text-blue-400' },
+  'task.quick_add': { icon: '⚡', color: 'text-blue-400' },
+  'task.complete': { icon: '✅', color: 'text-green-400' },
+  'task.uncomplete': { icon: '↩️', color: 'text-yellow-400' },
+  'task.update': { icon: '📋', color: 'text-yellow-400' },
+  'task.delete': { icon: '🗑️', color: 'text-red-400' },
+  'task.restore': { icon: '♻️', color: 'text-green-400' },
+  'clone_cut.create_order': { icon: '🌿', color: 'text-blue-400' },
+  'clone_cut.create': { icon: '✂️', color: 'text-green-400' },
+  'clone_cut.upsert': { icon: '✂️', color: 'text-green-400' },
+  'clone_cut.update': { icon: '✂️', color: 'text-yellow-400' },
+  'clone_cut.delete': { icon: '🗑️', color: 'text-red-400' },
+  'clone_cut.restore': { icon: '♻️', color: 'text-green-400' },
+  'clone_cut.dispose': { icon: '🗑️', color: 'text-orange-400' },
+  'veg_batch.create': { icon: '🌱', color: 'text-green-400' },
+  'veg_batch.update': { icon: '🌱', color: 'text-yellow-400' },
+  'veg_batch.dispose_remaining': { icon: '🌱', color: 'text-orange-400' },
+  'veg_batch.delete': { icon: '🗑️', color: 'text-red-400' },
+  'veg_batch.restore': { icon: '♻️', color: 'text-green-400' },
+  'harvest.session_start': { icon: '⚖️', color: 'text-blue-400' },
+  'harvest.plant_add': { icon: '🌿', color: 'text-green-400' },
+  'harvest.complete': { icon: '🎉', color: 'text-green-400' },
+  'harvest.archive': { icon: '📦', color: 'text-blue-400' },
+  'trim.log_add': { icon: '✂️', color: 'text-green-400' },
+  'trim.log_delete': { icon: '🗑️', color: 'text-red-400' },
+  'trim.log_restore': { icon: '♻️', color: 'text-green-400' },
+  'trim.archive_update': { icon: '✂️', color: 'text-yellow-400' },
+  'trim.complete': { icon: '✅', color: 'text-green-400' },
+  'archive.update': { icon: '📦', color: 'text-yellow-400' },
+  'archive.delete': { icon: '🗑️', color: 'text-red-400' },
+  'archive.restore': { icon: '♻️', color: 'text-green-400' },
+  'plan.upsert': { icon: '📅', color: 'text-blue-400' },
+  'plan.update': { icon: '📅', color: 'text-yellow-400' },
+  'plan.delete': { icon: '🗑️', color: 'text-red-400' },
+  'plan.restore': { icon: '♻️', color: 'text-green-400' },
+  'roomTemplate.create': { icon: '📐', color: 'text-blue-400' },
+  'roomTemplate.delete': { icon: '🗑️', color: 'text-red-400' },
 };
 
-const formatDateShort = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
-};
-
-const formatDuration = (ms) => {
-  if (!ms || ms < 0) return '—';
-  const totalMin = Math.floor(ms / 60000);
-  if (totalMin < 1) return '< 1м';
-  const days = Math.floor(totalMin / 1440);
-  const hours = Math.floor((totalMin % 1440) / 60);
-  const mins = totalMin % 60;
-  const parts = [];
-  if (days > 0) parts.push(`${days}д`);
-  if (hours > 0) parts.push(`${hours}ч`);
-  if (mins > 0) parts.push(`${mins}м`);
-  return parts.join(' ') || '< 1м';
-};
-
-const timeAgo = (date) => {
-  if (!date) return '—';
-  const diff = Date.now() - new Date(date).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'только что';
-  if (mins < 60) return `${mins} мин назад`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours} ч назад`;
-  const days = Math.floor(hours / 24);
-  return `${days} дн назад`;
-};
-
-// Все действия с описаниями и цветами
-const ACTION_LABELS = {
-  // Авторизация
-  'auth.login': { label: 'Вход в систему', icon: '🔑', color: 'text-green-400' },
-  'auth.logout': { label: 'Выход из системы', icon: '🚪', color: 'text-dark-400' },
-  'auth.change_password': { label: 'Смена пароля', icon: '🔐', color: 'text-yellow-400' },
-
-  // Пользователи
-  'user.create': { label: 'Создан пользователь', icon: '👤', color: 'text-blue-400' },
-  'user.update': { label: 'Изменён пользователь', icon: '✏️', color: 'text-yellow-400' },
-  'user.approve': { label: 'Одобрен пользователь', icon: '✅', color: 'text-green-400' },
-  'user.delete': { label: 'Удалён пользователь', icon: '🗑️', color: 'text-red-400' },
-  'user.restore': { label: 'Восстановлен пользователь', icon: '♻️', color: 'text-green-400' },
-
-  // Роли
-  'role.create': { label: 'Создана роль', icon: '🛡️', color: 'text-blue-400' },
-  'role.update': { label: 'Изменена роль', icon: '🛡️', color: 'text-yellow-400' },
-  'role.delete': { label: 'Удалена роль', icon: '🛡️', color: 'text-red-400' },
-  'role.restore': { label: 'Восстановлена роль', icon: '🛡️', color: 'text-green-400' },
-
-  // Комнаты
-  'room.update': { label: 'Изменена комната', icon: '🏠', color: 'text-yellow-400' },
-  'room.cycle_start': { label: 'Запущен цикл', icon: '🌱', color: 'text-green-400' },
-  'room.note': { label: 'Добавлена заметка', icon: '📝', color: 'text-blue-400' },
-  'room.harvest_reset': { label: 'Комната сброшена (сбор)', icon: '🏠', color: 'text-orange-400' },
-
-  // Задачи
-  'task.create': { label: 'Создана задача', icon: '📋', color: 'text-blue-400' },
-  'task.quick_add': { label: 'Быстрая задача', icon: '⚡', color: 'text-blue-400' },
-  'task.complete': { label: 'Задача выполнена', icon: '✅', color: 'text-green-400' },
-  'task.uncomplete': { label: 'Задача снята', icon: '↩️', color: 'text-yellow-400' },
-  'task.update': { label: 'Изменена задача', icon: '📋', color: 'text-yellow-400' },
-  'task.delete': { label: 'Удалена задача', icon: '🗑️', color: 'text-red-400' },
-  'task.restore': { label: 'Восстановлена задача', icon: '♻️', color: 'text-green-400' },
-
-  // Клоны
-  'clone_cut.create_order': { label: 'Заказ клонов', icon: '🌿', color: 'text-blue-400' },
-  'clone_cut.create': { label: 'Создан бэтч клонов', icon: '✂️', color: 'text-green-400' },
-  'clone_cut.upsert': { label: 'Нарезка клонов', icon: '✂️', color: 'text-green-400' },
-  'clone_cut.update': { label: 'Изменены клоны', icon: '✂️', color: 'text-yellow-400' },
-  'clone_cut.delete': { label: 'Удалены клоны', icon: '🗑️', color: 'text-red-400' },
-  'clone_cut.restore': { label: 'Восстановлены клоны', icon: '♻️', color: 'text-green-400' },
-  'clone_cut.dispose': { label: 'Списаны остатки клонов', icon: '🗑️', color: 'text-orange-400' },
-
-  // Вегетация
-  'veg_batch.create': { label: 'Создан бэтч вегетации', icon: '🌱', color: 'text-green-400' },
-  'veg_batch.update': { label: 'Изменён бэтч', icon: '🌱', color: 'text-yellow-400' },
-  'veg_batch.dispose_remaining': { label: 'Списаны остатки', icon: '🌱', color: 'text-orange-400' },
-  'veg_batch.delete': { label: 'Удалён бэтч', icon: '🗑️', color: 'text-red-400' },
-  'veg_batch.restore': { label: 'Восстановлен бэтч', icon: '♻️', color: 'text-green-400' },
-
-  // Сбор урожая
-  'harvest.session_start': { label: 'Начат сбор урожая', icon: '⚖️', color: 'text-blue-400' },
-  'harvest.plant_add': { label: 'Записан куст', icon: '🌿', color: 'text-green-400' },
-  'harvest.complete': { label: 'Сбор завершён', icon: '🎉', color: 'text-green-400' },
-  'harvest.archive': { label: 'Урожай архивирован', icon: '📦', color: 'text-blue-400' },
-
-  // Трим
-  'trim.log_add': { label: 'Записан трим', icon: '✂️', color: 'text-green-400' },
-  'trim.log_delete': { label: 'Удалён трим', icon: '🗑️', color: 'text-red-400' },
-  'trim.log_restore': { label: 'Восстановлен трим', icon: '♻️', color: 'text-green-400' },
-  'trim.archive_update': { label: 'Обновлён трим-архив', icon: '✂️', color: 'text-yellow-400' },
-  'trim.complete': { label: 'Трим завершён', icon: '✅', color: 'text-green-400' },
-
-  // Архив
-  'archive.update': { label: 'Изменён архив цикла', icon: '📦', color: 'text-yellow-400' },
-  'archive.delete': { label: 'Удалён архив', icon: '🗑️', color: 'text-red-400' },
-  'archive.restore': { label: 'Восстановлен архив', icon: '♻️', color: 'text-green-400' },
-
-  // Планы
-  'plan.upsert': { label: 'План цикла создан', icon: '📅', color: 'text-blue-400' },
-  'plan.update': { label: 'План цикла изменён', icon: '📅', color: 'text-yellow-400' },
-  'plan.delete': { label: 'План цикла удалён', icon: '🗑️', color: 'text-red-400' },
-  'plan.restore': { label: 'План восстановлен', icon: '♻️', color: 'text-green-400' },
-
-  // Шаблоны
-  'roomTemplate.create': { label: 'Создан шаблон', icon: '📐', color: 'text-blue-400' },
-  'roomTemplate.delete': { label: 'Удалён шаблон', icon: '🗑️', color: 'text-red-400' },
-};
-
-// Названия деталей на русском
-const DETAIL_LABELS = {
-  email: 'Email',
-  name: 'Имя',
-  roomName: 'Комната',
-  roomId: 'ID комнаты',
-  cycleName: 'Цикл',
-  strain: 'Сорт',
-  plantsCount: 'Кустов',
-  floweringDays: 'Дней цвет.',
-  title: 'Название',
-  type: 'Тип',
-  note: 'Заметка',
-  quantity: 'Кол-во',
-  cutDate: 'Дата нарезки',
-  isDone: 'Готово',
-  isOrder: 'Заказ',
-  flowerRoom: 'Комната',
-  disposedCount: 'Списано',
-  plantNumber: 'Куст №',
-  wetWeight: 'Сырой вес',
-  dryWeight: 'Сухой вес',
-  popcornWeight: 'Попкорн',
-  trimWeight: 'Вес трима',
-  weight: 'Вес',
-  plantsRecorded: 'Записано',
-  archiveId: 'ID архива',
-  rowCount: 'Рядов',
-  harvestData: 'Данные урожая',
-  isApproved: 'Одобрен'
-};
-
-// Группы действий для фильтра
-const ACTION_GROUPS = [
-  { label: 'Авторизация', options: ['auth.login', 'auth.logout', 'auth.change_password'] },
-  { label: 'Пользователи', options: ['user.create', 'user.update', 'user.approve', 'user.delete', 'user.restore'] },
-  { label: 'Роли', options: ['role.create', 'role.update', 'role.delete', 'role.restore'] },
-  { label: 'Комнаты', options: ['room.update', 'room.cycle_start', 'room.note', 'room.harvest_reset'] },
-  { label: 'Задачи', options: ['task.create', 'task.quick_add', 'task.complete', 'task.uncomplete', 'task.update', 'task.delete', 'task.restore'] },
-  { label: 'Клоны', options: ['clone_cut.create', 'clone_cut.create_order', 'clone_cut.upsert', 'clone_cut.update', 'clone_cut.delete', 'clone_cut.restore', 'clone_cut.dispose'] },
-  { label: 'Вегетация', options: ['veg_batch.create', 'veg_batch.update', 'veg_batch.dispose_remaining', 'veg_batch.delete', 'veg_batch.restore'] },
-  { label: 'Сбор урожая', options: ['harvest.session_start', 'harvest.plant_add', 'harvest.complete', 'harvest.archive'] },
-  { label: 'Трим', options: ['trim.log_add', 'trim.log_delete', 'trim.log_restore', 'trim.archive_update', 'trim.complete'] },
-  { label: 'Архив', options: ['archive.update', 'archive.delete', 'archive.restore'] },
-  { label: 'Планы', options: ['plan.upsert', 'plan.update', 'plan.delete', 'plan.restore'] },
-  { label: 'Шаблоны', options: ['roomTemplate.create', 'roomTemplate.delete'] },
+// Action groups for filter (keys only — labels come from t())
+const ACTION_GROUP_KEYS = [
+  { groupKey: 'auth', options: ['auth.login', 'auth.logout', 'auth.change_password'] },
+  { groupKey: 'users', options: ['user.create', 'user.update', 'user.approve', 'user.delete', 'user.restore'] },
+  { groupKey: 'roles', options: ['role.create', 'role.update', 'role.delete', 'role.restore'] },
+  { groupKey: 'rooms', options: ['room.update', 'room.cycle_start', 'room.note', 'room.harvest_reset'] },
+  { groupKey: 'tasks', options: ['task.create', 'task.quick_add', 'task.complete', 'task.uncomplete', 'task.update', 'task.delete', 'task.restore'] },
+  { groupKey: 'clones', options: ['clone_cut.create', 'clone_cut.create_order', 'clone_cut.upsert', 'clone_cut.update', 'clone_cut.delete', 'clone_cut.restore', 'clone_cut.dispose'] },
+  { groupKey: 'vegetation', options: ['veg_batch.create', 'veg_batch.update', 'veg_batch.dispose_remaining', 'veg_batch.delete', 'veg_batch.restore'] },
+  { groupKey: 'harvest', options: ['harvest.session_start', 'harvest.plant_add', 'harvest.complete', 'harvest.archive'] },
+  { groupKey: 'trim', options: ['trim.log_add', 'trim.log_delete', 'trim.log_restore', 'trim.archive_update', 'trim.complete'] },
+  { groupKey: 'archive', options: ['archive.update', 'archive.delete', 'archive.restore'] },
+  { groupKey: 'plans', options: ['plan.upsert', 'plan.update', 'plan.delete', 'plan.restore'] },
+  { groupKey: 'templates', options: ['roomTemplate.create', 'roomTemplate.delete'] },
 ];
 
 const AuditLog = () => {
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
+
+  const locale = i18n.language === 'en' ? 'en-US' : 'ru-RU';
+
+  const formatDate = (date) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleString(locale, {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+  };
+
+  const formatDateShort = (date) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleString(locale, {
+      day: '2-digit',
+      month: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const formatDuration = (ms) => {
+    if (!ms || ms < 0) return '—';
+    const totalMin = Math.floor(ms / 60000);
+    if (totalMin < 1) return t('audit.lessThan1m');
+    const days = Math.floor(totalMin / 1440);
+    const hours = Math.floor((totalMin % 1440) / 60);
+    const mins = totalMin % 60;
+    const parts = [];
+    if (days > 0) parts.push(`${days}${t('audit.daysShort')}`);
+    if (hours > 0) parts.push(`${hours}${t('audit.hoursShort')}`);
+    if (mins > 0) parts.push(`${mins}${t('audit.minutesShort')}`);
+    return parts.join(' ') || t('audit.lessThan1m');
+  };
+
+  const timeAgo = (date) => {
+    if (!date) return '—';
+    const diff = Date.now() - new Date(date).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return t('audit.justNow');
+    if (mins < 60) return t('audit.minsAgo', { count: mins });
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return t('audit.hoursAgo', { count: hours });
+    const days = Math.floor(hours / 24);
+    return t('audit.daysAgo', { count: days });
+  };
+
+  const getActionLabel = (action) => {
+    return t(`audit.actionLabels.${action}`, { defaultValue: action });
+  };
+
+  const getDetailLabel = (key) => {
+    return t(`audit.detailLabels.${key}`, { defaultValue: key });
+  };
 
   // Tabs
   const [activeTab, setActiveTab] = useState('sessions');
@@ -225,11 +182,11 @@ const AuditLog = () => {
         loginHistory: Array.isArray(data.loginHistory) ? data.loginHistory : []
       });
     } catch (err) {
-      if (!silent) setSessionsError(err.response?.data?.message || err.message || 'Ошибка загрузки сессий');
+      if (!silent) setSessionsError(err.response?.data?.message || err.message || t('audit.sessionsLoadError'));
     } finally {
       if (!silent) setSessionsLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const loadLogs = async () => {
     try {
@@ -244,7 +201,7 @@ const AuditLog = () => {
       setLogs(Array.isArray(data.logs) ? data.logs : []);
       setTotal(data.total ?? 0);
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Ошибка загрузки лога');
+      setError(err.response?.data?.message || err.message || t('audit.logLoadError'));
       setLogs([]);
       setTotal(0);
     } finally {
@@ -260,7 +217,7 @@ const AuditLog = () => {
     if (canRead && activeTab === 'sessions') loadSessions();
   }, [canRead, activeTab, loadSessions]);
 
-  // Авто-рефреш сессий каждые 30 секунд
+  // Auto-refresh sessions every 30 seconds
   useEffect(() => {
     if (!canRead || activeTab !== 'sessions') return;
     const interval = setInterval(() => loadSessions(true), 30_000);
@@ -275,8 +232,8 @@ const AuditLog = () => {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="text-center text-dark-400">
-          <p className="text-lg font-medium">Нет доступа</p>
-          <p className="text-sm mt-1">Нужно право «audit:read».</p>
+          <p className="text-lg font-medium">{t('audit.noAccess')}</p>
+          <p className="text-sm mt-1">{t('audit.needPermission')}</p>
         </div>
       </div>
     );
@@ -284,12 +241,11 @@ const AuditLog = () => {
 
   const totalPages = Math.ceil(total / limit);
 
-  // Фильтрация по тексту (локально по загруженным логам)
+  // Local text filter on loaded logs
   const filteredLogs = search.trim()
     ? logs.filter(log => {
         const s = search.toLowerCase();
-        const actionInfo = ACTION_LABELS[log.action];
-        const actionLabel = actionInfo?.label || log.action;
+        const actionLabel = getActionLabel(log.action);
         const userName = log.user?.name || '';
         const details = log.details ? Object.values(log.details).join(' ') : '';
         return (
@@ -301,7 +257,7 @@ const AuditLog = () => {
       })
     : logs;
 
-  // Рендер деталей
+  // Render details
   const renderDetails = (log) => {
     if (!log.details || Object.keys(log.details).length === 0) return null;
     const entries = Object.entries(log.details).filter(([, v]) => v !== undefined && v !== null && v !== '');
@@ -310,10 +266,10 @@ const AuditLog = () => {
     return (
       <div className="text-xs space-y-0.5">
         {entries.map(([key, value]) => {
-          const label = DETAIL_LABELS[key] || key;
+          const label = getDetailLabel(key);
           let displayValue = value;
-          if (typeof value === 'boolean') displayValue = value ? 'Да' : 'Нет';
-          else if (key.endsWith('Weight') || key === 'weight') displayValue = `${value}г`;
+          if (typeof value === 'boolean') displayValue = value ? t('common.yes') : t('common.no');
+          else if (key.endsWith('Weight') || key === 'weight') displayValue = `${value}${t('common.grams')}`;
           else displayValue = String(value);
           return (
             <div key={key} className="flex gap-1.5">
@@ -331,11 +287,11 @@ const AuditLog = () => {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Лог действий</h1>
-        <p className="text-dark-400 mt-1">Все действия пользователей в системе</p>
+        <h1 className="text-2xl font-bold text-white">{t('audit.title')}</h1>
+        <p className="text-dark-400 mt-1">{t('audit.subtitle')}</p>
       </div>
 
-      {/* Табы */}
+      {/* Tabs */}
       <div className="flex gap-1 mb-6">
         <button
           type="button"
@@ -346,7 +302,7 @@ const AuditLog = () => {
               : 'bg-dark-800 text-dark-400 border border-dark-700 hover:text-white hover:bg-dark-700'
           }`}
         >
-          Сессии
+          {t('audit.sessionsTab')}
         </button>
         <button
           type="button"
@@ -357,17 +313,17 @@ const AuditLog = () => {
               : 'bg-dark-800 text-dark-400 border border-dark-700 hover:text-white hover:bg-dark-700'
           }`}
         >
-          Лог действий
+          {t('audit.logTab')}
         </button>
       </div>
 
-      {/* ===== ВКЛАДКА: СЕССИИ ===== */}
+      {/* ===== TAB: SESSIONS ===== */}
       {activeTab === 'sessions' && (
         <>
           {sessionsError && (
             <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
               <span>{sessionsError}</span>
-              <button type="button" onClick={loadSessions} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">Повторить</button>
+              <button type="button" onClick={loadSessions} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">{t('common.retry')}</button>
             </div>
           )}
 
@@ -377,22 +333,22 @@ const AuditLog = () => {
             </div>
           ) : (
             <>
-              {/* Активные сессии */}
+              {/* Active sessions */}
               <div className="mb-6">
                 <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
                   <span className="relative flex h-3 w-3">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                     <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
                   </span>
-                  Активные сессии ({sessions.activeSessions.length})
+                  {t('audit.activeSessions', { count: sessions.activeSessions.length })}
                   <span className="text-xs text-dark-500 font-normal ml-1">
-                    {sessions.activeSessions.filter(s => s.isOnline).length} онлайн
+                    {t('audit.onlineCount', { count: sessions.activeSessions.filter(s => s.isOnline).length })}
                   </span>
                   <button
                     type="button"
                     onClick={() => loadSessions()}
                     className="ml-auto p-1.5 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition"
-                    title="Обновить"
+                    title={t('audit.refresh')}
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -402,7 +358,7 @@ const AuditLog = () => {
 
                 {sessions.activeSessions.length === 0 ? (
                   <div className="bg-dark-800 rounded-xl border border-dark-700 p-8 text-center text-dark-500">
-                    Нет активных сессий
+                    {t('audit.noActiveSessions')}
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -421,7 +377,7 @@ const AuditLog = () => {
                           </span>
                           <span className="text-white font-medium">{s.name}</span>
                           <span className={`text-xs ml-auto ${s.isOnline ? 'text-green-400' : 'text-yellow-500'}`}>
-                            {s.isOnline ? 'Онлайн' : 'Неактивен'}
+                            {s.isOnline ? t('audit.online') : t('audit.inactive')}
                           </span>
                         </div>
                         {s.isOnline && s.currentPage && (
@@ -432,12 +388,12 @@ const AuditLog = () => {
                         <div className="space-y-1 text-xs">
                           {!s.isOnline && s.lastActivity && (
                             <div className="flex justify-between">
-                              <span className="text-dark-500">Был(а)</span>
+                              <span className="text-dark-500">{t('audit.lastSeen')}</span>
                               <span className="text-yellow-500/80">{timeAgo(s.lastActivity)}</span>
                             </div>
                           )}
                           <div className="flex justify-between">
-                            <span className="text-dark-500">Вход</span>
+                            <span className="text-dark-500">{t('audit.loginTime')}</span>
                             <span className="text-dark-300">{formatDateShort(s.loginAt)}</span>
                           </div>
                           <div className="flex justify-between">
@@ -448,16 +404,16 @@ const AuditLog = () => {
                             </span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-dark-500">Браузер</span>
+                            <span className="text-dark-500">{t('audit.browser')}</span>
                             <span className="text-dark-300">{s.browser} · {s.os}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span className="text-dark-500">Сессия</span>
+                            <span className="text-dark-500">{t('audit.session')}</span>
                             <span className={`font-medium ${s.isOnline ? 'text-green-400' : 'text-dark-300'}`}>{formatDuration(s.duration)}</span>
                           </div>
                           {s.totalTime > 0 && (
                             <div className="flex justify-between">
-                              <span className="text-dark-500">Всего в системе</span>
+                              <span className="text-dark-500">{t('audit.totalInSystem')}</span>
                               <span className="text-primary-400 font-medium">{formatDuration(s.totalTime)}</span>
                             </div>
                           )}
@@ -468,28 +424,28 @@ const AuditLog = () => {
                 )}
               </div>
 
-              {/* История входов */}
+              {/* Login history */}
               <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
                 <div className="px-4 py-3 border-b border-dark-700">
-                  <span className="text-white font-medium text-sm">История входов</span>
+                  <span className="text-white font-medium text-sm">{t('audit.loginHistory')}</span>
                   <span className="text-dark-500 text-sm ml-2">({sessions.loginHistory.length})</span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-dark-900">
                       <tr>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Пользователь</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Вход</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Выход</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Длительность</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">IP</th>
-                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Браузер</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('audit.userCol')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('audit.loginCol')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('audit.logoutCol')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('audit.durationCol')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('audit.ipCol')}</th>
+                        <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('audit.browserCol')}</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-dark-700">
                       {sessions.loginHistory.length === 0 ? (
                         <tr>
-                          <td colSpan={6} className="px-4 py-12 text-center text-dark-500">Нет записей</td>
+                          <td colSpan={6} className="px-4 py-12 text-center text-dark-500">{t('audit.noRecords')}</td>
                         </tr>
                       ) : (
                         sessions.loginHistory.map((h, i) => (
@@ -505,7 +461,7 @@ const AuditLog = () => {
                                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
                                     <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
                                   </span>
-                                  Онлайн
+                                  {t('audit.online')}
                                 </span>
                               ) : (
                                 <span className="text-dark-400">{h.logoutAt ? formatDateShort(h.logoutAt) : '—'}</span>
@@ -531,66 +487,66 @@ const AuditLog = () => {
         </>
       )}
 
-      {/* ===== ВКЛАДКА: ЛОГ ДЕЙСТВИЙ ===== */}
+      {/* ===== TAB: ACTION LOG ===== */}
       {activeTab === 'log' && (
         <>
           {error && (
             <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex items-center gap-3">
               <span>{error}</span>
-              <button type="button" onClick={loadLogs} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">Повторить</button>
+              <button type="button" onClick={loadLogs} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">{t('common.retry')}</button>
             </div>
           )}
 
-          {/* Фильтры */}
+          {/* Filters */}
           <div className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-6">
             <div className="flex flex-wrap items-end gap-3">
               <div className="flex-1 min-w-[200px]">
-                <label className="block text-xs text-dark-500 mb-1">Поиск</label>
+                <label className="block text-xs text-dark-500 mb-1">{t('audit.search')}</label>
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Имя, действие, детали..."
+                  placeholder={t('audit.searchPlaceholder')}
                   className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500"
                 />
               </div>
               <div>
-                <label className="block text-xs text-dark-500 mb-1">Пользователь</label>
+                <label className="block text-xs text-dark-500 mb-1">{t('audit.userFilter')}</label>
                 <select
                   value={filterUserId}
                   onChange={(e) => { setFilterUserId(e.target.value); setPage(1); }}
                   className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[150px]"
                 >
-                  <option value="">Все</option>
+                  <option value="">{t('common.all')}</option>
                   {users.map((u) => (
                     <option key={u._id} value={u._id}>{u.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-dark-500 mb-1">Действие</label>
+                <label className="block text-xs text-dark-500 mb-1">{t('audit.actionFilter')}</label>
                 <select
                   value={filterAction}
                   onChange={(e) => { setFilterAction(e.target.value); setPage(1); }}
                   className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm min-w-[190px]"
                 >
-                  <option value="">Все</option>
-                  {ACTION_GROUPS.map((group) => (
-                    <optgroup key={group.label} label={group.label}>
+                  <option value="">{t('common.all')}</option>
+                  {ACTION_GROUP_KEYS.map((group) => (
+                    <optgroup key={group.groupKey} label={t(`audit.actionGroups.${group.groupKey}`)}>
                       {group.options.map((a) => (
-                        <option key={a} value={a}>{ACTION_LABELS[a]?.label || a}</option>
+                        <option key={a} value={a}>{getActionLabel(a)}</option>
                       ))}
                     </optgroup>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-dark-500 mb-1">С</label>
+                <label className="block text-xs text-dark-500 mb-1">{t('audit.fromDate')}</label>
                 <input type="date" value={filterFrom} onChange={(e) => { setFilterFrom(e.target.value); setPage(1); }}
                   className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-dark-500 mb-1">По</label>
+                <label className="block text-xs text-dark-500 mb-1">{t('audit.toDate')}</label>
                 <input type="date" value={filterTo} onChange={(e) => { setFilterTo(e.target.value); setPage(1); }}
                   className="px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
               </div>
@@ -598,26 +554,26 @@ const AuditLog = () => {
                 <button type="button"
                   onClick={() => { setFilterUserId(''); setFilterAction(''); setFilterFrom(''); setFilterTo(''); setSearch(''); setPage(1); }}
                   className="px-3 py-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg text-sm">
-                  Сбросить
+                  {t('audit.resetFilters')}
                 </button>
               )}
             </div>
           </div>
 
-          {/* Таблица */}
+          {/* Table */}
           <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
             <div className="px-4 py-3 border-b border-dark-700 flex items-center justify-between flex-wrap gap-2">
               <span className="text-dark-400 text-sm">
-                Записей: <span className="text-white font-medium">{total}</span>
+                {t('audit.records')} <span className="text-white font-medium">{total}</span>
                 {search && filteredLogs.length !== logs.length && (
-                  <span className="text-dark-500 ml-2">(показано {filteredLogs.length})</span>
+                  <span className="text-dark-500 ml-2">({t('audit.shown', { count: filteredLogs.length })})</span>
                 )}
               </span>
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">
                   <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
                     className="px-2.5 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">←</button>
-                  <span className="text-dark-400 text-sm">{page} / {totalPages}</span>
+                  <span className="text-dark-400 text-sm">{t('audit.pageOf', { current: page, total: totalPages })}</span>
                   <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
                     className="px-2.5 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">→</button>
                 </div>
@@ -632,22 +588,22 @@ const AuditLog = () => {
                 <table className="w-full text-sm">
                   <thead className="bg-dark-900">
                     <tr>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[155px]">Когда</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[120px]">Кто</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Действие</th>
-                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Детали</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[155px]">{t('audit.whenCol')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider w-[120px]">{t('audit.whoCol')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('audit.actionCol')}</th>
+                      <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('audit.detailsCol')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-dark-700">
                     {filteredLogs.length === 0 ? (
                       <tr>
                         <td colSpan={4} className="px-4 py-12 text-center text-dark-500">
-                          {!hasFilters ? 'Пока нет записей.' : 'Нет записей по фильтрам.'}
+                          {!hasFilters ? t('audit.noRecordsEmpty') : t('audit.noRecordsFiltered')}
                         </td>
                       </tr>
                     ) : (
                       filteredLogs.map((log) => {
-                        const ai = ACTION_LABELS[log.action];
+                        const ai = ACTION_META[log.action];
                         return (
                           <tr key={log._id} className="hover:bg-dark-700/30">
                             <td className="px-4 py-2.5 text-dark-400 whitespace-nowrap text-xs">{formatDate(log.createdAt)}</td>
@@ -657,7 +613,7 @@ const AuditLog = () => {
                             <td className="px-4 py-2.5">
                               <div className="flex items-center gap-1.5">
                                 {ai?.icon && <span className="text-sm">{ai.icon}</span>}
-                                <span className={`font-medium ${ai?.color || 'text-primary-400'}`}>{ai?.label || log.action}</span>
+                                <span className={`font-medium ${ai?.color || 'text-primary-400'}`}>{getActionLabel(log.action)}</span>
                               </div>
                             </td>
                             <td className="px-4 py-2.5 max-w-sm">{renderDetails(log) || <span className="text-dark-600">—</span>}</td>
@@ -672,10 +628,10 @@ const AuditLog = () => {
             {totalPages > 1 && (
               <div className="px-4 py-3 border-t border-dark-700 flex justify-center gap-2">
                 <button type="button" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-                  className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">← Назад</button>
-                <span className="px-3 py-1.5 text-dark-400 text-sm">Стр. {page} из {totalPages}</span>
+                  className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">{t('audit.prev')}</button>
+                <span className="px-3 py-1.5 text-dark-400 text-sm">{t('audit.page', { current: page, total: totalPages })}</span>
                 <button type="button" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page >= totalPages}
-                  className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">Вперёд →</button>
+                  className="px-3 py-1.5 bg-dark-700 text-dark-300 rounded text-sm disabled:opacity-50 hover:bg-dark-600">{t('audit.next')}</button>
               </div>
             )}
           </div>

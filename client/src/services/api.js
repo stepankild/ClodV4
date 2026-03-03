@@ -144,6 +144,11 @@ api.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Send current language for backend i18n
+    const lang = localStorage.getItem('i18nextLng') || 'ru';
+    config.headers['Accept-Language'] = lang;
+
     return config;
   },
   (error) => Promise.reject(error)

@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import { roomService } from '../services/roomService';
 import RoomCard from '../components/FlowerRoom/RoomCard';
 
 const Dashboard = () => {
+  const { t } = useTranslation();
   const { user } = useAuth();
   const [rooms, setRooms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,7 +21,7 @@ const Dashboard = () => {
       const data = await roomService.getRooms();
       setRooms(data);
     } catch (err) {
-      setError('Ошибка загрузки комнат');
+      setError(t('dashboard.loadError'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -45,7 +47,7 @@ const Dashboard = () => {
   };
 
   const handleHarvest = async (id) => {
-    if (!confirm('Вы уверены, что хотите собрать урожай? Данные комнаты будут сброшены.')) {
+    if (!confirm(t('dashboard.harvestConfirm'))) {
       return;
     }
     try {
@@ -65,7 +67,7 @@ const Dashboard = () => {
 
   const statsCards = [
     {
-      title: 'Активных комнат',
+      title: t('dashboard.activeRooms'),
       value: `${activeRooms}/5`,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -75,7 +77,7 @@ const Dashboard = () => {
       color: 'primary'
     },
     {
-      title: 'Всего кустов',
+      title: t('dashboard.totalPlants'),
       value: totalPlants,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -85,7 +87,7 @@ const Dashboard = () => {
       color: 'green'
     },
     {
-      title: 'Средний прогресс',
+      title: t('dashboard.avgProgress'),
       value: `${avgProgress}%`,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -95,7 +97,7 @@ const Dashboard = () => {
       color: 'yellow'
     },
     {
-      title: 'Готовы к сбору',
+      title: t('dashboard.readyToHarvest'),
       value: rooms.filter(r => r.isActive && r.progress >= 100).length,
       icon: (
         <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -126,9 +128,9 @@ const Dashboard = () => {
       {/* Welcome message */}
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-white">
-          Добро пожаловать, {user?.name}!
+          {t('dashboard.welcome', { name: user?.name })}
         </h1>
-        <p className="text-dark-400 mt-1">Обзор ваших комнат цветения</p>
+        <p className="text-dark-400 mt-1">{t('dashboard.subtitle')}</p>
       </div>
 
       {/* Error message */}
@@ -160,7 +162,7 @@ const Dashboard = () => {
 
       {/* Flower rooms header */}
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-white">Комнаты цветения</h2>
+        <h2 className="text-xl font-semibold text-white">{t('dashboard.flowerRooms')}</h2>
         <button
           onClick={loadRooms}
           className="text-dark-400 hover:text-white p-2 hover:bg-dark-800 rounded-lg transition"

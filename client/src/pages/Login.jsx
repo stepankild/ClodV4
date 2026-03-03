@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
 import Logo from '../components/Logo';
 
 const Login = () => {
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -24,7 +26,7 @@ const Login = () => {
       await login(email, password);
       navigate(from, { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка входа');
+      setError(err.response?.data?.message || t('auth.loginError'));
     } finally {
       setLoading(false);
     }
@@ -39,7 +41,7 @@ const Login = () => {
 
       <div className="max-w-md w-full mx-4">
         <div className="bg-dark-900 rounded-2xl shadow-2xl p-8 border border-dark-800">
-          <p className="text-dark-400 text-center mb-6">Войдите в систему</p>
+          <p className="text-dark-400 text-center mb-6">{t('auth.loginTitle')}</p>
 
           {/* Error message */}
           {error && (
@@ -67,7 +69,7 @@ const Login = () => {
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-dark-300 mb-2">
-                Пароль
+                {t('auth.password')}
               </label>
               <input
                 type="password"
@@ -76,7 +78,7 @@ const Login = () => {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="w-full px-4 py-3 bg-dark-800 border border-dark-700 rounded-lg text-white placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-                placeholder="Введите пароль"
+                placeholder={t('auth.enterPassword')}
               />
             </div>
 
@@ -91,17 +93,17 @@ const Login = () => {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                   </svg>
-                  Вход...
+                  {t('auth.loggingIn')}
                 </span>
-              ) : 'Войти'}
+              ) : t('auth.login')}
             </button>
           </form>
 
           <div className="mt-6 text-center">
             <p className="text-dark-400">
-              Нет аккаунта?{' '}
+              {t('auth.noAccount')}{' '}
               <Link to="/register" className="text-primary-400 hover:text-primary-300 font-medium">
-                Зарегистрироваться
+                {t('auth.register')}
               </Link>
             </p>
           </div>

@@ -28,6 +28,7 @@ import trimRoutes from './routes/trim.js';
 import strainRoutes from './routes/strains.js';
 import treatmentProductRoutes from './routes/treatmentProducts.js';
 import treatmentRecordRoutes from './routes/treatmentRecords.js';
+import { detectLanguage } from './middleware/lang.js';
 
 console.log('=== IMPORTS DONE ===');
 
@@ -114,6 +115,9 @@ const authLimiter = rateLimit({
 });
 app.use('/api/auth/login', authLimiter);
 app.use('/api/auth/register', authLimiter);
+
+// Language detection
+app.use('/api', detectLanguage);
 
 // Routes
 app.use('/api/auth', authRoutes);

@@ -1,6 +1,7 @@
 import TreatmentProduct from '../models/TreatmentProduct.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get all products (active)
 // @route   GET /api/treatment-products
@@ -10,7 +11,7 @@ export const getProducts = async (req, res) => {
     res.json(products);
   } catch (error) {
     console.error('Get treatment products error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -20,7 +21,7 @@ export const createProduct = async (req, res) => {
   try {
     const { name, type, activeIngredient, concentration, targetPests, safetyIntervalDays, instructions, notes } = req.body;
     if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Название препарата обязательно' });
+      return res.status(400).json({ message: t('treatments.productNameRequired', req.lang) });
     }
     const trimmed = name.trim();
 
@@ -31,7 +32,7 @@ export const createProduct = async (req, res) => {
       ...notDeleted
     });
     if (existing) {
-      return res.status(400).json({ message: `Препарат «${existing.name}» уже существует` });
+      return res.status(400).json({ message: t('treatments.productAlreadyExists', req.lang, { name: existing.name }) });
     }
 
     // Если soft-deleted с таким именем — восстановить
@@ -74,10 +75,10 @@ export const createProduct = async (req, res) => {
     res.status(201).json(product);
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ message: 'Такой препарат уже существует' });
+      return res.status(400).json({ message: t('treatments.productDuplicate', req.lang) });
     }
     console.error('Create treatment product error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -88,12 +89,12 @@ export const updateProduct = async (req, res) => {
     const { name, type, activeIngredient, concentration, targetPests, safetyIntervalDays, instructions, notes } = req.body;
     const product = await TreatmentProduct.findOne({ _id: req.params.id, ...notDeleted });
     if (!product) {
-      return res.status(404).json({ message: 'Препарат не найден' });
+      return res.status(404).json({ message: t('treatments.productNotFound', req.lang) });
     }
 
     if (name !== undefined) {
       const trimmed = name.trim();
-      if (!trimmed) return res.status(400).json({ message: 'Название препарата обязательно' });
+      if (!trimmed) return res.status(400).json({ message: t('treatments.productNameRequired', req.lang) });
 
       // Проверка дубликата (кроме себя)
       const existing = await TreatmentProduct.findOne({
@@ -102,7 +103,7 @@ export const updateProduct = async (req, res) => {
         ...notDeleted
       });
       if (existing) {
-        return res.status(400).json({ message: `Препарат «${existing.name}» уже существует` });
+        return res.status(400).json({ message: t('treatments.productAlreadyExists', req.lang, { name: existing.name }) });
       }
       product.name = trimmed;
     }
@@ -125,10 +126,10 @@ export const updateProduct = async (req, res) => {
     res.json(product);
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ message: 'Такой препарат уже существует' });
+      return res.status(400).json({ message: t('treatments.productDuplicate', req.lang) });
     }
     console.error('Update treatment product error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -138,7 +139,7 @@ export const deleteProduct = async (req, res) => {
   try {
     const product = await TreatmentProduct.findOne({ _id: req.params.id, ...notDeleted });
     if (!product) {
-      return res.status(404).json({ message: 'Препарат не найден' });
+      return res.status(404).json({ message: t('treatments.productNotFound', req.lang) });
     }
     product.deletedAt = new Date();
     await product.save();
@@ -148,10 +149,10 @@ export const deleteProduct = async (req, res) => {
       entityId: product._id,
       details: { name: product.name }
     });
-    res.json({ message: 'Препарат удалён' });
+    res.json({ message: t('treatments.productDeleted', req.lang) });
   } catch (error) {
     console.error('Delete treatment product error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -163,7 +164,7 @@ export const getDeletedProducts = async (req, res) => {
     res.json(products);
   } catch (error) {
     console.error('Get deleted treatment products error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -173,7 +174,7 @@ export const restoreProduct = async (req, res) => {
   try {
     const product = await TreatmentProduct.findOne({ _id: req.params.id, ...deletedOnly });
     if (!product) {
-      return res.status(404).json({ message: 'Препарат не найден в архиве' });
+      return res.status(404).json({ message: t('treatments.productNotFoundInArchive', req.lang) });
     }
     product.deletedAt = null;
     await product.save();
@@ -186,6 +187,6 @@ export const restoreProduct = async (req, res) => {
     res.json(product);
   } catch (error) {
     console.error('Restore treatment product error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

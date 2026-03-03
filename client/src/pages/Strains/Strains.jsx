@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { strainService } from '../../services/strainService';
 import { invalidateStrainCache } from '../../components/StrainSelect';
 
 const Strains = () => {
+  const { t, i18n } = useTranslation();
   const [strains, setStrains] = useState([]);
   const [deleted, setDeleted] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +37,7 @@ const Strains = () => {
       setDeleted(del);
       invalidateStrainCache();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка загрузки');
+      setError(err.response?.data?.message || t('common.loadError'));
     } finally {
       setLoading(false);
     }
@@ -52,7 +54,7 @@ const Strains = () => {
       setNewName('');
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('strains.createError'));
     } finally {
       setSaving(false);
     }
@@ -67,19 +69,19 @@ const Strains = () => {
       setEditName('');
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('strains.createError'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id, name) => {
-    if (!confirm(`Удалить сорт «${name}»?`)) return;
+    if (!confirm(t('strains.deleteConfirm', { name }))) return;
     try {
       await strainService.delete(id);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('strains.createError'));
     }
   };
 
@@ -88,7 +90,7 @@ const Strains = () => {
       await strainService.restore(id);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('strains.createError'));
     }
   };
 
@@ -101,7 +103,7 @@ const Strains = () => {
       setMigrateResult(result);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка миграции');
+      setError(err.response?.data?.message || t('strains.migrateError'));
     } finally {
       setMigrating(false);
     }
@@ -142,7 +144,7 @@ const Strains = () => {
   const handleMerge = async () => {
     if (merging || !mergeTarget || selected.size < 2) return;
     const sourceNames = [...selected];
-    if (!confirm(`Объединить ${sourceNames.length} сортов в «${mergeTarget}»?\n\nВсе записи в базе будут обновлены. Это действие нельзя отменить.`)) return;
+    if (!confirm(t('strains.mergeConfirm', { count: sourceNames.length, target: mergeTarget }))) return;
     setMerging(true);
     setMergeResult(null);
     try {
@@ -152,7 +154,7 @@ const Strains = () => {
       setMergeTarget('');
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка объединения');
+      setError(err.response?.data?.message || t('strains.mergeError'));
     } finally {
       setMerging(false);
     }
@@ -172,8 +174,8 @@ const Strains = () => {
     <div>
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">Библиотека сортов</h1>
-          <p className="text-dark-400 mt-1 text-sm">Справочник сортов для единообразия во всех формах</p>
+          <h1 className="text-2xl font-bold text-white">{t('strains.title')}</h1>
+          <p className="text-dark-400 mt-1 text-sm">{t('strains.subtitle')}</p>
         </div>
         <div className="flex gap-2 shrink-0">
           <button
@@ -185,7 +187,7 @@ const Strains = () => {
                 : 'bg-dark-700 hover:bg-dark-600 text-dark-300 border border-dark-600'
             }`}
           >
-            {mergeMode ? 'Отмена' : 'Объединить'}
+            {mergeMode ? t('strains.mergeCancel') : t('strains.merge')}
           </button>
           <button
             type="button"
@@ -194,7 +196,7 @@ const Strains = () => {
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
           >
             {migrating && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
-            Импорт из базы
+            {t('strains.importFromDb')}
           </button>
         </div>
       </div>
@@ -203,9 +205,9 @@ const Strains = () => {
         <div className="bg-blue-900/30 border border-blue-800 text-blue-300 px-4 py-3 rounded-lg mb-4 text-sm">
           <div className="flex items-center justify-between">
             <span>
-              Найдено: <b>{migrateResult.found}</b> | Уже было: <b>{migrateResult.alreadyExisted}</b> | Добавлено: <b>{migrateResult.inserted}</b>
+              {t('strains.found')} <b>{migrateResult.found}</b> | {t('strains.alreadyExisted')} <b>{migrateResult.alreadyExisted}</b> | {t('strains.inserted')} <b>{migrateResult.inserted}</b>
             </span>
-            <button type="button" onClick={() => setMigrateResult(null)} className="ml-3 text-blue-500 hover:text-blue-300">×</button>
+            <button type="button" onClick={() => setMigrateResult(null)} className="ml-3 text-blue-500 hover:text-blue-300">&times;</button>
           </div>
         </div>
       )}
@@ -213,8 +215,8 @@ const Strains = () => {
       {mergeResult && (
         <div className="bg-green-900/30 border border-green-800 text-green-300 px-4 py-3 rounded-lg mb-4 text-sm">
           <div className="flex items-center justify-between">
-            <span>{mergeResult.message} (обновлено документов: {mergeResult.stats?.totalUpdated || 0})</span>
-            <button type="button" onClick={() => setMergeResult(null)} className="ml-3 text-green-500 hover:text-green-300">×</button>
+            <span>{mergeResult.message} ({t('strains.mergeResult', { count: mergeResult.stats?.totalUpdated || 0 })})</span>
+            <button type="button" onClick={() => setMergeResult(null)} className="ml-3 text-green-500 hover:text-green-300">&times;</button>
           </div>
         </div>
       )}
@@ -222,7 +224,7 @@ const Strains = () => {
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-4">
           {error}
-          <button type="button" onClick={() => setError('')} className="ml-3 text-red-500 hover:text-red-300">×</button>
+          <button type="button" onClick={() => setError('')} className="ml-3 text-red-500 hover:text-red-300">&times;</button>
         </div>
       )}
 
@@ -230,7 +232,7 @@ const Strains = () => {
       {mergeMode && selected.size >= 2 && (
         <div className="bg-yellow-900/20 border border-yellow-800 rounded-lg px-4 py-3 mb-4">
           <div className="text-yellow-300 text-sm mb-2">
-            Выбрано {selected.size} сортов. Выберите какой оставить:
+            {t('strains.selectedCount', { count: selected.size })}
           </div>
           <div className="flex flex-wrap gap-2 mb-3">
             {selectedArr.map(name => (
@@ -255,7 +257,7 @@ const Strains = () => {
             className="px-4 py-2 bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition flex items-center gap-2"
           >
             {merging && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
-            Объединить в «{mergeTarget || '...'}»
+            {t('strains.mergeInto', { target: mergeTarget || '...' })}
           </button>
         </div>
       )}
@@ -264,14 +266,14 @@ const Strains = () => {
       {mergeMode && (
         <div className="bg-dark-800/50 border border-dark-700 rounded-lg px-4 py-3 mb-4">
           <div className="text-dark-400 text-sm mb-2">
-            Если сорт не отображается в списке, введите его имя вручную:
+            {t('strains.manualMergeHint')}
           </div>
           <div className="flex gap-2">
             <input
               type="text"
               value={manualMergeName}
               onChange={(e) => setManualMergeName(e.target.value)}
-              placeholder="Название сорта (как в базе)"
+              placeholder={t('strains.manualMergePlaceholder')}
               className="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm placeholder-dark-500 focus:ring-2 focus:ring-yellow-500"
             />
             <button
@@ -286,7 +288,7 @@ const Strains = () => {
               disabled={!manualMergeName.trim()}
               className="px-4 py-2 bg-yellow-600/50 hover:bg-yellow-600 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition"
             >
-              + Добавить
+              {t('strains.addToMerge')}
             </button>
           </div>
         </div>
@@ -299,7 +301,7 @@ const Strains = () => {
             type="text"
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
-            placeholder="Название нового сорта"
+            placeholder={t('strains.newStrainPlaceholder')}
             className="flex-1 bg-dark-700 border border-dark-600 rounded-lg px-4 py-2 text-white placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
           />
           <button
@@ -307,7 +309,7 @@ const Strains = () => {
             disabled={!newName.trim() || saving}
             className="px-6 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-medium transition"
           >
-            Добавить
+            {t('strains.addStrain')}
           </button>
         </form>
       )}
@@ -315,10 +317,10 @@ const Strains = () => {
       {/* Active strains */}
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
         <div className="px-4 py-3 border-b border-dark-700">
-          <span className="text-white font-medium">Сорта ({strains.length})</span>
+          <span className="text-white font-medium">{t('strains.strainsCount', { count: strains.length })}</span>
         </div>
         {strains.length === 0 ? (
-          <div className="px-4 py-8 text-center text-dark-500">Нет сортов. Добавьте первый.</div>
+          <div className="px-4 py-8 text-center text-dark-500">{t('strains.noStrains')}</div>
         ) : (
           <div className="divide-y divide-dark-700">
             {strains.map(s => (
@@ -349,14 +351,14 @@ const Strains = () => {
                       disabled={saving}
                       className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded text-sm font-medium"
                     >
-                      Сохранить
+                      {t('strains.save')}
                     </button>
                     <button
                       type="button"
                       onClick={() => setEditId(null)}
                       className="px-3 py-1.5 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded text-sm"
                     >
-                      Отмена
+                      {t('strains.cancel')}
                     </button>
                   </>
                 ) : (
@@ -367,14 +369,14 @@ const Strains = () => {
                       onClick={() => { setEditId(s._id); setEditName(s.name); }}
                       className="px-2 py-1 text-dark-400 hover:text-primary-400 text-sm"
                     >
-                      Изменить
+                      {t('strains.edit')}
                     </button>
                     <button
                       type="button"
                       onClick={() => handleDelete(s._id, s.name)}
                       className="px-2 py-1 text-dark-400 hover:text-red-400 text-sm"
                     >
-                      Удалить
+                      {t('strains.delete')}
                     </button>
                   </>
                 )}
@@ -393,7 +395,7 @@ const Strains = () => {
             className="flex items-center gap-2 text-dark-500 hover:text-dark-300 text-sm mb-3"
           >
             <span className={`transition-transform inline-block ${showDeleted ? 'rotate-90' : ''}`} style={{ fontSize: '8px' }}>&#9654;</span>
-            Удалённые сорта ({deleted.length})
+            {t('strains.deletedStrains', { count: deleted.length })}
           </button>
           {showDeleted && (
             <div className="bg-dark-800/50 rounded-xl border border-dark-700 divide-y divide-dark-700">
@@ -417,7 +419,7 @@ const Strains = () => {
                         onClick={() => handleRestore(s._id)}
                         className="px-3 py-1 bg-green-900/30 text-green-400 hover:bg-green-900/50 rounded text-xs font-medium"
                       >
-                        Восстановить
+                        {t('trash.restore')}
                       </button>
                     </>
                   )}

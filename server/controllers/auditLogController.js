@@ -5,6 +5,7 @@ import { parseUserAgent } from '../utils/parseUserAgent.js';
 import { geoipBatch } from '../utils/geoip.js';
 import { getClientIp } from '../utils/getClientIp.js';
 import { escapeRegex } from '../utils/escapeRegex.js';
+import { t } from '../utils/i18n.js';
 
 // Check if an IP is private/internal/CGN (not useful for GeoIP)
 // Covers: 127.x, 10.x, 172.16-31.x, 192.168.x, 100.64-127.x (CGN RFC6598), IPv6 loopback/private
@@ -42,7 +43,7 @@ export const getAuditLogs = async (req, res) => {
     res.json({ logs, total, page: parseInt(page, 10), limit: limitNum });
   } catch (error) {
     console.error('Get audit logs error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -263,6 +264,6 @@ export const getSessions = async (req, res) => {
     res.json({ activeSessions, loginHistory });
   } catch (error) {
     console.error('Get sessions error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

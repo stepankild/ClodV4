@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import Strain from '../models/Strain.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get all strains (active)
 // @route   GET /api/strains
@@ -11,7 +12,7 @@ export const getStrains = async (req, res) => {
     res.json(strains);
   } catch (error) {
     console.error('Get strains error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -21,7 +22,7 @@ export const createStrain = async (req, res) => {
   try {
     const { name } = req.body;
     if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Название сорта обязательно' });
+      return res.status(400).json({ message: t('strains.nameRequired', req.lang) });
     }
     const trimmed = name.trim();
 
@@ -32,7 +33,7 @@ export const createStrain = async (req, res) => {
       ...notDeleted
     });
     if (existing) {
-      return res.status(400).json({ message: `Сорт «${existing.name}» уже существует` });
+      return res.status(400).json({ message: t('strains.alreadyExists', req.lang, { name: existing.name }) });
     }
 
     // If a soft-deleted strain with same name exists, restore it instead of creating new
@@ -58,10 +59,10 @@ export const createStrain = async (req, res) => {
     res.status(201).json(strain);
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ message: 'Такой сорт уже существует' });
+      return res.status(400).json({ message: t('strains.duplicate', req.lang) });
     }
     console.error('Create strain error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -71,12 +72,12 @@ export const updateStrain = async (req, res) => {
   try {
     const { name } = req.body;
     if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Название сорта обязательно' });
+      return res.status(400).json({ message: t('strains.nameRequired', req.lang) });
     }
     const trimmed = name.trim();
     const strain = await Strain.findOne({ _id: req.params.id, ...notDeleted });
     if (!strain) {
-      return res.status(404).json({ message: 'Сорт не найден' });
+      return res.status(404).json({ message: t('strains.notFound', req.lang) });
     }
 
     // Проверка дубликата (кроме себя)
@@ -86,7 +87,7 @@ export const updateStrain = async (req, res) => {
       ...notDeleted
     });
     if (existing) {
-      return res.status(400).json({ message: `Сорт «${existing.name}» уже существует` });
+      return res.status(400).json({ message: t('strains.alreadyExists', req.lang, { name: existing.name }) });
     }
 
     const oldName = strain.name;
@@ -101,10 +102,10 @@ export const updateStrain = async (req, res) => {
     res.json(strain);
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ message: 'Такой сорт уже существует' });
+      return res.status(400).json({ message: t('strains.duplicate', req.lang) });
     }
     console.error('Update strain error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -114,7 +115,7 @@ export const deleteStrain = async (req, res) => {
   try {
     const strain = await Strain.findOne({ _id: req.params.id, ...notDeleted });
     if (!strain) {
-      return res.status(404).json({ message: 'Сорт не найден' });
+      return res.status(404).json({ message: t('strains.notFound', req.lang) });
     }
     strain.deletedAt = new Date();
     await strain.save();
@@ -124,10 +125,10 @@ export const deleteStrain = async (req, res) => {
       entityId: strain._id,
       details: { name: strain.name }
     });
-    res.json({ message: 'Сорт удалён' });
+    res.json({ message: t('strains.deleted', req.lang) });
   } catch (error) {
     console.error('Delete strain error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -139,7 +140,7 @@ export const getDeletedStrains = async (req, res) => {
     res.json(strains);
   } catch (error) {
     console.error('Get deleted strains error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -269,7 +270,7 @@ export const migrateStrains = async (req, res) => {
     });
 
     res.json({
-      message: `Миграция завершена`,
+      message: t('strains.migrationComplete', req.lang),
       found: uniqueMap.size,
       alreadyExisted: existingLower.size,
       inserted,
@@ -277,7 +278,7 @@ export const migrateStrains = async (req, res) => {
     });
   } catch (error) {
     console.error('Migrate strains error:', error);
-    res.status(500).json({ message: 'Ошибка миграции' });
+    res.status(500).json({ message: t('strains.migrationError', req.lang) });
   }
 };
 
@@ -287,10 +288,10 @@ export const mergeStrains = async (req, res) => {
   try {
     const { sourceNames, targetName } = req.body;
     if (!targetName || !targetName.trim()) {
-      return res.status(400).json({ message: 'Целевое название обязательно' });
+      return res.status(400).json({ message: t('strains.targetRequired', req.lang) });
     }
     if (!Array.isArray(sourceNames) || sourceNames.length === 0) {
-      return res.status(400).json({ message: 'Нужно указать хотя бы один сорт для объединения' });
+      return res.status(400).json({ message: t('strains.mergeSourceRequired', req.lang) });
     }
 
     const target = targetName.trim();
@@ -300,7 +301,7 @@ export const mergeStrains = async (req, res) => {
       .filter(n => n && n !== target);
 
     if (namesToReplace.length === 0) {
-      return res.status(400).json({ message: 'Нечего объединять' });
+      return res.status(400).json({ message: t('strains.nothingToMerge', req.lang) });
     }
 
     const db = mongoose.connection.db;
@@ -549,7 +550,7 @@ export const mergeStrains = async (req, res) => {
     });
 
     res.json({
-      message: `Объединено ${namesToReplace.length} сортов в «${target}»`,
+      message: t('strains.merged', req.lang, { count: namesToReplace.length, target }),
       merged: namesToReplace,
       target,
       deletedFromLibrary: deletedStrains.modifiedCount,
@@ -557,7 +558,7 @@ export const mergeStrains = async (req, res) => {
     });
   } catch (error) {
     console.error('Merge strains error:', error);
-    res.status(500).json({ message: 'Ошибка объединения' });
+    res.status(500).json({ message: t('strains.mergeError', req.lang) });
   }
 };
 
@@ -572,12 +573,12 @@ export const restoreRecentStrains = async (req, res) => {
       { $set: { deletedAt: null } }
     );
     res.json({
-      message: `Восстановлено ${result.modifiedCount} сортов, удалённых за последние ${minutes} мин`,
+      message: t('strains.restoredRecent', req.lang, { count: result.modifiedCount, minutes }),
       restored: result.modifiedCount
     });
   } catch (error) {
     console.error('Restore recent strains error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -587,7 +588,7 @@ export const restoreStrain = async (req, res) => {
   try {
     const strain = await Strain.findOne({ _id: req.params.id, ...deletedOnly });
     if (!strain) {
-      return res.status(404).json({ message: 'Сорт не найден в архиве' });
+      return res.status(404).json({ message: t('strains.notFoundInArchive', req.lang) });
     }
     strain.deletedAt = null;
     await strain.save();
@@ -600,6 +601,6 @@ export const restoreStrain = async (req, res) => {
     res.json(strain);
   } catch (error) {
     console.error('Restore strain error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

@@ -8,6 +8,7 @@ import CloneCut from '../models/CloneCut.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted } from '../utils/softDelete.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get all flower rooms
 // @route   GET /api/rooms
@@ -56,7 +57,7 @@ export const getRooms = async (req, res) => {
     res.json(roomsWithTasks);
   } catch (error) {
     console.error('Get rooms error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -155,7 +156,7 @@ export const getRoomsSummary = async (req, res) => {
     res.json(summary);
   } catch (error) {
     console.error('Get rooms summary error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -166,7 +167,7 @@ export const getRoom = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     // Получаем задачи комнаты
@@ -187,7 +188,7 @@ export const getRoom = async (req, res) => {
     });
   } catch (error) {
     console.error('Get room error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -200,13 +201,13 @@ export const updateRoom = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     if (cycleName !== undefined) {
       const perms = await req.user.getPermissions();
       if (!perms.includes('*') && !perms.includes('cycles:edit_name')) {
-        return res.status(403).json({ message: 'Нет прав на изменение названия цикла' });
+        return res.status(403).json({ message: t('rooms.noPermissionCycleName', req.lang) });
       }
       room.cycleName = String(cycleName).trim();
     }
@@ -231,7 +232,7 @@ export const updateRoom = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Update room error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -244,11 +245,11 @@ export const startCycle = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     if (room.isActive) {
-      return res.status(400).json({ message: 'В этой комнате уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай).' });
+      return res.status(400).json({ message: t('rooms.cycleAlreadyActive', req.lang) });
     }
 
     // Генерируем ID для нового цикла
@@ -309,7 +310,7 @@ export const startCycle = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Start cycle error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -321,7 +322,7 @@ export const addNote = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     // Добавляем заметку к существующим
@@ -346,7 +347,7 @@ export const addNote = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Add note error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -357,7 +358,7 @@ export const harvestRoom = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     // Мягкое удаление задач комнаты
@@ -386,7 +387,7 @@ export const harvestRoom = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Harvest room error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -400,10 +401,10 @@ export const transferCycle = async (req, res) => {
 
     // Validate IDs
     if (!mongoose.Types.ObjectId.isValid(sourceId) || !mongoose.Types.ObjectId.isValid(targetId)) {
-      return res.status(400).json({ message: 'Некорректный ID комнаты' });
+      return res.status(400).json({ message: t('rooms.invalidRoomId', req.lang) });
     }
     if (sourceId === targetId) {
-      return res.status(400).json({ message: 'Нельзя перенести цикл в ту же комнату' });
+      return res.status(400).json({ message: t('rooms.sameRoom', req.lang) });
     }
 
     // Load both rooms
@@ -412,15 +413,15 @@ export const transferCycle = async (req, res) => {
       FlowerRoom.findById(targetId)
     ]);
 
-    if (!sourceRoom) return res.status(404).json({ message: 'Комната-источник не найдена' });
-    if (!targetRoom) return res.status(404).json({ message: 'Комната-назначение не найдена' });
+    if (!sourceRoom) return res.status(404).json({ message: t('rooms.sourceNotFound', req.lang) });
+    if (!targetRoom) return res.status(404).json({ message: t('rooms.targetNotFound', req.lang) });
 
     // Validate states
     if (!sourceRoom.isActive) {
-      return res.status(400).json({ message: 'Комната-источник не имеет активного цикла' });
+      return res.status(400).json({ message: t('rooms.sourceNotActive', req.lang) });
     }
     if (targetRoom.isActive) {
-      return res.status(400).json({ message: 'Комната-назначение уже имеет активный цикл. Сначала завершите его.' });
+      return res.status(400).json({ message: t('rooms.targetAlreadyActive', req.lang) });
     }
 
     // Check no active harvest session
@@ -472,7 +473,7 @@ export const transferCycle = async (req, res) => {
       }
 
       if (transferredTotal === 0) {
-        return res.status(400).json({ message: 'Нужно перенести хотя бы одно растение' });
+        return res.status(400).json({ message: t('rooms.transferAtLeastOne', req.lang) });
       }
 
       // Recalculate sequential numbering for target
@@ -547,7 +548,7 @@ export const transferCycle = async (req, res) => {
     );
 
     // Build log description
-    const reasonText = reason || 'Без указания причины';
+    const reasonText = reason || t('rooms.noReason', req.lang);
     const transferSummary = transferDetails
       .map(d => `${d.strain || '—'}: ${d.transferred}/${d.original}` + (d.disposed > 0 ? ` (списано ${d.disposed})` : ''))
       .join(', ');
@@ -602,6 +603,6 @@ export const transferCycle = async (req, res) => {
     });
   } catch (error) {
     console.error('Transfer cycle error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

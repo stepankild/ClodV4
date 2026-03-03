@@ -1,6 +1,7 @@
 import RoomTemplate from '../models/RoomTemplate.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted } from '../utils/softDelete.js';
+import { t } from '../utils/i18n.js';
 
 export const getTemplates = async (req, res) => {
   try {
@@ -8,7 +9,7 @@ export const getTemplates = async (req, res) => {
     res.json(templates);
   } catch (error) {
     console.error('Get templates error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -17,10 +18,10 @@ export const createTemplate = async (req, res) => {
     const { name, customRows } = req.body;
 
     if (!name || !name.trim()) {
-      return res.status(400).json({ message: 'Укажите название шаблона' });
+      return res.status(400).json({ message: t('templates.nameRequired', req.lang) });
     }
     if (!customRows || !Array.isArray(customRows) || customRows.length === 0) {
-      return res.status(400).json({ message: 'Шаблон должен содержать хотя бы один ряд' });
+      return res.status(400).json({ message: t('templates.rowRequired', req.lang) });
     }
 
     const sanitizedRows = customRows.map(r => ({
@@ -45,7 +46,7 @@ export const createTemplate = async (req, res) => {
     res.status(201).json(template);
   } catch (error) {
     console.error('Create template error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -53,7 +54,7 @@ export const deleteTemplate = async (req, res) => {
   try {
     const template = await RoomTemplate.findOne({ _id: req.params.id, ...notDeleted });
     if (!template) {
-      return res.status(404).json({ message: 'Шаблон не найден' });
+      return res.status(404).json({ message: t('templates.notFound', req.lang) });
     }
 
     await createAuditLog(req, {
@@ -66,9 +67,9 @@ export const deleteTemplate = async (req, res) => {
     template.deletedAt = new Date();
     await template.save();
 
-    res.json({ message: 'Шаблон удалён' });
+    res.json({ message: t('templates.deleted', req.lang) });
   } catch (error) {
     console.error('Delete template error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

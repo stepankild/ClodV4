@@ -2,6 +2,7 @@ import CycleArchive from '../models/CycleArchive.js';
 import TrimLog from '../models/TrimLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 import { createAuditLog } from '../utils/auditLog.js';
+import { t } from '../utils/i18n.js';
 
 // Пересчитать trimWeight для архива на основе TrimLog записей
 const recalcTrimWeight = async (archiveId) => {
@@ -48,7 +49,7 @@ export const getActiveTrimArchives = async (req, res) => {
     trimByStrainAgg.forEach(s => {
       const key = s._id.archive.toString();
       if (!strainMap[key]) strainMap[key] = {};
-      strainMap[key][s._id.strain || '—'] = s.weight;
+      strainMap[key][s._id.strain || '\u2014'] = s.weight;
     });
 
     // Последние 3 лога для каждого архива
@@ -75,7 +76,7 @@ export const getActiveTrimArchives = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('getActiveTrimArchives error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -115,7 +116,7 @@ export const getTrimDailyStats = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('getTrimDailyStats error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -126,15 +127,15 @@ export const addTrimLog = async (req, res) => {
     const { archiveId, strain, weight, date } = req.body;
 
     if (!archiveId || !weight || weight <= 0) {
-      return res.status(400).json({ message: 'Укажите архив и вес > 0' });
+      return res.status(400).json({ message: t('trim.specifyArchiveAndWeight', req.lang) });
     }
 
     const archive = await CycleArchive.findById(archiveId);
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
     if (archive.trimStatus === 'completed') {
-      return res.status(400).json({ message: 'Трим уже завершён' });
+      return res.status(400).json({ message: t('trim.alreadyCompleted', req.lang) });
     }
 
     const strainsList = (archive.strains && archive.strains.length) ? archive.strains : [archive.strain || ''];
@@ -144,10 +145,10 @@ export const addTrimLog = async (req, res) => {
       strainStr = (strainsList[0] || '').trim();
     }
     if (!strainStr) {
-      return res.status(400).json({ message: 'Укажите сорт' });
+      return res.status(400).json({ message: t('trim.specifyStrain', req.lang) });
     }
     if (!strainsList.some(s => (s || '').trim() === strainStr)) {
-      return res.status(400).json({ message: 'Выберите сорт из списка сортов этой комнаты' });
+      return res.status(400).json({ message: t('trim.invalidStrain', req.lang) });
     }
 
     const log = await TrimLog.create({
@@ -178,7 +179,7 @@ export const addTrimLog = async (req, res) => {
     res.status(201).json(log);
   } catch (error) {
     console.error('addTrimLog error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -196,7 +197,7 @@ export const getTrimLogs = async (req, res) => {
     res.json(logs);
   } catch (error) {
     console.error('getTrimLogs error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -206,7 +207,7 @@ export const deleteTrimLog = async (req, res) => {
   try {
     const log = await TrimLog.findById(req.params.id);
     if (!log || log.deletedAt) {
-      return res.status(404).json({ message: 'Запись не найдена' });
+      return res.status(404).json({ message: t('trim.notFound', req.lang) });
     }
 
     log.deletedAt = new Date();
@@ -230,10 +231,10 @@ export const deleteTrimLog = async (req, res) => {
       details: { archiveId: log.archive.toString(), weight: log.weight }
     });
 
-    res.json({ message: 'Запись удалена' });
+    res.json({ message: t('trim.logDeleted', req.lang) });
   } catch (error) {
     console.error('deleteTrimLog error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -243,7 +244,7 @@ export const updateTrimArchive = async (req, res) => {
   try {
     const archive = await CycleArchive.findById(req.params.archiveId);
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
     const { dryWeight, popcornWeight, strainData, strains } = req.body;
@@ -283,7 +284,7 @@ export const updateTrimArchive = async (req, res) => {
     res.json(archive);
   } catch (error) {
     console.error('updateTrimArchive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -293,7 +294,7 @@ export const completeTrim = async (req, res) => {
   try {
     const archive = await CycleArchive.findById(req.params.archiveId);
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
     archive.trimStatus = 'completed';
@@ -310,7 +311,7 @@ export const completeTrim = async (req, res) => {
     res.json(archive);
   } catch (error) {
     console.error('completeTrim error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -325,7 +326,7 @@ export const getDeletedTrimLogs = async (req, res) => {
     res.json(logs);
   } catch (error) {
     console.error('getDeletedTrimLogs error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -334,7 +335,7 @@ export const getDeletedTrimLogs = async (req, res) => {
 export const restoreTrimLog = async (req, res) => {
   try {
     const log = await TrimLog.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!log) return res.status(404).json({ message: 'Удалённая запись не найдена' });
+    if (!log) return res.status(404).json({ message: t('trim.deletedNotFound', req.lang) });
 
     log.deletedAt = null;
     await log.save();
@@ -360,6 +361,6 @@ export const restoreTrimLog = async (req, res) => {
     res.json(log);
   } catch (error) {
     console.error('restoreTrimLog error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

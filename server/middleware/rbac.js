@@ -1,8 +1,10 @@
+import { t } from '../utils/i18n.js';
+
 export const checkPermission = (...requiredPermissions) => {
   return async (req, res, next) => {
     try {
       if (!req.user) {
-        return res.status(401).json({ message: 'Не авторизован' });
+        return res.status(401).json({ message: t('common.unauthorized', req.lang) });
       }
 
       const userPermissions = await req.user.getPermissions();
@@ -18,14 +20,14 @@ export const checkPermission = (...requiredPermissions) => {
 
       if (!hasPermission) {
         return res.status(403).json({
-          message: 'Недостаточно прав для выполнения этого действия'
+          message: t('common.forbidden', req.lang)
         });
       }
 
       next();
     } catch (error) {
       console.error('RBAC middleware error:', error);
-      res.status(500).json({ message: 'Ошибка сервера' });
+      res.status(500).json({ message: t('common.serverError', req.lang) });
     }
   };
 };

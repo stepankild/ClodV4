@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const UserForm = ({ user, roles, onSubmit, onClose }) => {
+  const { t } = useTranslation();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -55,7 +57,7 @@ const UserForm = ({ user, roles, onSubmit, onClose }) => {
 
       await onSubmit(submitData);
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('admin.saveError'));
     } finally {
       setLoading(false);
     }
@@ -66,7 +68,7 @@ const UserForm = ({ user, roles, onSubmit, onClose }) => {
       <div className="bg-dark-800 rounded-xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto border border-dark-700">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold text-white">
-            {user ? 'Редактировать пользователя' : 'Новый пользователь'}
+            {user ? t('admin.editUser') : t('admin.createUser')}
           </h2>
           <button
             onClick={onClose}
@@ -87,7 +89,7 @@ const UserForm = ({ user, roles, onSubmit, onClose }) => {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-dark-300 mb-1">
-              Имя *
+              {t('admin.nameLabel')}
             </label>
             <input
               type="text"
@@ -96,13 +98,13 @@ const UserForm = ({ user, roles, onSubmit, onClose }) => {
               onChange={handleChange}
               required
               className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-              placeholder="Введите имя"
+              placeholder={t('admin.namePlaceholder')}
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-dark-300 mb-1">
-              Email *
+              {t('admin.emailLabel')}
             </label>
             <input
               type="email"
@@ -117,7 +119,7 @@ const UserForm = ({ user, roles, onSubmit, onClose }) => {
 
           <div>
             <label className="block text-sm font-medium text-dark-300 mb-1">
-              Пароль {user ? '(оставьте пустым, чтобы не менять)' : '*'}
+              {user ? `${t('admin.passwordLabel')} ${t('admin.passwordKeep')}` : t('admin.passwordRequired')}
             </label>
             <input
               type="password"
@@ -127,13 +129,13 @@ const UserForm = ({ user, roles, onSubmit, onClose }) => {
               required={!user}
               minLength={6}
               className="w-full px-4 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent transition"
-              placeholder={user ? 'Новый пароль' : 'Минимум 6 символов'}
+              placeholder={user ? t('admin.newPasswordPlaceholder') : t('admin.minPasswordPlaceholder')}
             />
           </div>
 
           <div>
             <label className="block text-sm font-medium text-dark-300 mb-2">
-              Роли
+              {t('admin.rolesLabel')}
             </label>
             <div className="space-y-2">
               {roles.map((role) => (
@@ -165,7 +167,7 @@ const UserForm = ({ user, roles, onSubmit, onClose }) => {
                 onChange={handleChange}
                 className="w-4 h-4 text-primary-600 bg-dark-700 border-dark-500 rounded focus:ring-primary-500"
               />
-              <span className="text-sm font-medium text-dark-300">Активный пользователь</span>
+              <span className="text-sm font-medium text-dark-300">{t('admin.activeUser')}</span>
             </label>
           </div>
 
@@ -175,14 +177,14 @@ const UserForm = ({ user, roles, onSubmit, onClose }) => {
               onClick={onClose}
               className="px-4 py-2 text-dark-300 hover:bg-dark-700 rounded-lg transition"
             >
-              Отмена
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={loading}
               className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition disabled:opacity-50"
             >
-              {loading ? 'Сохранение...' : 'Сохранить'}
+              {loading ? t('common.saving') : t('common.save')}
             </button>
           </div>
         </form>

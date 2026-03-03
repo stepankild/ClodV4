@@ -1,17 +1,21 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { cloneCutService } from '../../services/cloneCutService';
 import { vegBatchService } from '../../services/vegBatchService';
 import { archiveService } from '../../services/archiveService';
 import api from '../../services/api';
 
-const formatDate = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
-
-const TrashSection = ({ title, items, renderInfo, onRestore, restoringId, type }) => {
+const TrashSection = ({ title, items, renderInfo, onRestore, restoringId, type, t }) => {
   if (!items || items.length === 0) return null;
+
+  const locale = t('_locale', { defaultValue: 'ru-RU' });
+
+  const formatDate = (date) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleString(locale === 'en-US' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
   return (
     <section className="mb-6">
       <h2 className="text-sm font-semibold text-white mb-2 flex items-center gap-2">
@@ -22,9 +26,9 @@ const TrashSection = ({ title, items, renderInfo, onRestore, restoringId, type }
         <table className="w-full text-sm">
           <thead className="bg-dark-900">
             <tr>
-              <th className="px-4 py-2 text-left text-xs text-dark-400">Удалено</th>
-              <th className="px-4 py-2 text-left text-xs text-dark-400">Описание</th>
-              <th className="px-4 py-2 text-right text-xs text-dark-400">Действие</th>
+              <th className="px-4 py-2 text-left text-xs text-dark-400">{t('trash.deletedCol')}</th>
+              <th className="px-4 py-2 text-left text-xs text-dark-400">{t('trash.descriptionCol')}</th>
+              <th className="px-4 py-2 text-right text-xs text-dark-400">{t('trash.actionCol')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-dark-700">
@@ -39,7 +43,7 @@ const TrashSection = ({ title, items, renderInfo, onRestore, restoringId, type }
                     disabled={!!restoringId}
                     className="px-2 py-1 bg-green-700/50 text-green-400 rounded text-xs hover:bg-green-700/70 disabled:opacity-50"
                   >
-                    Восстановить
+                    {t('trash.restore')}
                   </button>
                 </td>
               </tr>
@@ -52,12 +56,20 @@ const TrashSection = ({ title, items, renderInfo, onRestore, restoringId, type }
 };
 
 const Trash = () => {
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const canRestoreClones = hasPermission && hasPermission('clones:delete');
   const canRestoreVeg = hasPermission && hasPermission('vegetation:delete');
   const canRestoreArchive = hasPermission && hasPermission('archive:delete');
   const canRestoreTrim = hasPermission && hasPermission('trim:edit');
   const canRestoreUsers = hasPermission && hasPermission('users:update');
+
+  const locale = i18n.language === 'en' ? 'en-US' : 'ru-RU';
+
+  const formatDate = (date) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleString(locale, { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -98,7 +110,7 @@ const Trash = () => {
         roles: Array.isArray(roles) ? roles : []
       });
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Ошибка загрузки');
+      setError(err.response?.data?.message || err.message || t('trash.loadError'));
     } finally {
       setLoading(false);
     }
@@ -121,7 +133,7 @@ const Trash = () => {
       else if (type === 'roles') await api.post(`/users/roles/deleted/${id}/restore`);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка восстановления');
+      setError(err.response?.data?.message || t('trash.restoreError'));
     } finally {
       setRestoringId(null);
     }
@@ -140,97 +152,105 @@ const Trash = () => {
   return (
     <div className="p-4 sm:p-6 max-w-[1000px] mx-auto">
       <div className="mb-6">
-        <h1 className="text-xl font-bold text-white">Корзина</h1>
+        <h1 className="text-xl font-bold text-white">{t('trash.title')}</h1>
         <p className="text-dark-500 text-xs mt-1">
-          {total > 0 ? `${total} удалённых записей` : 'Корзина пуста'}. Удалённые записи можно восстановить.
+          {total > 0 ? t('trash.deletedCount', { count: total }) : t('trash.emptyTrash')}. {t('trash.canRestore')}
         </p>
       </div>
 
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-4 flex items-center justify-between">
           <span className="text-sm">{error}</span>
-          <button type="button" onClick={() => { setError(''); load(); }} className="px-3 py-1.5 bg-red-800/50 rounded text-xs">Повторить</button>
+          <button type="button" onClick={() => { setError(''); load(); }} className="px-3 py-1.5 bg-red-800/50 rounded text-xs">{t('common.retry')}</button>
         </div>
       )}
 
       {total === 0 && (
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-8 text-center text-dark-400">
-          Нет удалённых записей для восстановления.
+          {t('trash.noDeletedRecords')}
         </div>
       )}
 
       <TrashSection
-        title="Нарезки клонов"
+        title={t('trash.cloneCuts')}
         type="cloneCuts"
         items={deleted.cloneCuts}
-        renderInfo={(c) => `${c.strain || '—'} · ${formatDate(c.cutDate)} · ${c.quantity || '?'} шт`}
+        renderInfo={(c) => `${c.strain || '—'} · ${formatDate(c.cutDate)} · ${c.quantity || '?'} ${t('trash.pcs')}`}
         onRestore={restore}
         restoringId={restoringId}
+        t={t}
       />
 
       <TrashSection
-        title="Бэтчи вегетации"
+        title={t('trash.vegBatches')}
         type="vegBatches"
         items={deleted.vegBatches}
         renderInfo={(b) => b.name || '—'}
         onRestore={restore}
         restoringId={restoringId}
+        t={t}
       />
 
       <TrashSection
-        title="Архивы циклов"
+        title={t('trash.archives')}
         type="archives"
         items={deleted.archives}
         renderInfo={(a) => `${a.roomName || '—'} · ${a.strain || '—'} · ${formatDate(a.harvestDate)}`}
         onRestore={restore}
         restoringId={restoringId}
+        t={t}
       />
 
       <TrashSection
-        title="Задачи комнат"
+        title={t('trash.tasks')}
         type="tasks"
         items={deleted.tasks}
-        renderInfo={(t) => t.title || '—'}
+        renderInfo={(task) => task.title || '—'}
         onRestore={restore}
         restoringId={restoringId}
+        t={t}
       />
 
       <TrashSection
-        title="Записи трима"
+        title={t('trash.trimLogs')}
         type="trimLogs"
         items={deleted.trimLogs}
-        renderInfo={(l) => `${l.strain || '—'} · ${l.weight || 0}г · ${formatDate(l.date)}`}
+        renderInfo={(l) => `${l.strain || '—'} · ${l.weight || 0}${t('common.grams')} · ${formatDate(l.date)}`}
         onRestore={restore}
         restoringId={restoringId}
+        t={t}
       />
 
       <TrashSection
-        title="Запланированные циклы"
+        title={t('trash.plans')}
         type="plans"
         items={deleted.plans}
         renderInfo={(p) => `${p.room?.name || p.room?.roomNumber || '—'} · ${p.strain || '—'} · ${p.cycleName || ''}`}
         onRestore={restore}
         restoringId={restoringId}
+        t={t}
       />
 
       {canRestoreUsers && (
         <>
           <TrashSection
-            title="Пользователи"
+            title={t('trash.users')}
             type="users"
             items={deleted.users}
             renderInfo={(u) => `${u.name || '—'} · ${u.email || '—'}`}
             onRestore={restore}
             restoringId={restoringId}
+            t={t}
           />
 
           <TrashSection
-            title="Роли"
+            title={t('trash.roles')}
             type="roles"
             items={deleted.roles}
             renderInfo={(r) => `${r.name || '—'} · ${r.description || ''}`}
             onRestore={restore}
             restoringId={restoringId}
+            t={t}
           />
         </>
       )}

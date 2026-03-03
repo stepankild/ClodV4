@@ -1,18 +1,19 @@
 import { useState, useEffect } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { archiveService } from '../../services/archiveService';
 import { useAuth } from '../../context/AuthContext';
 import ArchiveHeatMap from '../../components/RoomMap/ArchiveHeatMap';
 import CrewInfographic from '../../components/Harvest/CrewInfographic';
 
-const formatDate = (date) => {
+const formatDate = (date, locale) => {
   if (!date) return '—';
-  return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  return new Date(date).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
-const formatDateTime = (date) => {
+const formatDateTime = (date, locale) => {
   if (!date) return '—';
-  return new Date(date).toLocaleString('ru-RU', {
+  return new Date(date).toLocaleString(locale, {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
@@ -21,12 +22,9 @@ const formatDateTime = (date) => {
   });
 };
 
-const formatNum = (n) => (n != null && Number.isFinite(n) ? Number(n).toLocaleString('ru-RU') : '—');
+const formatNum = (n, locale) => (n != null && Number.isFinite(n) ? Number(n).toLocaleString(locale) : '—');
 
-const qualityLabel = { low: 'Низкое', medium: 'Среднее', high: 'Высокое', premium: 'Премиум' };
 const qualityColor = { low: 'text-red-400', medium: 'text-yellow-400', high: 'text-green-400', premium: 'text-purple-400' };
-
-const mediumLabel = { soil: 'Земля', coco: 'Кокос', hydro: 'Гидропоника', aero: 'Аэропоника', other: 'Другое' };
 
 // Section component
 const Section = ({ title, icon, children, className = '' }) => (
@@ -50,7 +48,7 @@ const InfoRow = ({ label, value, highlight, color }) => (
 );
 
 // Timeline item
-const TimelineItem = ({ date, label, description, icon, color = 'primary' }) => {
+const TimelineItem = ({ date, label, description, icon, color = 'primary', locale }) => {
   const colors = {
     primary: 'bg-primary-500',
     green: 'bg-green-500',
@@ -70,7 +68,7 @@ const TimelineItem = ({ date, label, description, icon, color = 'primary' }) => 
           {icon && <span>{icon}</span>}
           <span className="text-white font-medium">{label}</span>
         </div>
-        <div className="text-dark-400 text-sm">{formatDate(date)}</div>
+        <div className="text-dark-400 text-sm">{formatDate(date, locale)}</div>
         {description && <div className="text-dark-500 text-sm mt-1">{description}</div>}
       </div>
     </div>
@@ -78,6 +76,8 @@ const TimelineItem = ({ date, label, description, icon, color = 'primary' }) => 
 };
 
 export default function ArchiveDetail() {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.language === 'en' ? 'en-US' : 'ru-RU';
   const { id } = useParams();
   const navigate = useNavigate();
   const { hasPermission } = useAuth();
@@ -92,13 +92,28 @@ export default function ArchiveDetail() {
   const [weightForm, setWeightForm] = useState({ dryWeight: '', wetWeight: '', trimWeight: '' });
   const [saving, setSaving] = useState(false);
 
+  const qualityLabel = {
+    low: t('archive.qualityLow'),
+    medium: t('archive.qualityMedium'),
+    high: t('archive.qualityHigh'),
+    premium: t('archive.qualityPremium')
+  };
+
+  const mediumLabel = {
+    soil: t('archive.mediumSoilFull'),
+    coco: t('archive.mediumCocoFull'),
+    hydro: t('archive.mediumHydroFull'),
+    aero: t('archive.mediumAeroFull'),
+    other: t('archive.mediumOther')
+  };
+
   useEffect(() => {
     if (!id) return;
     archiveService
       .getArchive(id)
       .then(setArchive)
       .catch((err) => {
-        setError(err.response?.data?.message || 'Архив не найден');
+        setError(err.response?.data?.message || t('archive.archiveNotFound'));
         setArchive(null);
       })
       .finally(() => setLoading(false));
@@ -129,7 +144,7 @@ export default function ArchiveDetail() {
       setArchive(updated);
       setEditWeights(false);
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('archive.saveError'));
     } finally {
       setSaving(false);
     }
@@ -141,7 +156,7 @@ export default function ArchiveDetail() {
       await archiveService.deleteArchive(archive._id);
       navigate('/archive');
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка удаления');
+      setError(err.response?.data?.message || t('archive.deleteError'));
     }
   };
 
@@ -158,7 +173,7 @@ export default function ArchiveDetail() {
       <div className="p-6">
         <div className="p-4 bg-red-900/20 border border-red-700 rounded-lg text-red-300">{error}</div>
         <Link to="/archive" className="inline-block mt-4 text-primary-400 hover:text-primary-300">
-          ← К списку архива
+          {t('archive.backToList')}
         </Link>
       </div>
     );
@@ -200,10 +215,10 @@ export default function ArchiveDetail() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-white">
-              {archive?.roomName || `Комната ${archive?.roomNumber}`}
+              {archive?.roomName || `${t('archive.room')} ${archive?.roomNumber}`}
             </h1>
             <div className="flex items-center gap-2 mt-1">
-              <span className="text-primary-400 font-medium">{archive?.strain || 'Без сорта'}</span>
+              <span className="text-primary-400 font-medium">{archive?.strain || t('archive.noStrain')}</span>
               {archive?.cycleName && (
                 <span className="text-dark-500">· {archive.cycleName}</span>
               )}
@@ -215,7 +230,7 @@ export default function ArchiveDetail() {
             onClick={() => setDeleteConfirm(true)}
             className="px-3 py-2 text-red-400 hover:bg-red-900/30 rounded-lg transition text-sm"
           >
-            Удалить
+            {t('archive.deleteBtn')}
           </button>
         )}
       </div>
@@ -227,43 +242,43 @@ export default function ArchiveDetail() {
       {/* Quick Stats */}
       <div className="mb-6 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
         <div className="bg-green-900/30 border border-green-700/50 rounded-xl p-4 text-center">
-          <p className="text-dark-400 text-sm">Сухой вес</p>
-          <p className="text-green-400 text-2xl font-bold">{formatNum(h.dryWeight)}<span className="text-sm">г</span></p>
+          <p className="text-dark-400 text-sm">{t('archive.dryWeightLabel')}</p>
+          <p className="text-green-400 text-2xl font-bold">{formatNum(h.dryWeight, locale)}<span className="text-sm">{t('common.grams')}</span></p>
         </div>
         <div className="bg-blue-900/30 border border-blue-700/50 rounded-xl p-4 text-center">
-          <p className="text-dark-400 text-sm">г/куст</p>
-          <p className="text-blue-400 text-2xl font-bold">{formatNum(m.gramsPerPlant)}</p>
+          <p className="text-dark-400 text-sm">{t('archive.gramsPerPlant')}</p>
+          <p className="text-blue-400 text-2xl font-bold">{formatNum(m.gramsPerPlant, locale)}</p>
         </div>
         <div className="bg-primary-900/30 border border-primary-700/50 rounded-xl p-4 text-center">
-          <p className="text-dark-400 text-sm">Кустов</p>
-          <p className="text-primary-400 text-2xl font-bold">{formatNum(archive?.plantsCount)}</p>
+          <p className="text-dark-400 text-sm">{t('archive.plantsLabel')}</p>
+          <p className="text-primary-400 text-2xl font-bold">{formatNum(archive?.plantsCount, locale)}</p>
         </div>
         <div className="bg-yellow-900/30 border border-yellow-700/50 rounded-xl p-4 text-center">
-          <p className="text-dark-400 text-sm">Дней цветения</p>
-          <p className="text-yellow-400 text-2xl font-bold">{formatNum(archive?.actualDays)}</p>
+          <p className="text-dark-400 text-sm">{t('archive.floweringDays')}</p>
+          <p className="text-yellow-400 text-2xl font-bold">{formatNum(archive?.actualDays, locale)}</p>
         </div>
         <div className="bg-purple-900/30 border border-purple-700/50 rounded-xl p-4 text-center">
-          <p className="text-dark-400 text-sm">Качество</p>
+          <p className="text-dark-400 text-sm">{t('archive.qualityLabel')}</p>
           <p className={`text-xl font-bold ${qualityColor[h.quality] || 'text-white'}`}>
             {qualityLabel[h.quality] || h.quality || '—'}
           </p>
         </div>
         {m.gramsPerWatt > 0 && (
           <div className="bg-amber-900/30 border border-amber-700/50 rounded-xl p-4 text-center">
-            <p className="text-dark-400 text-sm">г/ватт</p>
-            <p className="text-amber-400 text-2xl font-bold">{formatNum(m.gramsPerWatt)}</p>
+            <p className="text-dark-400 text-sm">{t('archive.gPerWattLabel')}</p>
+            <p className="text-amber-400 text-2xl font-bold">{formatNum(m.gramsPerWatt, locale)}</p>
           </div>
         )}
         {gramsPerSqm > 0 && (
           <div className="bg-teal-900/30 border border-teal-700/50 rounded-xl p-4 text-center">
-            <p className="text-dark-400 text-sm">г/м²</p>
-            <p className="text-teal-400 text-2xl font-bold">{formatNum(gramsPerSqm)}</p>
+            <p className="text-dark-400 text-sm">{t('archive.gPerSqMLabel')}</p>
+            <p className="text-teal-400 text-2xl font-bold">{formatNum(gramsPerSqm, locale)}</p>
           </div>
         )}
         {totalDays && (
           <div className="bg-dark-700/50 border border-dark-600 rounded-xl p-4 text-center">
-            <p className="text-dark-400 text-sm">Весь цикл</p>
-            <p className="text-white text-2xl font-bold">{totalDays}<span className="text-sm"> дней</span></p>
+            <p className="text-dark-400 text-sm">{t('archive.fullCycle')}</p>
+            <p className="text-white text-2xl font-bold">{totalDays}<span className="text-sm"> {t('archive.daysLabel')}</span></p>
           </div>
         )}
       </div>
@@ -272,63 +287,68 @@ export default function ArchiveDetail() {
         {/* Left column - Timeline & Details */}
         <div className="lg:col-span-2 space-y-6">
           {/* Timeline */}
-          <Section title="Хронология цикла" icon="📅">
+          <Section title={t('archive.cycleTimeline')} icon="📅">
             <div className="pl-2">
               {clone?.cutDate && (
                 <TimelineItem
                   date={clone.cutDate}
-                  label="Клоны нарезаны"
-                  description={`${clone.quantity || clone.strains?.reduce((s, x) => s + (x.quantity || 0), 0) || '?'} шт`}
+                  label={t('archive.clonesCut')}
+                  description={t('archive.clonesPcs', { qty: clone.quantity || clone.strains?.reduce((s, x) => s + (x.quantity || 0), 0) || '?' })}
                   icon="✂️"
                   color="purple"
+                  locale={locale}
                 />
               )}
               {veg?.transplantedToVegAt && (
                 <TimelineItem
                   date={veg.transplantedToVegAt}
-                  label="Пересадка на вегу"
+                  label={t('archive.transplantToVeg')}
                   description={[
-                    veg.vegPlantsCount ? `${veg.vegPlantsCount} кустов` : null,
-                    veg.vegDaysTarget ? `План: ${veg.vegDaysTarget} дней` : null
+                    veg.vegPlantsCount ? t('archive.plantsCountN', { count: veg.vegPlantsCount }) : null,
+                    veg.vegDaysTarget ? t('archive.planDays', { days: veg.vegDaysTarget }) : null
                   ].filter(Boolean).join(' · ') || null}
                   icon="🌱"
                   color="green"
+                  locale={locale}
                 />
               )}
               {veg?.transplantedToFlowerAt && (
                 <TimelineItem
                   date={veg.transplantedToFlowerAt}
-                  label="Пересадка на цвет"
+                  label={t('archive.transplantToFlower')}
                   description={[
-                    veg.flowerPlantsCount ? `${veg.flowerPlantsCount} кустов` : null,
-                    veg.vegDaysActual ? `Вега: ${veg.vegDaysActual} дней` : null
+                    veg.flowerPlantsCount ? t('archive.plantsCountN', { count: veg.flowerPlantsCount }) : null,
+                    veg.vegDaysActual ? t('archive.vegDays', { days: veg.vegDaysActual }) : null
                   ].filter(Boolean).join(' · ') || null}
                   icon="🌸"
                   color="yellow"
+                  locale={locale}
                 />
               )}
               {archive?.startDate && !veg?.transplantedToFlowerAt && (
                 <TimelineItem
                   date={archive.startDate}
-                  label="Начало цветения"
+                  label={t('archive.floweringStart')}
                   icon="🌸"
                   color="yellow"
+                  locale={locale}
                 />
               )}
               {archive?.harvestDate && (
                 <TimelineItem
                   date={archive.harvestDate}
-                  label="Сбор урожая"
-                  description={`${archive.actualDays} дней цветения`}
+                  label={t('archive.harvestCollection')}
+                  description={t('archive.floweringDaysDesc', { days: archive.actualDays })}
                   icon="🌿"
                   color="primary"
+                  locale={locale}
                 />
               )}
             </div>
           </Section>
 
           {/* Harvest Data */}
-          <Section title="Урожай" icon="⚖️">
+          <Section title={t('archive.harvestSection')} icon="⚖️">
             <div className="flex justify-between items-start mb-4">
               <div />
               {canEditWeights && (
@@ -337,7 +357,7 @@ export default function ArchiveDetail() {
                   onClick={() => setEditWeights((v) => !v)}
                   className="text-sm text-primary-400 hover:text-primary-300"
                 >
-                  {editWeights ? 'Отмена' : 'Изменить веса'}
+                  {editWeights ? t('archive.editWeightsCancel') : t('archive.editWeights')}
                 </button>
               )}
             </div>
@@ -345,7 +365,7 @@ export default function ArchiveDetail() {
               <form onSubmit={handleSaveWeights} className="space-y-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-dark-400 text-sm mb-1">Сырой вес (г)</label>
+                    <label className="block text-dark-400 text-sm mb-1">{t('archive.wetWeightG')}</label>
                     <input
                       type="number"
                       value={weightForm.wetWeight}
@@ -354,7 +374,7 @@ export default function ArchiveDetail() {
                     />
                   </div>
                   <div>
-                    <label className="block text-dark-400 text-sm mb-1">Сухой вес (г)</label>
+                    <label className="block text-dark-400 text-sm mb-1">{t('archive.dryWeightG')}</label>
                     <input
                       type="number"
                       value={weightForm.dryWeight}
@@ -363,7 +383,7 @@ export default function ArchiveDetail() {
                     />
                   </div>
                   <div>
-                    <label className="block text-dark-400 text-sm mb-1">Трим (г)</label>
+                    <label className="block text-dark-400 text-sm mb-1">{t('archive.trimWeightG')}</label>
                     <input
                       type="number"
                       value={weightForm.trimWeight}
@@ -377,26 +397,26 @@ export default function ArchiveDetail() {
                   disabled={saving}
                   className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50"
                 >
-                  {saving ? 'Сохранение…' : 'Сохранить'}
+                  {saving ? t('archive.saving') : t('archive.save')}
                 </button>
               </form>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                <InfoRow label="Сырой вес" value={`${formatNum(h.wetWeight)} г`} />
-                <InfoRow label="Сухой вес" value={`${formatNum(h.dryWeight)} г`} highlight color="text-green-400" />
-                <InfoRow label="Трим" value={`${formatNum(h.trimWeight)} г`} />
-                <InfoRow label="г/куст" value={formatNum(m.gramsPerPlant)} highlight color="text-primary-400" />
-                <InfoRow label="г/день" value={formatNum(m.gramsPerDay)} />
-                {m.gramsPerWatt > 0 && <InfoRow label="г/ватт" value={formatNum(m.gramsPerWatt)} color="text-amber-400" />}
-                {dryingRatio && <InfoRow label="Усушка" value={`${dryingRatio}%`} />}
+                <InfoRow label={t('archive.wetWeightLabel')} value={`${formatNum(h.wetWeight, locale)} ${t('common.grams')}`} />
+                <InfoRow label={t('archive.dryWeightLabel')} value={`${formatNum(h.dryWeight, locale)} ${t('common.grams')}`} highlight color="text-green-400" />
+                <InfoRow label={t('archive.trimWeightLabel')} value={`${formatNum(h.trimWeight, locale)} ${t('common.grams')}`} />
+                <InfoRow label={t('archive.gramsPerPlant')} value={formatNum(m.gramsPerPlant, locale)} highlight color="text-primary-400" />
+                <InfoRow label={t('archive.gPerDay')} value={formatNum(m.gramsPerDay, locale)} />
+                {m.gramsPerWatt > 0 && <InfoRow label={t('archive.gPerWattLabel')} value={formatNum(m.gramsPerWatt, locale)} color="text-amber-400" />}
+                {dryingRatio && <InfoRow label={t('archive.dryingRatio')} value={`${dryingRatio}%`} />}
                 <InfoRow
-                  label="Качество"
+                  label={t('archive.qualityLabel')}
                   value={qualityLabel[h.quality] || h.quality || '—'}
                   color={qualityColor[h.quality]}
                 />
                 {h.notes && (
                   <div className="col-span-2 sm:col-span-4">
-                    <span className="text-dark-400 text-sm">Заметки урожая</span>
+                    <span className="text-dark-400 text-sm">{t('archive.harvestNotes')}</span>
                     <p className="text-dark-300">{h.notes}</p>
                   </div>
                 )}
@@ -406,14 +426,14 @@ export default function ArchiveDetail() {
 
           {/* Карта сбора (тепловая) */}
           {archive?.harvestMapData?.plants?.length > 0 && (
-            <Section title="Карта сбора" icon="🗺️">
+            <Section title={t('archive.harvestMap')} icon="🗺️">
               <ArchiveHeatMap harvestMapData={archive.harvestMapData} />
             </Section>
           )}
 
           {/* Команда сбора */}
           {archive?.crewData?.members?.length > 0 && (
-            <Section title="Команда сбора" icon="👥">
+            <Section title={t('archive.crewSection')} icon="👥">
               <CrewInfographic
                 crewData={archive.crewData}
                 roomSquareMeters={archive.squareMeters}
@@ -426,28 +446,28 @@ export default function ArchiveDetail() {
 
           {/* Completed Tasks */}
           {tasks.length > 0 && (
-            <Section title={`Выполненные задачи (${tasks.length})`} icon="✅">
+            <Section title={t('archive.completedTasks', { count: tasks.length })} icon="✅">
               <div className="space-y-2 max-h-64 overflow-y-auto">
-                {tasks.map((t, i) => (
+                {tasks.map((tk, i) => (
                   <div key={i} className="flex flex-wrap items-baseline gap-2 text-sm py-2 border-b border-dark-700 last:border-0">
                     <span className="px-2 py-0.5 bg-primary-900/50 text-primary-400 rounded text-xs">
-                      {t.type || 'Задача'}
+                      {tk.type || t('archive.taskLabel')}
                     </span>
-                    <span className="text-white">{t.title}</span>
-                    {t.dayOfCycle && (
-                      <span className="text-dark-500">День {t.dayOfCycle}</span>
+                    <span className="text-white">{tk.title}</span>
+                    {tk.dayOfCycle && (
+                      <span className="text-dark-500">{t('archive.dayOfCycle', { day: tk.dayOfCycle })}</span>
                     )}
-                    {t.completedAt && (
-                      <span className="text-dark-500">{formatDateTime(t.completedAt)}</span>
+                    {tk.completedAt && (
+                      <span className="text-dark-500">{formatDateTime(tk.completedAt, locale)}</span>
                     )}
-                    {t.completedBy?.name && (
-                      <span className="text-dark-400">({t.completedBy.name})</span>
+                    {tk.completedBy?.name && (
+                      <span className="text-dark-400">({tk.completedBy.name})</span>
                     )}
-                    {t.sprayProduct && (
-                      <span className="text-blue-400 text-xs">🧪 {t.sprayProduct}</span>
+                    {tk.sprayProduct && (
+                      <span className="text-blue-400 text-xs">🧪 {tk.sprayProduct}</span>
                     )}
-                    {t.feedProduct && (
-                      <span className="text-green-400 text-xs">🌿 {t.feedProduct} {t.feedDosage}</span>
+                    {tk.feedProduct && (
+                      <span className="text-green-400 text-xs">🌿 {tk.feedProduct} {tk.feedDosage}</span>
                     )}
                   </div>
                 ))}
@@ -457,27 +477,29 @@ export default function ArchiveDetail() {
 
           {/* Issues */}
           {issues.length > 0 && (
-            <Section title="Проблемы в цикле" icon="⚠️">
+            <Section title={t('archive.issuesInCycle')} icon="⚠️">
               <div className="space-y-2">
                 {issues.map((iss, i) => (
                   <div key={i} className="p-3 bg-red-900/20 border border-red-800/50 rounded-lg">
                     <div className="flex items-center gap-2 mb-1">
                       <span className="px-2 py-0.5 bg-red-900/50 text-red-400 rounded text-xs">
-                        {iss.type || 'Проблема'}
+                        {iss.type || t('archive.issueLabel')}
                       </span>
                       {iss.resolvedAt && (
                         <span className="px-2 py-0.5 bg-green-900/50 text-green-400 rounded text-xs">
-                          Решено
+                          {t('archive.resolved')}
                         </span>
                       )}
                     </div>
                     <p className="text-dark-300">{iss.description || '—'}</p>
                     {iss.solution && (
-                      <p className="text-dark-400 text-sm mt-1">Решение: {iss.solution}</p>
+                      <p className="text-dark-400 text-sm mt-1">{t('archive.solutionLabel', { solution: iss.solution })}</p>
                     )}
                     <div className="text-dark-500 text-xs mt-1">
-                      Обнаружено: {formatDate(iss.detectedAt)}
-                      {iss.resolvedAt && ` · Решено: ${formatDate(iss.resolvedAt)}`}
+                      {iss.resolvedAt
+                        ? t('archive.detectedAndResolved', { detected: formatDate(iss.detectedAt, locale), resolved: formatDate(iss.resolvedAt, locale) })
+                        : t('archive.detectedAt', { date: formatDate(iss.detectedAt, locale) })
+                      }
                     </div>
                   </div>
                 ))}
@@ -490,16 +512,16 @@ export default function ArchiveDetail() {
         <div className="space-y-6">
           {/* Clone Data */}
           {clone && (
-            <Section title="Клоны" icon="✂️">
+            <Section title={t('archive.clonesSection')} icon="✂️">
               <div className="space-y-3">
-                <InfoRow label="Дата нарезки" value={formatDate(clone.cutDate)} />
+                <InfoRow label={t('archive.cutDate')} value={formatDate(clone.cutDate, locale)} />
                 <InfoRow
-                  label="Количество"
-                  value={`${clone.quantity || clone.strains?.reduce((s, x) => s + (x.quantity || 0), 0) || '?'} шт`}
+                  label={t('archive.quantity')}
+                  value={t('archive.clonesPcs', { qty: clone.quantity || clone.strains?.reduce((s, x) => s + (x.quantity || 0), 0) || '?' })}
                 />
                 {clone.strains?.length > 0 && (
                   <div>
-                    <span className="text-dark-400 text-sm">Сорта</span>
+                    <span className="text-dark-400 text-sm">{t('archive.strainsLabel')}</span>
                     <div className="flex flex-wrap gap-1 mt-1">
                       {clone.strains.map((s, i) => (
                         <span key={i} className="px-2 py-1 bg-purple-900/50 text-purple-400 rounded text-xs">
@@ -511,7 +533,7 @@ export default function ArchiveDetail() {
                 )}
                 {clone.notes && (
                   <div>
-                    <span className="text-dark-400 text-sm">Заметки</span>
+                    <span className="text-dark-400 text-sm">{t('archive.notesLabel')}</span>
                     <p className="text-dark-300 text-sm">{clone.notes}</p>
                   </div>
                 )}
@@ -521,28 +543,28 @@ export default function ArchiveDetail() {
 
           {/* Veg Data */}
           {veg && (
-            <Section title="Вегетация" icon="🌱">
+            <Section title={t('archive.vegSection')} icon="🌱">
               <div className="space-y-3">
-                <InfoRow label="Начало веги" value={formatDate(veg.transplantedToVegAt)} />
+                <InfoRow label={t('archive.vegStart')} value={formatDate(veg.transplantedToVegAt, locale)} />
                 {veg.vegPlantsCount > 0 && (
-                  <InfoRow label="Кустов на вегу" value={`${veg.vegPlantsCount} шт`} />
+                  <InfoRow label={t('archive.plantsToVeg')} value={t('archive.clonesPcs', { qty: veg.vegPlantsCount })} />
                 )}
-                <InfoRow label="На цвет" value={formatDate(veg.transplantedToFlowerAt)} />
+                <InfoRow label={t('archive.toFlower')} value={formatDate(veg.transplantedToFlowerAt, locale)} />
                 {veg.flowerPlantsCount > 0 && (
-                  <InfoRow label="Кустов на цвет" value={`${veg.flowerPlantsCount} шт`} highlight color="text-primary-400" />
+                  <InfoRow label={t('archive.plantsToFlower')} value={t('archive.clonesPcs', { qty: veg.flowerPlantsCount })} highlight color="text-primary-400" />
                 )}
                 <div className="grid grid-cols-2 gap-3">
-                  <InfoRow label="План" value={`${veg.vegDaysTarget || '—'} дней`} />
+                  <InfoRow label={t('archive.planLabel')} value={t('archive.daysValue', { days: veg.vegDaysTarget || '—' })} />
                   <InfoRow
-                    label="Факт"
-                    value={`${veg.vegDaysActual || '—'} дней`}
+                    label={t('archive.factLabel')}
+                    value={t('archive.daysValue', { days: veg.vegDaysActual || '—' })}
                     highlight
                     color="text-green-400"
                   />
                 </div>
                 {veg.notes && (
                   <div>
-                    <span className="text-dark-400 text-sm">Заметки</span>
+                    <span className="text-dark-400 text-sm">{t('archive.notesLabel')}</span>
                     <p className="text-dark-300 text-sm">{veg.notes}</p>
                   </div>
                 )}
@@ -552,41 +574,41 @@ export default function ArchiveDetail() {
 
           {/* Lighting & Room */}
           {(light?.totalWatts || archive?.squareMeters) && (
-            <Section title="Освещение и комната" icon="💡">
+            <Section title={t('archive.lightingAndRoom')} icon="💡">
               <div className="space-y-3">
                 {archive?.squareMeters > 0 && (
-                  <InfoRow label="Зелёная площадь" value={`${archive.squareMeters} м²`} />
+                  <InfoRow label={t('archive.greenArea')} value={t('archive.sqMeters', { area: archive.squareMeters })} />
                 )}
                 {light?.lampCount > 0 && (
-                  <InfoRow label="Лампы" value={`${light.lampCount} шт × ${light.lampWattage || '?'} Вт`} />
+                  <InfoRow label={t('archive.lampsLabel')} value={t('archive.lampsInfo', { count: light.lampCount, wattage: light.lampWattage || '?' })} />
                 )}
                 {light?.lampType && (
-                  <InfoRow label="Тип ламп" value={light.lampType} />
+                  <InfoRow label={t('archive.lampType')} value={light.lampType} />
                 )}
                 {m.gramsPerWatt > 0 && (
-                  <InfoRow label="г/ватт" value={formatNum(m.gramsPerWatt)} highlight color="text-amber-400" />
+                  <InfoRow label={t('archive.gPerWattLabel')} value={formatNum(m.gramsPerWatt, locale)} highlight color="text-amber-400" />
                 )}
                 {gramsPerSqm > 0 && (
-                  <InfoRow label="г/м²" value={formatNum(gramsPerSqm)} highlight color="text-teal-400" />
+                  <InfoRow label={t('archive.gPerSqMLabel')} value={formatNum(gramsPerSqm, locale)} highlight color="text-teal-400" />
                 )}
               </div>
             </Section>
           )}
 
           {/* Environment */}
-          <Section title="Условия" icon="🌡️">
+          <Section title={t('archive.conditionsSection')} icon="🌡️">
             <div className="space-y-3">
-              <InfoRow label="Световой режим" value={`${env.lightHours || 12}/12`} />
-              <InfoRow label="Субстрат" value={mediumLabel[env.medium] || env.medium || '—'} />
+              <InfoRow label={t('archive.lightSchedule')} value={t('archive.lightScheduleVal', { hours: env.lightHours || 12 })} />
+              <InfoRow label={t('archive.substrate')} value={mediumLabel[env.medium] || env.medium || '—'} />
               {env.avgTemperature && (
-                <InfoRow label="Средняя t°" value={`${env.avgTemperature}°C`} />
+                <InfoRow label={t('archive.avgTemp')} value={t('archive.avgTempVal', { temp: env.avgTemperature })} />
               )}
               {env.avgHumidity && (
-                <InfoRow label="Средняя влажность" value={`${env.avgHumidity}%`} />
+                <InfoRow label={t('archive.avgHumidity')} value={t('archive.avgHumidityVal', { humidity: env.avgHumidity })} />
               )}
               {env.nutrients && (
                 <div>
-                  <span className="text-dark-400 text-sm">Удобрения</span>
+                  <span className="text-dark-400 text-sm">{t('archive.fertilizers')}</span>
                   <p className="text-dark-300 text-sm">{env.nutrients}</p>
                 </div>
               )}
@@ -594,14 +616,14 @@ export default function ArchiveDetail() {
           </Section>
 
           {/* Cycle Dates */}
-          <Section title="Даты цикла" icon="📆">
+          <Section title={t('archive.cycleDates')} icon="📆">
             <div className="space-y-3">
-              <InfoRow label="Начало цветения" value={formatDate(archive?.startDate)} />
-              <InfoRow label="План урожая" value={`${archive?.floweringDays || '—'} дней`} />
-              <InfoRow label="Факт урожая" value={formatDate(archive?.harvestDate)} />
+              <InfoRow label={t('archive.floweringStartDate')} value={formatDate(archive?.startDate, locale)} />
+              <InfoRow label={t('archive.plannedHarvest')} value={t('archive.daysValue', { days: archive?.floweringDays || '—' })} />
+              <InfoRow label={t('archive.actualHarvest')} value={formatDate(archive?.harvestDate, locale)} />
               <InfoRow
-                label="Фактических дней"
-                value={`${archive?.actualDays || '—'} дней`}
+                label={t('archive.actualDays')}
+                value={t('archive.daysValue', { days: archive?.actualDays || '—' })}
                 highlight
               />
             </div>
@@ -609,7 +631,7 @@ export default function ArchiveDetail() {
 
           {/* Notes */}
           {archive?.notes && (
-            <Section title="Общие заметки" icon="📝">
+            <Section title={t('archive.generalNotes')} icon="📝">
               <p className="text-dark-300 whitespace-pre-wrap">{archive.notes}</p>
             </Section>
           )}
@@ -620,23 +642,25 @@ export default function ArchiveDetail() {
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
           <div className="bg-dark-800 rounded-2xl p-6 max-w-md w-full border border-dark-700">
-            <h3 className="text-xl font-bold text-white mb-4">Удалить архив?</h3>
+            <h3 className="text-xl font-bold text-white mb-4">{t('archive.deleteArchiveTitle')}</h3>
             <p className="text-dark-300 mb-6">
-              Вы уверены, что хотите удалить архивную запись для {archive?.roomName || `Комната ${archive?.roomNumber}`} · {archive?.strain}?
-              Это действие нельзя отменить.
+              {t('archive.deleteArchiveMsg', {
+                room: archive?.roomName || `${t('archive.room')} ${archive?.roomNumber}`,
+                strain: archive?.strain
+              })}
             </p>
             <div className="flex justify-end gap-3">
               <button
                 onClick={() => setDeleteConfirm(false)}
                 className="px-4 py-2 text-dark-300 hover:text-white transition"
               >
-                Отмена
+                {t('common.cancel')}
               </button>
               <button
                 onClick={handleDelete}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition"
               >
-                Удалить
+                {t('common.delete')}
               </button>
             </div>
           </div>

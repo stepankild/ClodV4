@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { Outlet } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { authService } from '../../services/authService';
 import Sidebar from './Sidebar';
 
 const ChangePasswordModal = ({ onClose }) => {
+  const { t } = useTranslation();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -18,11 +20,11 @@ const ChangePasswordModal = ({ onClose }) => {
     setSuccess('');
 
     if (newPassword.length < 6) {
-      setError('Новый пароль минимум 6 символов');
+      setError(t('auth.newPasswordMin'));
       return;
     }
     if (newPassword !== confirmPassword) {
-      setError('Пароли не совпадают');
+      setError(t('auth.passwordsMismatch'));
       return;
     }
 
@@ -36,13 +38,13 @@ const ChangePasswordModal = ({ onClose }) => {
       if (result.refreshToken) {
         localStorage.setItem('refreshToken', result.refreshToken);
       }
-      setSuccess('Пароль успешно изменён!');
+      setSuccess(t('auth.passwordChanged'));
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
       setTimeout(() => onClose(), 1500);
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка смены пароля');
+      setError(err.response?.data?.message || t('auth.passwordChangeError'));
     } finally {
       setLoading(false);
     }
@@ -52,7 +54,7 @@ const ChangePasswordModal = ({ onClose }) => {
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between p-4 border-b border-dark-700">
-          <h2 className="text-lg font-semibold text-white">Сменить пароль</h2>
+          <h2 className="text-lg font-semibold text-white">{t('auth.changePassword')}</h2>
           <button type="button" onClick={onClose} className="p-2 text-dark-400 hover:text-white hover:bg-dark-700 rounded-lg transition">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -69,18 +71,18 @@ const ChangePasswordModal = ({ onClose }) => {
           )}
 
           <div>
-            <label className="block text-xs font-medium text-dark-400 mb-1">Текущий пароль</label>
+            <label className="block text-xs font-medium text-dark-400 mb-1">{t('auth.currentPassword')}</label>
             <input
               type="password"
               value={currentPassword}
               onChange={(e) => setCurrentPassword(e.target.value)}
               required
               className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500"
-              placeholder="Введите текущий пароль"
+              placeholder={t('auth.enterCurrentPassword')}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-dark-400 mb-1">Новый пароль</label>
+            <label className="block text-xs font-medium text-dark-400 mb-1">{t('auth.newPassword')}</label>
             <input
               type="password"
               value={newPassword}
@@ -88,29 +90,29 @@ const ChangePasswordModal = ({ onClose }) => {
               required
               minLength={6}
               className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500"
-              placeholder="Минимум 6 символов"
+              placeholder={t('auth.minPassword')}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-dark-400 mb-1">Подтвердите новый пароль</label>
+            <label className="block text-xs font-medium text-dark-400 mb-1">{t('auth.confirmNewPassword')}</label>
             <input
               type="password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
               className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500"
-              placeholder="Повторите новый пароль"
+              placeholder={t('auth.repeatNewPassword')}
             />
           </div>
 
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose}
               className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg text-sm font-medium">
-              Отмена
+              {t('common.cancel')}
             </button>
             <button type="submit" disabled={loading}
               className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium disabled:opacity-50">
-              {loading ? 'Сохранение...' : 'Сменить пароль'}
+              {loading ? t('common.saving') : t('auth.changePassword')}
             </button>
           </div>
         </form>
@@ -120,6 +122,7 @@ const ChangePasswordModal = ({ onClose }) => {
 };
 
 const MainLayout = () => {
+  const { t } = useTranslation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const { user, logout } = useAuth();
@@ -175,7 +178,7 @@ const MainLayout = () => {
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
                     </svg>
-                    <span>Сменить пароль</span>
+                    <span>{t('auth.changePassword')}</span>
                   </button>
                   <button
                     onClick={logout}
@@ -184,7 +187,7 @@ const MainLayout = () => {
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                     </svg>
-                    <span>Выйти</span>
+                    <span>{t('auth.logout')}</span>
                   </button>
                 </div>
               </div>

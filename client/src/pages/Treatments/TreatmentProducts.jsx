@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { treatmentProductService } from '../../services/treatmentProductService';
 
-const PRODUCT_TYPES = {
-  insecticide: { label: 'Инсектицид', color: 'bg-red-500' },
-  fungicide: { label: 'Фунгицид', color: 'bg-blue-500' },
-  acaricide: { label: 'Акарицид', color: 'bg-orange-500' },
-  bio: { label: 'Биопрепарат', color: 'bg-green-500' },
-  fertilizer: { label: 'Удобрение', color: 'bg-purple-500' },
-  ph_adjuster: { label: 'pH корректор', color: 'bg-cyan-500' },
-  other: { label: 'Другое', color: 'bg-gray-500' }
+const PRODUCT_TYPE_STYLES = {
+  insecticide: { color: 'bg-red-500' },
+  fungicide: { color: 'bg-blue-500' },
+  acaricide: { color: 'bg-orange-500' },
+  bio: { color: 'bg-green-500' },
+  fertilizer: { color: 'bg-purple-500' },
+  ph_adjuster: { color: 'bg-cyan-500' },
+  other: { color: 'bg-gray-500' }
 };
+
+const PRODUCT_TYPE_KEYS = ['insecticide', 'fungicide', 'acaricide', 'bio', 'fertilizer', 'ph_adjuster', 'other'];
 
 const emptyForm = {
   name: '',
@@ -23,6 +26,7 @@ const emptyForm = {
 };
 
 const TreatmentProducts = () => {
+  const { t } = useTranslation();
   const [products, setProducts] = useState([]);
   const [deleted, setDeleted] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -45,7 +49,7 @@ const TreatmentProducts = () => {
       setProducts(active);
       setDeleted(del);
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка загрузки');
+      setError(err.response?.data?.message || t('treatments.loadError'));
     } finally {
       setLoading(false);
     }
@@ -101,19 +105,19 @@ const TreatmentProducts = () => {
       resetForm();
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('treatments.saveError'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id, name) => {
-    if (!confirm(`Удалить препарат «${name}»?`)) return;
+    if (!confirm(t('treatments.deleteProductConfirm', { name }))) return;
     try {
       await treatmentProductService.delete(id);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка удаления');
+      setError(err.response?.data?.message || t('treatments.deleteError'));
     }
   };
 
@@ -122,7 +126,7 @@ const TreatmentProducts = () => {
       await treatmentProductService.restore(id);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка восстановления');
+      setError(err.response?.data?.message || t('treatments.restoreError'));
     }
   };
 
@@ -138,8 +142,8 @@ const TreatmentProducts = () => {
     <div>
       <div className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-white">База препаратов</h1>
-          <p className="text-dark-400 mt-1 text-sm">Справочник средств для обработки растений</p>
+          <h1 className="text-2xl font-bold text-white">{t('treatments.productsDatabaseTitle')}</h1>
+          <p className="text-dark-400 mt-1 text-sm">{t('treatments.productsDatabaseSubtitle')}</p>
         </div>
         {!showForm && (
           <button
@@ -147,7 +151,7 @@ const TreatmentProducts = () => {
             onClick={() => { resetForm(); setShowForm(true); }}
             className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-sm font-medium transition"
           >
-            + Добавить препарат
+            {t('treatments.addProductBtn')}
           </button>
         )}
       </div>
@@ -163,71 +167,71 @@ const TreatmentProducts = () => {
       {showForm && (
         <form onSubmit={handleSubmit} className="bg-dark-800 rounded-xl border border-dark-700 p-4 mb-6 space-y-4">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-white font-medium">{editId ? 'Редактирование' : 'Новый препарат'}</h3>
+            <h3 className="text-white font-medium">{editId ? t('treatments.editForm') : t('treatments.newProduct')}</h3>
             <button type="button" onClick={resetForm} className="text-dark-400 hover:text-dark-300 text-xl leading-none">&times;</button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="block text-dark-400 text-sm mb-1">Название *</label>
+              <label className="block text-dark-400 text-sm mb-1">{t('treatments.productName')}</label>
               <input
                 type="text"
                 value={form.name}
                 onChange={(e) => setForm(f => ({ ...f, name: e.target.value }))}
-                placeholder="Фитоверм, Актара..."
+                placeholder={t('treatments.productNamePlaceholder')}
                 className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                 autoFocus
               />
             </div>
 
             <div>
-              <label className="block text-dark-400 text-sm mb-1">Тип</label>
+              <label className="block text-dark-400 text-sm mb-1">{t('treatments.productType')}</label>
               <select
                 value={form.type}
                 onChange={(e) => setForm(f => ({ ...f, type: e.target.value }))}
                 className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500"
               >
-                {Object.entries(PRODUCT_TYPES).map(([key, { label }]) => (
-                  <option key={key} value={key}>{label}</option>
+                {PRODUCT_TYPE_KEYS.map(key => (
+                  <option key={key} value={key}>{t(`treatments.productTypes.${key === 'ph_adjuster' ? 'ph_adjuster_full' : key}`)}</option>
                 ))}
               </select>
             </div>
 
             <div>
-              <label className="block text-dark-400 text-sm mb-1">Действующее вещество</label>
+              <label className="block text-dark-400 text-sm mb-1">{t('treatments.activeIngredient')}</label>
               <input
                 type="text"
                 value={form.activeIngredient}
                 onChange={(e) => setForm(f => ({ ...f, activeIngredient: e.target.value }))}
-                placeholder="Аверсектин С, Тиаметоксам..."
+                placeholder={t('treatments.activeIngredientPlaceholder')}
                 className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-dark-400 text-sm mb-1">Стандартная дозировка</label>
+              <label className="block text-dark-400 text-sm mb-1">{t('treatments.standardDosage')}</label>
               <input
                 type="text"
                 value={form.concentration}
                 onChange={(e) => setForm(f => ({ ...f, concentration: e.target.value }))}
-                placeholder="2 мл/л, 5 г/10л..."
+                placeholder={t('treatments.standardDosagePlaceholder')}
                 className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-dark-400 text-sm mb-1">От чего помогает (через запятую)</label>
+              <label className="block text-dark-400 text-sm mb-1">{t('treatments.targetPests')}</label>
               <input
                 type="text"
                 value={form.targetPests}
                 onChange={(e) => setForm(f => ({ ...f, targetPests: e.target.value }))}
-                placeholder="Паутинный клещ, Трипсы, Белокрылка..."
+                placeholder={t('treatments.targetPestsPlaceholder')}
                 className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
               />
             </div>
 
             <div>
-              <label className="block text-dark-400 text-sm mb-1">Дней до урожая</label>
+              <label className="block text-dark-400 text-sm mb-1">{t('treatments.safetyInterval')}</label>
               <input
                 type="number"
                 value={form.safetyIntervalDays}
@@ -239,18 +243,18 @@ const TreatmentProducts = () => {
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-dark-400 text-sm mb-1">Инструкция по применению</label>
+              <label className="block text-dark-400 text-sm mb-1">{t('treatments.applicationInstructions')}</label>
               <textarea
                 value={form.instructions}
                 onChange={(e) => setForm(f => ({ ...f, instructions: e.target.value }))}
-                placeholder="Как разводить, способ нанесения, периодичность..."
+                placeholder={t('treatments.applicationInstructionsPlaceholder')}
                 rows={2}
                 className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm placeholder-dark-500 focus:ring-2 focus:ring-primary-500 focus:border-transparent resize-none"
               />
             </div>
 
             <div className="md:col-span-2">
-              <label className="block text-dark-400 text-sm mb-1">Заметки</label>
+              <label className="block text-dark-400 text-sm mb-1">{t('treatments.notesLabel')}</label>
               <textarea
                 value={form.notes}
                 onChange={(e) => setForm(f => ({ ...f, notes: e.target.value }))}
@@ -266,7 +270,7 @@ const TreatmentProducts = () => {
               onClick={resetForm}
               className="px-4 py-2 bg-dark-600 hover:bg-dark-500 text-dark-300 rounded-lg text-sm"
             >
-              Отмена
+              {t('treatments.cancel')}
             </button>
             <button
               type="submit"
@@ -274,7 +278,7 @@ const TreatmentProducts = () => {
               className="px-6 py-2 bg-primary-600 hover:bg-primary-700 disabled:opacity-50 text-white rounded-lg font-medium text-sm transition flex items-center gap-2"
             >
               {saving && <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />}
-              {editId ? 'Сохранить' : 'Добавить'}
+              {editId ? t('treatments.save') : t('treatments.add')}
             </button>
           </div>
         </form>
@@ -283,10 +287,10 @@ const TreatmentProducts = () => {
       {/* Products list */}
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
         <div className="px-4 py-3 border-b border-dark-700">
-          <span className="text-white font-medium">Препараты ({products.length})</span>
+          <span className="text-white font-medium">{t('treatments.productsCount', { count: products.length })}</span>
         </div>
         {products.length === 0 ? (
-          <div className="px-4 py-8 text-center text-dark-500">Нет препаратов. Добавьте первый.</div>
+          <div className="px-4 py-8 text-center text-dark-500">{t('treatments.noProductsHint')}</div>
         ) : (
           <div className="divide-y divide-dark-700">
             {products.map(p => (
@@ -295,11 +299,11 @@ const TreatmentProducts = () => {
                   className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-dark-700/50"
                   onClick={() => setExpandedId(expandedId === p._id ? null : p._id)}
                 >
-                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${PRODUCT_TYPES[p.type]?.color || 'bg-gray-500'}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${PRODUCT_TYPE_STYLES[p.type]?.color || 'bg-gray-500'}`} />
                   <div className="flex-1 min-w-0">
                     <div className="text-white font-medium">{p.name}</div>
                     <div className="text-dark-400 text-xs flex flex-wrap gap-x-3 gap-y-0.5">
-                      <span>{PRODUCT_TYPES[p.type]?.label || p.type}</span>
+                      <span>{t(`treatments.productTypes.${p.type}`) || p.type}</span>
                       {p.activeIngredient && <span>({p.activeIngredient})</span>}
                       {p.concentration && <span className="text-primary-400">{p.concentration}</span>}
                     </div>
@@ -310,14 +314,14 @@ const TreatmentProducts = () => {
                       onClick={(e) => { e.stopPropagation(); startEdit(p); }}
                       className="px-2 py-1 text-dark-400 hover:text-primary-400 text-sm"
                     >
-                      Изменить
+                      {t('treatments.edit')}
                     </button>
                     <button
                       type="button"
                       onClick={(e) => { e.stopPropagation(); handleDelete(p._id, p.name); }}
                       className="px-2 py-1 text-dark-400 hover:text-red-400 text-sm"
                     >
-                      Удалить
+                      {t('treatments.delete')}
                     </button>
                   </div>
                 </div>
@@ -327,25 +331,25 @@ const TreatmentProducts = () => {
                   <div className="px-4 pb-3 ml-5 space-y-1 text-sm">
                     {p.targetPests && p.targetPests.length > 0 && (
                       <div>
-                        <span className="text-dark-500">От чего: </span>
+                        <span className="text-dark-500">{t('treatments.targetPestsLabel')}: </span>
                         <span className="text-dark-300">{p.targetPests.join(', ')}</span>
                       </div>
                     )}
                     {p.safetyIntervalDays != null && (
                       <div>
-                        <span className="text-dark-500">Дней до урожая: </span>
+                        <span className="text-dark-500">{t('treatments.safetyIntervalLabel')}: </span>
                         <span className="text-dark-300">{p.safetyIntervalDays}</span>
                       </div>
                     )}
                     {p.instructions && (
                       <div>
-                        <span className="text-dark-500">Инструкция: </span>
+                        <span className="text-dark-500">{t('treatments.instructionsLabel')}: </span>
                         <span className="text-dark-300">{p.instructions}</span>
                       </div>
                     )}
                     {p.notes && (
                       <div>
-                        <span className="text-dark-500">Заметки: </span>
+                        <span className="text-dark-500">{t('treatments.notesLabel')}: </span>
                         <span className="text-dark-300">{p.notes}</span>
                       </div>
                     )}
@@ -366,20 +370,20 @@ const TreatmentProducts = () => {
             className="flex items-center gap-2 text-dark-500 hover:text-dark-300 text-sm mb-3"
           >
             <span className={`transition-transform inline-block ${showDeleted ? 'rotate-90' : ''}`} style={{ fontSize: '8px' }}>&#9654;</span>
-            Удалённые препараты ({deleted.length})
+            {t('treatments.deletedProducts', { count: deleted.length })}
           </button>
           {showDeleted && (
             <div className="bg-dark-800/50 rounded-xl border border-dark-700 divide-y divide-dark-700">
               {deleted.map(p => (
                 <div key={p._id} className="flex items-center gap-3 px-4 py-3">
-                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 opacity-40 ${PRODUCT_TYPES[p.type]?.color || 'bg-gray-500'}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full shrink-0 opacity-40 ${PRODUCT_TYPE_STYLES[p.type]?.color || 'bg-gray-500'}`} />
                   <span className="flex-1 text-dark-400 line-through">{p.name}</span>
                   <button
                     type="button"
                     onClick={() => handleRestore(p._id)}
                     className="px-3 py-1 bg-green-900/30 text-green-400 hover:bg-green-900/50 rounded text-xs font-medium"
                   >
-                    Восстановить
+                    {t('treatments.restore')}
                   </button>
                 </div>
               ))}

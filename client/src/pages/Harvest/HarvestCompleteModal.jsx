@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTestRoom }) => {
+  const { t } = useTranslation();
   const [distanceToScale, setDistanceToScale] = useState('');
   const [potWeight, setPotWeight] = useState('');
   const [branchesPerPlant, setBranchesPerPlant] = useState('');
@@ -10,7 +12,6 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
 
   if (!isOpen) return null;
 
-  // Найти носильщиков (активных, т.е. последний entry для каждого юзера с ролью carrying)
   const carriers = (crew || []).filter(c => c.role === 'carrying');
 
   const handleCarrierChange = (userId, carryType) => {
@@ -25,7 +26,6 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
     if (potsPerTrip) data.potsPerTrip = parseInt(potsPerTrip, 10);
     if (plantsPerTrip) data.plantsPerTrip = parseInt(plantsPerTrip, 10);
 
-    // Carrier assignments
     const assignments = Object.entries(carrierAssignments)
       .filter(([, type]) => type)
       .map(([userId, carryType]) => ({ userId, carryType }));
@@ -34,7 +34,6 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
     onConfirm(data);
   };
 
-  // Для тестовых комнат — простое подтверждение
   if (isTestRoom) {
     return (
       <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
@@ -44,8 +43,8 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
               <span className="text-2xl">🧪</span>
             </div>
             <div>
-              <h3 className="text-white font-bold text-lg">Завершить тестовый сбор?</h3>
-              <p className="text-amber-400 text-sm mt-1">Данные НЕ попадут в архив. Комната будет сброшена.</p>
+              <h3 className="text-white font-bold text-lg">{t('harvestComplete.finishTestTitle')}</h3>
+              <p className="text-amber-400 text-sm mt-1">{t('harvestComplete.testNote')}</p>
             </div>
           </div>
           <div className="flex gap-3">
@@ -54,14 +53,14 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
               disabled={loading}
               className="flex-1 px-4 py-3 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded-xl font-medium transition disabled:opacity-50"
             >
-              Отмена
+              {t('common.cancel')}
             </button>
             <button
               onClick={() => onConfirm({})}
               disabled={loading}
               className="flex-1 px-4 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold transition disabled:opacity-50"
             >
-              {loading ? 'Завершение...' : 'Завершить тест'}
+              {loading ? t('harvestComplete.finishing') : t('harvestComplete.finishTestBtn')}
             </button>
           </div>
         </div>
@@ -77,18 +76,17 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
             <span className="text-2xl">🎉</span>
           </div>
           <div>
-            <h3 className="text-white font-bold text-lg">Завершить сбор?</h3>
+            <h3 className="text-white font-bold text-lg">{t('harvestComplete.finishTitle')}</h3>
             <p className="text-dark-400 text-sm mt-0.5">
-              Комната попадёт в архив. Данные ниже — для отчёта команды (необязательно).
+              {t('harvestComplete.finishNote')}
             </p>
           </div>
         </div>
 
         <div className="space-y-4 mt-5">
-          {/* Расстояние */}
           <div>
             <label className="flex items-center gap-2 text-sm text-dark-300 mb-1.5">
-              <span>📏</span> Расстояние от комнаты до весов (м)
+              <span>📏</span> {t('harvestComplete.distanceToScale')}
             </label>
             <input
               type="number"
@@ -101,10 +99,9 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
             />
           </div>
 
-          {/* Вес горшка */}
           <div>
             <label className="flex items-center gap-2 text-sm text-dark-300 mb-1.5">
-              <span>⚖️</span> Средний вес горшка (кг)
+              <span>⚖️</span> {t('harvestComplete.avgPotWeight')}
             </label>
             <input
               type="number"
@@ -117,10 +114,9 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
             />
           </div>
 
-          {/* Ветки с куста */}
           <div>
             <label className="flex items-center gap-2 text-sm text-dark-300 mb-1.5">
-              <span>🪝</span> Среднее кол-во веток с куста
+              <span>🪝</span> {t('harvestComplete.branchesPerPlant')}
             </label>
             <input
               type="number"
@@ -132,10 +128,9 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
             />
           </div>
 
-          {/* Горшков за ходку */}
           <div>
             <label className="flex items-center gap-2 text-sm text-dark-300 mb-1.5">
-              <span>🪴</span> Горшков за одну ходку
+              <span>🪴</span> {t('harvestComplete.potsPerTrip')}
             </label>
             <input
               type="number"
@@ -147,10 +142,9 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
             />
           </div>
 
-          {/* Кустов за ходку */}
           <div>
             <label className="flex items-center gap-2 text-sm text-dark-300 mb-1.5">
-              <span>🌿</span> Кустов за одну ходку
+              <span>🌿</span> {t('harvestComplete.plantsPerTrip')}
             </label>
             <input
               type="number"
@@ -162,11 +156,10 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
             />
           </div>
 
-          {/* Секция носильщиков */}
           {carriers.length > 0 && (
             <div className="pt-3 border-t border-dark-700">
               <div className="text-sm text-dark-300 mb-3 font-medium">
-                🚶 Носильщики — что нёс каждый?
+                🚶 {t('harvestComplete.carriers')}
               </div>
               <div className="space-y-3">
                 {carriers.map(c => {
@@ -180,10 +173,10 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
                         onChange={e => handleCarrierChange(uid, e.target.value)}
                         className="flex-1 px-2 py-2 bg-dark-600 border border-dark-500 rounded-lg text-white text-sm focus:ring-2 focus:ring-green-500"
                       >
-                        <option value="">Не указано</option>
-                        <option value="pots">🪴 Горшки на выброс</option>
-                        <option value="plants">🌿 Кусты на взвешивание</option>
-                        <option value="both">🔄 Оба</option>
+                        <option value="">{t('harvestComplete.notSpecified')}</option>
+                        <option value="pots">{t('harvestComplete.pots')}</option>
+                        <option value="plants">{t('harvestComplete.plants')}</option>
+                        <option value="both">{t('harvestComplete.both')}</option>
                       </select>
                     </div>
                   );
@@ -199,14 +192,14 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
             disabled={loading}
             className="flex-1 px-4 py-3 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded-xl font-medium transition disabled:opacity-50"
           >
-            Отмена
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleSubmit}
             disabled={loading}
             className="flex-1 px-4 py-3 bg-green-600 hover:bg-green-500 text-white rounded-xl font-bold transition disabled:opacity-50"
           >
-            {loading ? 'Завершение...' : 'Завершить сбор ✓'}
+            {loading ? t('harvestComplete.finishing') : t('harvestComplete.finishBtn')}
           </button>
         </div>
       </div>

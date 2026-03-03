@@ -3,6 +3,7 @@ import FlowerRoom from '../models/FlowerRoom.js';
 import RoomLog from '../models/RoomLog.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get task types
 // @route   GET /api/tasks/types
@@ -15,7 +16,7 @@ export const getTaskTypes = async (req, res) => {
     res.json(types);
   } catch (error) {
     console.error('Get task types error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -39,7 +40,7 @@ export const getRoomTasks = async (req, res) => {
     res.json(tasks);
   } catch (error) {
     console.error('Get room tasks error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -61,7 +62,7 @@ export const createTask = async (req, res) => {
 
     const room = await FlowerRoom.findById(roomId);
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     const task = await RoomTask.create({
@@ -82,7 +83,7 @@ export const createTask = async (req, res) => {
     res.status(201).json(task);
   } catch (error) {
     console.error('Create task error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -93,7 +94,7 @@ export const toggleTask = async (req, res) => {
     const task = await RoomTask.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!task) {
-      return res.status(404).json({ message: 'Задача не найдена' });
+      return res.status(404).json({ message: t('tasks.notFound', req.lang) });
     }
 
     const room = await FlowerRoom.findById(task.room);
@@ -133,7 +134,7 @@ export const toggleTask = async (req, res) => {
     res.json(task);
   } catch (error) {
     console.error('Toggle task error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -154,7 +155,7 @@ export const updateTask = async (req, res) => {
     const task = await RoomTask.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!task) {
-      return res.status(404).json({ message: 'Задача не найдена' });
+      return res.status(404).json({ message: t('tasks.notFound', req.lang) });
     }
 
     if (title !== undefined) task.title = title;
@@ -172,7 +173,7 @@ export const updateTask = async (req, res) => {
     res.json(task);
   } catch (error) {
     console.error('Update task error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -183,7 +184,7 @@ export const deleteTask = async (req, res) => {
     const task = await RoomTask.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!task) {
-      return res.status(404).json({ message: 'Задача не найдена' });
+      return res.status(404).json({ message: t('tasks.notFound', req.lang) });
     }
 
     const taskTitle = task.title || task.type || '';
@@ -192,10 +193,10 @@ export const deleteTask = async (req, res) => {
     task.deletedAt = new Date();
     await task.save();
 
-    res.json({ message: 'Задача удалена (можно восстановить)' });
+    res.json({ message: t('tasks.deleted', req.lang) });
   } catch (error) {
     console.error('Delete task error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -207,7 +208,7 @@ export const quickAddTask = async (req, res) => {
 
     const room = await FlowerRoom.findById(roomId);
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     const taskData = {
@@ -282,7 +283,7 @@ export const quickAddTask = async (req, res) => {
     res.status(201).json(task);
   } catch (error) {
     console.error('Quick add task error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -292,14 +293,14 @@ export const getDeletedTasks = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get deleted tasks error:', error);
-    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
 export const restoreTask = async (req, res) => {
   try {
     const task = await RoomTask.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!task) return res.status(404).json({ message: 'Р—Р°РґР°С‡Р° РЅРµ РЅР°Р№РґРµРЅР° РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР°' });
+    if (!task) return res.status(404).json({ message: t('tasks.notFoundOrRestored', req.lang) });
     task.deletedAt = null;
     await task.save();
     await task.populate('room', 'name roomNumber');
@@ -307,6 +308,6 @@ export const restoreTask = async (req, res) => {
     res.json(task);
   } catch (error) {
     console.error('Restore task error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
