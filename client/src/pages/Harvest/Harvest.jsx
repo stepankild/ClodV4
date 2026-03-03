@@ -487,9 +487,6 @@ const Harvest = () => {
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-white font-bold text-lg truncate">
                       {r.name}
-                      {r.isTestRoom && (
-                        <span className="ml-2 text-xs bg-amber-600/30 text-amber-400 px-2 py-0.5 rounded-full font-normal">{t('harvest.test')}</span>
-                      )}
                     </span>
                     <svg className="w-5 h-5 text-dark-500 group-hover:text-primary-400 transition shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -724,15 +721,8 @@ const Harvest = () => {
         </button>
         <h1 className="text-2xl font-bold text-white">
           {t('harvest.harvestRoom', { name: selectedRoom?.name || t('harvest.room') })}
-          {selectedRoom?.isTestRoom && (
-            <span className="ml-3 text-base bg-amber-600/30 text-amber-400 px-3 py-1 rounded-full font-normal">
-              {t('harvest.testMode')}
-            </span>
-          )}
         </h1>
-        {selectedRoom?.isTestRoom ? (
-          <p className="text-amber-400 mt-1">{t('harvest.testRoomNote')}</p>
-        ) : isWeigher ? (
+        {isWeigher ? (
           <p className="text-dark-400 mt-1">{t('harvest.scanOrEnter')}</p>
         ) : (
           <p className="text-dark-400 mt-1">{t('harvest.watchProgress')}</p>
@@ -1532,9 +1522,6 @@ const Harvest = () => {
           </div>
 
           <div className="flex justify-end items-center gap-3">
-            {selectedRoom?.isTestRoom && (
-              <span className="text-amber-400 text-sm">{t('harvest.testRoomComplete')}</span>
-            )}
             {!isWeigher && (
               <span className="text-dark-500 text-sm">{t('harvest.onlyWeigherComplete')}</span>
             )}
@@ -1544,7 +1531,7 @@ const Harvest = () => {
               disabled={sessionLoading || !isWeigher || !canDoHarvest}
               className="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-500 font-medium disabled:opacity-50"
             >
-              {selectedRoom?.isTestRoom ? t('harvest.finishTest') : t('harvest.finishHarvest')}
+              {t('harvest.finishHarvest')}
             </button>
           </div>
         </>
@@ -1557,7 +1544,6 @@ const Harvest = () => {
         onConfirm={handleConfirmComplete}
         loading={sessionLoading}
         crew={crew}
-        isTestRoom={selectedRoom?.isTestRoom}
       />
 
       {session && session.status === 'completed' && (

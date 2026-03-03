@@ -51,10 +51,6 @@ const flowerRoomSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  isTestRoom: {
-    type: Boolean,
-    default: false
-  },
   // Условия выращивания
   environment: {
     lightHours: {
@@ -188,7 +184,6 @@ flowerRoomSchema.pre('save', function(next) {
 // Индексы
 flowerRoomSchema.index({ isActive: 1 });
 flowerRoomSchema.index({ roomNumber: 1 });
-flowerRoomSchema.index({ isTestRoom: 1 });
 flowerRoomSchema.index({ currentCycleId: 1 });
 
 // Include virtuals in JSON

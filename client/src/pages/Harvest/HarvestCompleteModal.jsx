@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTestRoom }) => {
+const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew }) => {
   const { t } = useTranslation();
   const [distanceToScale, setDistanceToScale] = useState('');
   const [potWeight, setPotWeight] = useState('');
@@ -33,40 +33,6 @@ const HarvestCompleteModal = ({ isOpen, onClose, onConfirm, loading, crew, isTes
 
     onConfirm(data);
   };
-
-  if (isTestRoom) {
-    return (
-      <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
-        <div className="bg-dark-800 border-2 border-amber-600 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-12 h-12 rounded-full bg-amber-600/20 flex items-center justify-center shrink-0">
-              <span className="text-2xl">🧪</span>
-            </div>
-            <div>
-              <h3 className="text-white font-bold text-lg">{t('harvestComplete.finishTestTitle')}</h3>
-              <p className="text-amber-400 text-sm mt-1">{t('harvestComplete.testNote')}</p>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={onClose}
-              disabled={loading}
-              className="flex-1 px-4 py-3 bg-dark-700 hover:bg-dark-600 text-dark-300 hover:text-white rounded-xl font-medium transition disabled:opacity-50"
-            >
-              {t('common.cancel')}
-            </button>
-            <button
-              onClick={() => onConfirm({})}
-              disabled={loading}
-              className="flex-1 px-4 py-3 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-bold transition disabled:opacity-50"
-            >
-              {loading ? t('harvestComplete.finishing') : t('harvestComplete.finishTestBtn')}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
