@@ -449,6 +449,10 @@ const Statistics = () => {
   const shrinkageFraction = total.shrinkageWet > 0 && total.shrinkageDry > 0
     ? roundTo(total.shrinkageWet / total.shrinkageDry, 1)
     : null;
+  // Потери на триме: (dry - trimmed - popcorn) / dry * 100%
+  const trimLossPct = total.trimLossDry > 0 && total.trimLossTrimmed > 0
+    ? roundTo((total.trimLossDry - total.trimLossTrimmed - (total.trimLossPopcorn || 0)) / total.trimLossDry * 100, 1)
+    : null;
 
   // Best strain & room by g/plant
   const bestStrain = byStrain.length > 0
@@ -533,7 +537,7 @@ const Statistics = () => {
         </div>
       )}
 
-      {/* Сводка по ферме — 2 ряда по 4 */}
+      {/* Сводка по ферме — 3 ряда по 4 */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">{t('stats.totalCycles')}</div>
@@ -584,13 +588,22 @@ const Statistics = () => {
           )}
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+          <div className="text-dark-400 text-xs font-medium">{t('stats.trimLoss')}</div>
+          <div className="text-2xl font-bold text-red-400 mt-1">
+            {trimLossPct != null ? `${trimLossPct}%` : '—'}
+          </div>
+          {total.trimLossCycles > 0 && (
+            <p className="text-dark-500 text-xs mt-0.5">{t('stats.shrinkageCycles', { count: total.trimLossCycles })}</p>
+          )}
+        </div>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">{t('stats.avgCycle')}</div>
           <div className="text-2xl font-bold text-white mt-1">
             {avgCycleDays != null ? t('stats.avgCycleDays', { days: avgCycleDays }) : '—'}
           </div>
         </div>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">{t('stats.cyclesPerYear', { rooms: safeRooms.length })}</div>
           <div className="text-2xl font-bold text-primary-400 mt-1">

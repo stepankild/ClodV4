@@ -1431,7 +1431,8 @@
     "shrinkage": "Усушка",
     "totalPlants": "Всего кустов",
     "byStrainEst": "(по сорту)",
-    "shrinkageCycles": "по {{count}} циклам"
+    "shrinkageCycles": "по {{count}} циклам",
+    "trimLoss": "Потери на триме"
   },
   "labels": {
     "title": "Печать этикеток",

@@ -113,7 +113,12 @@ export const getArchiveStats = async (req, res) => {
           avgDaysFlowering: { $avg: '$actualDays' },
           avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
           avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
-          avgGramsPerDay: { $avg: '$metrics.gramsPerDay' }
+          avgGramsPerDay: { $avg: '$metrics.gramsPerDay' },
+          // Потери на триме: считаем только по завершённым циклам (trimStatus = completed, dry > 0, trimWeight > 0)
+          trimLossDry: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
+          trimLossTrimmed: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.trimWeight', 0] } },
+          trimLossPopcorn: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, { $ifNull: ['$harvestData.popcornWeight', 0] }, 0] } },
+          trimLossCycles: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, 1, 0] } }
         }
       }
     ]);
@@ -257,7 +262,11 @@ export const getArchiveStats = async (req, res) => {
       avgDaysFlowering: 0,
       avgGramsPerPlant: 0,
       avgGramsPerWatt: 0,
-      avgGramsPerDay: 0
+      avgGramsPerDay: 0,
+      trimLossDry: 0,
+      trimLossTrimmed: 0,
+      trimLossPopcorn: 0,
+      trimLossCycles: 0
     };
     totalData.totalTrimWeight = trimTotalAgg[0]?.totalTrimWeight || 0;
     totalData.totalTrimEntries = trimTotalAgg[0]?.totalTrimEntries || 0;

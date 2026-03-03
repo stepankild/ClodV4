@@ -1432,7 +1432,8 @@
     "shrinkage": "Shrinkage",
     "totalPlants": "Total Plants",
     "byStrainEst": "(by strain)",
-    "shrinkageCycles": "from {{count}} cycles"
+    "shrinkageCycles": "from {{count}} cycles",
+    "trimLoss": "Trim Loss"
   },
   "labels": {
     "title": "Print Labels",
