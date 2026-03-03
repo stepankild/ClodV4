@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { roomService } from '../../services/roomService';
 import { archiveService } from '../../services/archiveService';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 import {
   BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, PieChart, Pie, Cell
@@ -68,7 +69,7 @@ const StrainDetailCard = ({ strain, period, t, locale }) => {
 
   // Chart data — chronological cycles
   const chartData = cycles.map((c, i) => ({
-    name: c.roomName ? `${c.roomName}` : `#${i + 1}`,
+    name: c.roomName ? `${localizeRoomName(c.roomName, t)}` : `#${i + 1}`,
     date: formatDate(c.harvestDate, locale),
     gpp: roundTo(c.gramsPerPlant, 1) || 0,
     dry: Math.round(c.dryWeight || 0),
@@ -104,14 +105,14 @@ const StrainDetailCard = ({ strain, period, t, locale }) => {
         <div className="bg-green-900/20 border border-green-800/30 rounded-lg p-3">
           <div className="text-green-400 text-xs font-semibold mb-1">{t('stats.bestCycleLabel')}</div>
           <div className="text-white text-sm">
-            {summary.bestCycle.roomName} — {formatNum(summary.bestCycle.gramsPerPlant, locale)} {t('stats.gPerPlant')}
+            {localizeRoomName(summary.bestCycle.roomName, t)} — {formatNum(summary.bestCycle.gramsPerPlant, locale)} {t('stats.gPerPlant')}
           </div>
           <div className="text-dark-400 text-xs">{formatDate(summary.bestCycle.harvestDate, locale)} · {formatNum(summary.bestCycle.dryWeight, locale)} {t('common.grams')} {t('archive.dry')}</div>
         </div>
         <div className="bg-red-900/20 border border-red-800/30 rounded-lg p-3">
           <div className="text-red-400 text-xs font-semibold mb-1">{t('stats.worstCycleLabel')}</div>
           <div className="text-white text-sm">
-            {summary.worstCycle.roomName} — {formatNum(summary.worstCycle.gramsPerPlant, locale)} {t('stats.gPerPlant')}
+            {localizeRoomName(summary.worstCycle.roomName, t)} — {formatNum(summary.worstCycle.gramsPerPlant, locale)} {t('stats.gPerPlant')}
           </div>
           <div className="text-dark-400 text-xs">{formatDate(summary.worstCycle.harvestDate, locale)} · {formatNum(summary.worstCycle.dryWeight, locale)} {t('common.grams')} {t('archive.dry')}</div>
         </div>
@@ -154,7 +155,7 @@ const StrainDetailCard = ({ strain, period, t, locale }) => {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
             {byRoom.map((r) => (
               <div key={r.roomId} className="bg-dark-800 rounded-lg border border-dark-700 p-3 text-sm">
-                <div className="font-medium text-white">{r.roomName}</div>
+                <div className="font-medium text-white">{localizeRoomName(r.roomName, t)}</div>
                 <div className="text-dark-400 text-xs mt-1">
                   {r.cycles} {t('stats.cyclesAbbr')} · {formatNum(r.totalWeight, locale)} {t('common.grams')} · {r.avgGramsPerPlant} {t('stats.gPerPlant')} · {r.avgDays} {t('common.days')}
                 </div>
@@ -185,7 +186,7 @@ const StrainDetailCard = ({ strain, period, t, locale }) => {
               {cycles.map((c) => (
                 <tr key={c._id} className="hover:bg-dark-700/30">
                   <td className="px-3 py-2 text-dark-300">{formatDate(c.harvestDate, locale)}</td>
-                  <td className="px-3 py-2 text-white">{c.roomName}</td>
+                  <td className="px-3 py-2 text-white">{localizeRoomName(c.roomName, t)}</td>
                   <td className="px-3 py-2 text-right text-dark-300">{c.plantsCount}</td>
                   <td className="px-3 py-2 text-right text-green-400">{formatNum(Math.round(c.dryWeight), locale)}</td>
                   <td className="px-3 py-2 text-right text-blue-400">{formatNum(roundTo(c.gramsPerPlant, 1), locale)}</td>
@@ -615,8 +616,8 @@ const Statistics = () => {
           <div className="text-dark-400 text-xs font-medium">{t('stats.bestRoom')}</div>
           {bestRoomObj && bestRoomEntry ? (
             <>
-              <div className="text-xl font-bold text-indigo-400 mt-1 truncate" title={bestRoomObj.name}>
-                {bestRoomObj.name}
+              <div className="text-xl font-bold text-indigo-400 mt-1 truncate" title={localizeRoomName(bestRoomObj.name, t)}>
+                {localizeRoomName(bestRoomObj.name, t)}
               </div>
               <p className="text-dark-500 text-xs mt-0.5">{roundTo(bestRoomEntry.avgGramsPerPlant, 1)} {t('stats.gPerPlantSuffix')}</p>
             </>
@@ -803,7 +804,7 @@ const Statistics = () => {
                       >
                         <td className="px-4 py-3 font-medium text-white">
                           <span className="inline-flex items-center gap-2">
-                            {room.name}
+                            {localizeRoomName(room.name, t)}
                             {cycles > 0 && (
                               <span className={`text-dark-500 text-xs transition-transform ${isExpanded ? 'rotate-180' : ''}`}>▼</span>
                             )}
@@ -899,7 +900,7 @@ const Statistics = () => {
                       className="flex flex-wrap items-center justify-between gap-3 py-3 border-b border-dark-700 last:border-0"
                     >
                       <div>
-                        <div className="font-medium text-white">{room.name}</div>
+                        <div className="font-medium text-white">{localizeRoomName(room.name, t)}</div>
                         {roomStrains.length > 0 && (
                           <div className="text-dark-500 text-xs mt-0.5">
                             {roomStrains.map((rs) => rs.strain).filter(Boolean).join(', ')}

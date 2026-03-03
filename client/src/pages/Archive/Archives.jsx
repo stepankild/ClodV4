@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { archiveService } from '../../services/archiveService';
 import { roomService } from '../../services/roomService';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const formatDate = (date, locale) => {
   if (!date) return '—';
@@ -347,7 +348,7 @@ export default function Archives() {
           >
             <option value="">{t('archive.allRooms')}</option>
             {rooms.map((r) => (
-              <option key={r._id} value={r._id}>{r.name || `${t('archive.room')} ${r.roomNumber}`}</option>
+              <option key={r._id} value={r._id}>{localizeRoomName(r.name, t) || `${t('archive.room')} ${r.roomNumber}`}</option>
             ))}
           </select>
         </div>
@@ -449,7 +450,7 @@ export default function Archives() {
                   {/* Room + strain */}
                   <div className="min-w-[110px] shrink-0">
                     <div className="text-white text-sm font-medium leading-tight">
-                      {a.roomName || `${t('archive.roomPrefix', { num: a.roomNumber })}`}
+                      {localizeRoomName(a.roomName, t) || `${t('archive.roomPrefix', { num: a.roomNumber })}`}
                     </div>
                     <div className="text-dark-400 text-xs leading-tight truncate max-w-[140px]">
                       {a.strain || '—'}

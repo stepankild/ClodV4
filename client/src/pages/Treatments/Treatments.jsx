@@ -5,6 +5,7 @@ import { treatmentService } from '../../services/treatmentService';
 import { treatmentProductService } from '../../services/treatmentProductService';
 import { roomService } from '../../services/roomService';
 import { useAuth } from '../../context/AuthContext';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const PRODUCT_TYPE_STYLES = {
   insecticide: { color: 'bg-red-500', dot: 'bg-red-400', text: 'text-red-400' },
@@ -266,7 +267,7 @@ const Treatments = () => {
     const typeInfo = PRODUCT_TYPE_STYLES[record.productType] || PRODUCT_TYPE_STYLES.other;
     const overdue = isOverdue(record);
     const statusCls = STATUS_STYLES[record.status] || STATUS_STYLES.planned;
-    const roomName = record.room?.name || t('treatments.roomDefault', { number: record.room?.roomNumber || '?' });
+    const roomName = localizeRoomName(record.room?.name, t) || t('treatments.roomDefault', { number: record.room?.roomNumber || '?' });
     const isExp = expandedId === record._id;
 
     return (
@@ -464,7 +465,7 @@ const Treatments = () => {
                                   r.status === 'skipped' ? 'bg-dark-500' :
                                   'bg-yellow-400'
                                 }`} />
-                                <span className="truncate">{r.room?.name || (i18n.language === 'ru' ? 'К' : 'R') + (r.room?.roomNumber || '?')}</span>
+                                <span className="truncate">{localizeRoomName(r.room?.name, t) || (i18n.language === 'ru' ? 'К' : 'R') + (r.room?.roomNumber || '?')}</span>
                               </div>
                             );
                           })}
@@ -553,7 +554,7 @@ const Treatments = () => {
                   const typeInfo = PRODUCT_TYPE_STYLES[r.productType] || PRODUCT_TYPE_STYLES.other;
                   const overdue = isOverdue(r);
                   const statusCls = STATUS_STYLES[r.status] || STATUS_STYLES.planned;
-                  const roomName = r.room?.name || t('treatments.roomDefault', { number: r.room?.roomNumber || '?' });
+                  const roomName = localizeRoomName(r.room?.name, t) || t('treatments.roomDefault', { number: r.room?.roomNumber || '?' });
 
                   return (
                     <div key={r._id}>
@@ -637,7 +638,7 @@ const Treatments = () => {
                   className="w-full bg-dark-700 border border-dark-600 rounded-lg px-3 py-2 text-white text-sm focus:ring-2 focus:ring-primary-500" required>
                   <option value="">{t('treatments.selectRoom')}</option>
                   {(activeRooms.length > 0 ? activeRooms : rooms).map(r => (
-                    <option key={r._id} value={r._id}>{r.name} {r.strain ? `(${r.strain})` : ''}</option>
+                    <option key={r._id} value={r._id}>{localizeRoomName(r.name, t)} {r.strain ? `(${r.strain})` : ''}</option>
                   ))}
                 </select>
               </div>

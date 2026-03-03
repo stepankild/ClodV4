@@ -5,6 +5,7 @@ import { vegBatchService } from '../../services/vegBatchService';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
 import StrainSelect from '../../components/StrainSelect';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const getDaysInVeg = (transplantedToVegAt) => {
   if (!transplantedToVegAt) return 0;
@@ -901,7 +902,7 @@ const Vegetation = () => {
                   <option value="">{t('vegetation.notLinked')}</option>
                   {cloneCuts.filter((c) => c.isDone).map((c) => (
                     <option key={c._id} value={c._id}>
-                      {c.room?.name || t('vegetation.roomDefault')} · {formatDate(c.cutDate)} · {formatStrainsShort(Array.isArray(c.strains) && c.strains.length ? c.strains : (c.strain ? [{ strain: c.strain, quantity: c.quantity }] : []))} ({c.quantity || 0})
+                      {localizeRoomName(c.room?.name, t) || t('vegetation.roomDefault')} · {formatDate(c.cutDate)} · {formatStrainsShort(Array.isArray(c.strains) && c.strains.length ? c.strains : (c.strain ? [{ strain: c.strain, quantity: c.quantity }] : []))} ({c.quantity || 0})
                     </option>
                   ))}
                 </select>
@@ -1018,7 +1019,7 @@ const Vegetation = () => {
                 <select value={editForm.sourceCloneCut} onChange={(e) => setEditForm((f) => ({ ...f, sourceCloneCut: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm">
                   <option value="">{t('vegetation.notLinked')}</option>
                   {cloneCuts.filter((c) => c.isDone).map((c) => (
-                    <option key={c._id} value={c._id}>{c.room?.name || t('vegetation.roomDefault')} · {formatDate(c.cutDate)}</option>
+                    <option key={c._id} value={c._id}>{localizeRoomName(c.room?.name, t) || t('vegetation.roomDefault')} · {formatDate(c.cutDate)}</option>
                   ))}
                 </select>
               </div>
@@ -1099,7 +1100,7 @@ const Vegetation = () => {
                   <option value="">{t('vegetation.selectRoom')}</option>
                   {rooms.map((r) => (
                     <option key={r._id} value={r._id} disabled={r.isActive}>
-                      {r.name} {r.isActive ? t('vegetation.roomActiveLabel') : t('vegetation.roomFreeLabel')}
+                      {localizeRoomName(r.name, t)} {r.isActive ? t('vegetation.roomActiveLabel') : t('vegetation.roomFreeLabel')}
                     </option>
                   ))}
                 </select>

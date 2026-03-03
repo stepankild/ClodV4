@@ -44,7 +44,8 @@
     "networkError": "Failed to connect to server.",
     "loadError": "Loading error",
     "addNote": "Add a note...",
-    "perSqM": "/m²"
+    "perSqM": "/m²",
+    "roomWord": "Room"
   },
   "nav": {
     "overview": "Farm Overview",

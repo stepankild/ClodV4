@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
 import { vegBatchService } from '../../services/vegBatchService';
@@ -189,10 +190,10 @@ const Overview = () => {
         type: daysUntil < 0 ? 'danger' : 'warning',
         icon: '✂️',
         text: daysUntil < 0
-          ? t('overview.alerts.clonesOverdue', { name: room.name, days: -daysUntil })
+          ? t('overview.alerts.clonesOverdue', { name: localizeRoomName(room.name, t), days: -daysUntil })
           : daysUntil === 0
-            ? t('overview.alerts.clonesToday', { name: room.name })
-            : t('overview.alerts.clonesIn', { name: room.name, days: daysUntil }),
+            ? t('overview.alerts.clonesToday', { name: localizeRoomName(room.name, t) })
+            : t('overview.alerts.clonesIn', { name: localizeRoomName(room.name, t), days: daysUntil }),
         link: '/clones'
       });
     }
@@ -204,7 +205,7 @@ const Overview = () => {
       alerts.push({
         type: 'danger',
         icon: '🌿',
-        text: t('overview.alerts.readyToHarvest', { name: room.name, currentDay: room.currentDay, floweringDays: room.floweringDays }),
+        text: t('overview.alerts.readyToHarvest', { name: localizeRoomName(room.name, t), currentDay: room.currentDay, floweringDays: room.floweringDays }),
         link: '/harvest'
       });
     }
@@ -215,7 +216,7 @@ const Overview = () => {
     r.isActive && (!r.lighting?.lampCount || !r.lighting?.lampWattage)
   );
   if (roomsMissingLamps.length > 0) {
-    const names = roomsMissingLamps.map(r => r.name).join(', ');
+    const names = roomsMissingLamps.map(r => localizeRoomName(r.name, t)).join(', ');
     alerts.push({
       type: 'warning',
       icon: '💡',
@@ -235,7 +236,7 @@ const Overview = () => {
         alerts.push({
           type: 'warning',
           icon: '⚠️',
-          text: t('overview.alerts.taskOverdue', { name: room.name, title: task.title }),
+          text: t('overview.alerts.taskOverdue', { name: localizeRoomName(room.name, t), title: task.title }),
           link: '/active'
         });
       }
@@ -283,7 +284,7 @@ const Overview = () => {
               nearestDays <= 0 ? <span className="text-red-400">{t('overview.stats.harvestNow')}</span> : t('overview.stats.daysShort', { days: nearestDays })
             ) : '—'}
           </div>
-          {nearestHarvest && <p className="text-dark-500 text-xs mt-0.5">{nearestHarvest.name}</p>}
+          {nearestHarvest && <p className="text-dark-500 text-xs mt-0.5">{localizeRoomName(nearestHarvest.name, t)}</p>}
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">{t('overview.stats.strainsFlowering')}</div>
@@ -338,7 +339,7 @@ const Overview = () => {
               <div className="px-4 pt-4 pb-2 flex items-start justify-between">
                 <div className="min-w-0">
                   <Link to="/active" className="text-base font-semibold text-white hover:text-primary-400 transition block truncate">
-                    {room.name}
+                    {localizeRoomName(room.name, t)}
                   </Link>
                   {room.isActive ? (
                     <div className="flex items-center gap-2 mt-0.5">

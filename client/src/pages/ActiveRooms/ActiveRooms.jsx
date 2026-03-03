@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import RoomMap from '../../components/RoomMap/RoomMap';
 import StrainSelect from '../../components/StrainSelect';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 export default function ActiveRooms() {
   const { t, i18n } = useTranslation();
@@ -318,7 +319,7 @@ export default function ActiveRooms() {
 
   const handleHarvest = async () => {
     if (!selectedRoom || !canHarvest) return;
-    if (!confirm(t('rooms.confirmHarvest', { name: selectedRoom.name }))) return;
+    if (!confirm(t('rooms.confirmHarvest', { name: localizeRoomName(selectedRoom.name, t) }))) return;
     setSaving(true);
     try {
       await roomService.harvestRoom(selectedRoom._id);
@@ -338,9 +339,9 @@ export default function ActiveRooms() {
       setError(t('rooms.transferAtLeastOne'));
       return;
     }
-    const targetName = rooms.find(r => r._id === transferTarget)?.name || t('rooms.selectedRoom');
+    const targetName = localizeRoomName(rooms.find(r => r._id === transferTarget)?.name, t) || t('rooms.selectedRoom');
     const disposeMsg = totalDisposed > 0 ? `\n${t('rooms.transferDisposeCount', { count: totalDisposed })}` : '';
-    if (!confirm(t('rooms.confirmTransfer', { count: totalTransfer, from: selectedRoom.name, to: targetName }) + disposeMsg + `\n${t('rooms.transferNote')}`)) return;
+    if (!confirm(t('rooms.confirmTransfer', { count: totalTransfer, from: localizeRoomName(selectedRoom.name, t), to: targetName }) + disposeMsg + `\n${t('rooms.transferNote')}`)) return;
     setTransferSaving(true);
     try {
       const strainsToSend = transferStrains
@@ -599,7 +600,7 @@ export default function ActiveRooms() {
                 className="bg-dark-800 rounded-xl border border-dark-700 p-5 cursor-pointer hover:border-primary-500/50 transition"
               >
                 <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-white">{room.name}</h3>
+                  <h3 className="text-lg font-semibold text-white">{localizeRoomName(room.name, t)}</h3>
                   <span className="text-xs px-2 py-1 rounded bg-primary-900/50 text-primary-400">
                     {t('rooms.dayN', { n: room.currentDay || 1 })}
                   </span>
@@ -685,7 +686,7 @@ export default function ActiveRooms() {
                 className="bg-dark-800 rounded-xl border border-dark-700 p-5 cursor-pointer hover:border-dark-500 transition"
               >
                 <div className="flex items-start justify-between mb-3">
-                  <h3 className="text-lg font-semibold text-white">{room.name}</h3>
+                  <h3 className="text-lg font-semibold text-white">{localizeRoomName(room.name, t)}</h3>
                   <span className="text-xs px-2 py-1 rounded bg-dark-700 text-dark-400">
                     {t('rooms.free')}
                   </span>
@@ -707,7 +708,7 @@ export default function ActiveRooms() {
             <div className="p-6">
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <h3 className="text-xl font-semibold text-white">{selectedRoom.name}</h3>
+                  <h3 className="text-xl font-semibold text-white">{localizeRoomName(selectedRoom.name, t)}</h3>
                   <p className="text-dark-400 text-sm">
                     {selectedRoom.isActive ? t('rooms.activeCycle') : t('rooms.roomFree')}
                   </p>
@@ -1019,7 +1020,7 @@ export default function ActiveRooms() {
                 return (
                 <div className="space-y-4">
                   <h4 className="text-sm font-medium text-dark-300 border-b border-dark-700 pb-2">
-                    {t('rooms.transfer.title', { name: selectedRoom.name })}
+                    {t('rooms.transfer.title', { name: localizeRoomName(selectedRoom.name, t) })}
                   </h4>
                   <div>
                     <label className="block text-xs text-dark-400 mb-1">{t('rooms.transfer.targetRoom')}</label>
@@ -1030,7 +1031,7 @@ export default function ActiveRooms() {
                     >
                       <option value="">{t('rooms.transfer.selectRoom')}</option>
                       {inactiveRooms.map(r => (
-                        <option key={r._id} value={r._id}>{r.name}</option>
+                        <option key={r._id} value={r._id}>{localizeRoomName(r.name, t)}</option>
                       ))}
                     </select>
                   </div>
@@ -1631,7 +1632,7 @@ export default function ActiveRooms() {
             className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-md p-6"
             onClick={e => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-1">{t('rooms.planModal.title')} · {planMode.name}</h3>
+            <h3 className="text-lg font-semibold text-white mb-1">{t('rooms.planModal.title')} · {localizeRoomName(planMode.name, t)}</h3>
             <p className="text-sm text-dark-400 mb-4">{t('rooms.planModal.subtitle')}</p>
             <form onSubmit={handlePlanSubmit} className="space-y-4">
               <div>

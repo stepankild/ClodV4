@@ -5,6 +5,7 @@ import { cloneCutService } from '../../services/cloneCutService';
 import { vegBatchService } from '../../services/vegBatchService';
 import { archiveService } from '../../services/archiveService';
 import api from '../../services/api';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const TrashSection = ({ title, items, renderInfo, onRestore, restoringId, type, t }) => {
   if (!items || items.length === 0) return null;
@@ -195,7 +196,7 @@ const Trash = () => {
         title={t('trash.archives')}
         type="archives"
         items={deleted.archives}
-        renderInfo={(a) => `${a.roomName || '—'} · ${a.strain || '—'} · ${formatDate(a.harvestDate)}`}
+        renderInfo={(a) => `${localizeRoomName(a.roomName, t) || '—'} · ${a.strain || '—'} · ${formatDate(a.harvestDate)}`}
         onRestore={restore}
         restoringId={restoringId}
         t={t}
@@ -225,7 +226,7 @@ const Trash = () => {
         title={t('trash.plans')}
         type="plans"
         items={deleted.plans}
-        renderInfo={(p) => `${p.room?.name || p.room?.roomNumber || '—'} · ${p.strain || '—'} · ${p.cycleName || ''}`}
+        renderInfo={(p) => `${localizeRoomName(p.room?.name, t) || p.room?.roomNumber || '—'} · ${p.strain || '—'} · ${p.cycleName || ''}`}
         onRestore={restore}
         restoringId={restoringId}
         t={t}

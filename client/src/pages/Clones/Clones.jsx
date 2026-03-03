@@ -5,6 +5,7 @@ import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
 import { vegBatchService } from '../../services/vegBatchService';
 import StrainSelect from '../../components/StrainSelect';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const WEEKS_BEFORE = 4;
 const DAYS_OFFSET = WEEKS_BEFORE * 7;
@@ -270,7 +271,7 @@ const Clones = () => {
     setSendToVegModal(row);
     const list = (row.strains || []).map((s) => ({ strain: s.strain || '', total: s.quantity || 0, sendQty: String(s.quantity || 0) }));
     setVegForm({
-      name: `${row.room.name} · ${row.strain || t('clones.clones')}`.trim(),
+      name: `${localizeRoomName(row.room.name, t)} · ${row.strain || t('clones.clones')}`.trim(),
       strains: list.length ? list : [{ strain: '', total: 0, sendQty: '' }],
       transplantedToVegAt: new Date().toISOString().slice(0, 10),
       vegDaysTarget: '21'
@@ -669,7 +670,7 @@ const Clones = () => {
                     key={row.room._id}
                     className={`hover:bg-dark-700/50 ${row.isDone ? 'bg-green-900/10' : 'bg-red-900/5'}`}
                   >
-                    <td className="px-4 py-3 font-medium text-white">{row.room.name}</td>
+                    <td className="px-4 py-3 font-medium text-white">{localizeRoomName(row.room.name, t)}</td>
                     <td className="px-4 py-3 text-dark-300">{formatDate(row.cutDate)}</td>
                     <td className="px-4 py-3 text-dark-300">{formatStrainsShort(row.strains)}</td>
                     <td className="px-4 py-3 text-dark-300">{row.quantity > 0 ? row.quantity : '—'}</td>
@@ -833,7 +834,7 @@ const Clones = () => {
             className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-1">{t('clones.cloneCutting')} · {editRow.room.name}</h3>
+            <h3 className="text-lg font-semibold text-white mb-1">{t('clones.cloneCutting')} · {localizeRoomName(editRow.room.name, t)}</h3>
             <div className="flex items-center gap-2 mb-4">
               <span className="text-dark-400 text-sm">{t('clones.cutDate')}:</span>
               <input
@@ -926,7 +927,7 @@ const Clones = () => {
           >
             <h3 className="text-lg font-semibold text-white mb-1">{t('clones.sendToVegTitle')}</h3>
             <p className="text-dark-400 text-sm mb-4">
-              {t('clones.sendToVegDesc', { room: sendToVegModal.room.name })}
+              {t('clones.sendToVegDesc', { room: localizeRoomName(sendToVegModal.room.name, t) })}
             </p>
             <form onSubmit={handleSendToVeg} className="space-y-4">
               <div>
@@ -1017,7 +1018,7 @@ const Clones = () => {
                     const suggestedDate = getCutDateForRoom(room);
                     return (
                       <option key={room._id} value={room._id}>
-                        {room.name}{suggestedDate ? ` · ${t('clones.cutLabel')} ${formatDate(suggestedDate)}` : ''}
+                        {localizeRoomName(room.name, t)}{suggestedDate ? ` · ${t('clones.cutLabel')} ${formatDate(suggestedDate)}` : ''}
                       </option>
                     );
                   })}
@@ -1196,7 +1197,7 @@ const Clones = () => {
               </thead>
               <tbody className="divide-y divide-dark-700">
                 {logBatches.map((b) => {
-                  const sourceRoom = b.sourceCloneCut?.room?.name || b.sourceCloneCut?.room?.roomNumber || '—';
+                  const sourceRoom = localizeRoomName(b.sourceCloneCut?.room?.name, t) || b.sourceCloneCut?.room?.roomNumber || '—';
                   const isEditing = editingBatchNameId === b._id;
                   return (
                     <tr key={b._id} className="hover:bg-dark-700/50">
@@ -1262,7 +1263,7 @@ const Clones = () => {
                     .filter((b) => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id))
                     .reduce((s, b) => s + (b.initialQuantity || b.quantity || 0), 0);
                   const totalQty = currentQty + sentToVeg;
-                  const roomName = cut.room?.name || cut.room?.roomNumber || (cut.room ? '—' : t('clones.onOrder'));
+                  const roomName = localizeRoomName(cut.room?.name, t) || cut.room?.roomNumber || (cut.room ? '—' : t('clones.onOrder'));
                   return (
                     <tr key={cut._id} className="hover:bg-dark-700/30">
                       <td className="px-4 py-3 text-dark-400">{roomName}</td>

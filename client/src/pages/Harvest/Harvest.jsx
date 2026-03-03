@@ -11,6 +11,7 @@ import HarvestRoomMap from '../../components/RoomMap/HarvestRoomMap';
 import HarvestHistory from './HarvestHistory';
 import HarvestCompleteModal from './HarvestCompleteModal';
 import CrewInfographic from '../../components/Harvest/CrewInfographic';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 // ── Crew roles definition (takes t for i18n) ──
 const getCREW_ROLES = (t) => [
@@ -390,7 +391,7 @@ const Harvest = () => {
       setSessionLoading(true);
       setError('');
       const result = await harvestService.completeSession(session._id, data);
-      const roomNameStr = selectedRoom?.name || session.roomName || '';
+      const roomNameStr = localizeRoomName(selectedRoom?.name, t) || localizeRoomName(session.roomName, t) || '';
       const strainStr = selectedRoom?.flowerStrains?.length > 0
         ? selectedRoom.flowerStrains.map(fs => fs.strain).filter(Boolean).join(', ')
         : session.strain || '';
@@ -486,7 +487,7 @@ const Harvest = () => {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-white font-bold text-lg truncate">
-                      {r.name}
+                      {localizeRoomName(r.name, t)}
                     </span>
                     <svg className="w-5 h-5 text-dark-500 group-hover:text-primary-400 transition shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
@@ -554,7 +555,7 @@ const Harvest = () => {
             {t('harvest.backToRooms')}
           </button>
           <h1 className="text-2xl font-bold text-white">
-            {t('harvest.harvestRoom', { name: selectedRoom?.name || t('harvest.room') })}
+            {t('harvest.harvestRoom', { name: localizeRoomName(selectedRoom?.name, t) || t('harvest.room') })}
           </h1>
           <p className="text-dark-400 mt-1">{t('harvest.chooseRole')}</p>
         </div>
@@ -720,7 +721,7 @@ const Harvest = () => {
           {t('harvest.backToRooms')}
         </button>
         <h1 className="text-2xl font-bold text-white">
-          {t('harvest.harvestRoom', { name: selectedRoom?.name || t('harvest.room') })}
+          {t('harvest.harvestRoom', { name: localizeRoomName(selectedRoom?.name, t) || t('harvest.room') })}
         </h1>
         {isWeigher ? (
           <p className="text-dark-400 mt-1">{t('harvest.scanOrEnter')}</p>
@@ -1057,7 +1058,7 @@ const Harvest = () => {
               )}
               <div>
                 <div className="text-dark-400">{t('harvest.roomLabel')}</div>
-                <div className="text-white font-medium">{session.roomName}</div>
+                <div className="text-white font-medium">{localizeRoomName(session.roomName, t)}</div>
               </div>
               <div>
                 <div className="text-dark-400">{t('harvest.strainLabel')}</div>

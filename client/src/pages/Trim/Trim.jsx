@@ -5,6 +5,7 @@ import {
 } from 'recharts';
 import { useAuth } from '../../context/AuthContext';
 import { trimService } from '../../services/trimService';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const fmt = (v, decimals = 1) => {
   if (v == null || isNaN(v)) return '—';
@@ -458,7 +459,7 @@ const Trim = () => {
               {/* ── Card Header ── */}
               <div className="px-5 pt-4 pb-2 flex items-start justify-between">
                 <div className="min-w-0">
-                  <h3 className="text-white font-semibold truncate">{a.roomName}</h3>
+                  <h3 className="text-white font-semibold truncate">{localizeRoomName(a.roomName, t)}</h3>
                   <p className="text-dark-400 text-xs truncate">
                     {strainsList.join(' / ')} &middot; {a.plantsCount || '?'} {t('trim.plants')}
                     {a.harvestDate && <span className="text-dark-500"> &middot; {t('trim.harvest')} {formatDate(a.harvestDate)}</span>}

@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { roomService } from '../../services/roomService';
 import { STRAIN_COLORS } from '../../components/RoomMap/PlantCell';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const formatDateShort = (date) => {
   if (!date) return '—';
@@ -145,7 +146,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
 
       // ─ 2. Комната ─
       doc.setFont('Roboto', 'bold'); doc.setFontSize(12); doc.setTextColor(20, 20, 20);
-      const roomName = room.name || '—';
+      const roomName = localizeRoomName(room.name, t) || '—';
       doc.text(roomName, textX, curY, { angle: -90 });
       curY += doc.getTextWidth(roomName) + 6;
 
@@ -203,7 +204,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       const barcodeX = x + (labelW - barcodeW) / 2;
 
       doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
-      doc.text(`${room.name}`, x + PAD, textY - 2);
+      doc.text(`${localizeRoomName(room.name, t)}`, x + PAD, textY - 2);
       doc.setFont('Roboto', 'normal'); doc.setFontSize(5.5); doc.setTextColor(80, 80, 80);
       doc.text(`${plant.strain || room.strain || ''} | ${startDateStr}`, x + PAD, textY + 2);
 
@@ -220,7 +221,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       const barcodeX = x + labelW - PAD - barcodeW - 25; // справа от центра, перед #N
 
       doc.setFont('Roboto', 'bold'); doc.setFontSize(7); doc.setTextColor(30, 30, 30);
-      doc.text(`${room.name || '—'}`, x + PAD, y + PAD + 4);
+      doc.text(`${localizeRoomName(room.name, t) || '—'}`, x + PAD, y + PAD + 4);
       doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
       let st = plant.strain || room.strain || '—';
       const maxStW = barcodeX - x - PAD * 2;
@@ -248,7 +249,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
 
         // Текст слева — две строки
         doc.setFont('Roboto', 'bold'); doc.setFontSize(8); doc.setTextColor(30, 30, 30);
-        doc.text(`${room.name || '—'}`, x + PAD, y + PAD + 5);
+        doc.text(`${localizeRoomName(room.name, t) || '—'}`, x + PAD, y + PAD + 5);
         doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(80, 80, 80);
         let st = plant.strain || room.strain || '—';
         const maxStW = barcodeX - x - PAD * 2;
@@ -268,7 +269,7 @@ async function generateLabelsPDF(room, plants, { cols, labelW, labelH, sheetW, s
       } else {
         // Большие этикетки: текст сверху, штрихкод по центру снизу
         doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(30, 30, 30);
-        doc.text(`${room.name || '—'}`, x + PAD, y + PAD + 3.5);
+        doc.text(`${localizeRoomName(room.name, t) || '—'}`, x + PAD, y + PAD + 3.5);
         const pl = `#${plant.number}`;
         doc.text(pl, x + labelW - PAD - doc.getTextWidth(pl), y + PAD + 3.5);
         doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 80);
@@ -455,7 +456,7 @@ const Labels = () => {
             </svg>
             {t('labels.backToRoomSelect')}
           </button>
-          <h1 className="text-2xl font-bold text-white">{t('labels.printLabelsFor', { name: selectedRoom.name })}</h1>
+          <h1 className="text-2xl font-bold text-white">{t('labels.printLabelsFor', { name: localizeRoomName(selectedRoom.name, t) })}</h1>
         </div>
 
         {/* Room info */}
@@ -728,7 +729,7 @@ const Labels = () => {
               <button key={room._id} onClick={() => handleSelectRoom(room._id)}
                 className="bg-dark-800 rounded-xl border border-dark-700 p-5 text-left hover:border-primary-700/50 transition group">
                 <div className="flex items-center justify-between mb-2">
-                  <span className="text-white font-semibold group-hover:text-primary-400 transition">{room.name}</span>
+                  <span className="text-white font-semibold group-hover:text-primary-400 transition">{localizeRoomName(room.name, t)}</span>
                   <span className="inline-flex items-center gap-1.5 text-xs">
                     <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
                     <span className="text-primary-400">{t('labels.flowering')}</span>

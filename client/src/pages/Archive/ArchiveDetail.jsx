@@ -3,6 +3,7 @@ import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { archiveService } from '../../services/archiveService';
 import { useAuth } from '../../context/AuthContext';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 import ArchiveHeatMap from '../../components/RoomMap/ArchiveHeatMap';
 import CrewInfographic from '../../components/Harvest/CrewInfographic';
 
@@ -215,7 +216,7 @@ export default function ArchiveDetail() {
           </Link>
           <div>
             <h1 className="text-2xl font-bold text-white">
-              {archive?.roomName || `${t('archive.room')} ${archive?.roomNumber}`}
+              {localizeRoomName(archive?.roomName, t) || `${t('archive.room')} ${archive?.roomNumber}`}
             </h1>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-primary-400 font-medium">{archive?.strain || t('archive.noStrain')}</span>
@@ -437,7 +438,7 @@ export default function ArchiveDetail() {
               <CrewInfographic
                 crewData={archive.crewData}
                 roomSquareMeters={archive.squareMeters}
-                roomName={archive.roomName}
+                roomName={localizeRoomName(archive.roomName, t)}
                 strain={archive.strain}
                 embedded
               />
@@ -645,7 +646,7 @@ export default function ArchiveDetail() {
             <h3 className="text-xl font-bold text-white mb-4">{t('archive.deleteArchiveTitle')}</h3>
             <p className="text-dark-300 mb-6">
               {t('archive.deleteArchiveMsg', {
-                room: archive?.roomName || `${t('archive.room')} ${archive?.roomNumber}`,
+                room: localizeRoomName(archive?.roomName, t) || `${t('archive.room')} ${archive?.roomNumber}`,
                 strain: archive?.strain
               })}
             </p>

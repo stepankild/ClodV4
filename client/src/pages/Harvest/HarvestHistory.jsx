@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { harvestService } from '../../services/harvestService';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const formatWeight = (g) => {
   if (g == null || !Number.isFinite(g) || g <= 0) return '';
@@ -172,7 +173,7 @@ const HarvestHistory = () => {
                   <div className="flex items-center justify-between mb-1.5">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-white font-medium text-sm truncate">
-                        {s.roomName || `${t('harvest.room')} ${s.roomNumber}`}
+                        {localizeRoomName(s.roomName, t) || `${t('harvest.room')} ${s.roomNumber}`}
                       </span>
                       {s.cycleName && (
                         <span className="text-dark-400 text-xs truncate">
