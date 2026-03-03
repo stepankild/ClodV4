@@ -220,7 +220,7 @@ const Overview = () => {
       type: 'warning',
       icon: '💡',
       text: roomsMissingLamps.length === 1
-        ? t('overview.alerts.lampsNotSet', { name: names })
+        ? t('overview.alerts.lampsNotSet', { names })
         : t('overview.alerts.lampsNotSetMultiple', { names }),
       link: '/active'
     });

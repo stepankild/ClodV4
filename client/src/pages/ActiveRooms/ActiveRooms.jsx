@@ -586,7 +586,7 @@ export default function ActiveRooms() {
       <div className="mb-8">
         <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-primary-500 animate-pulse" />
-          {t('rooms.flowering')} ({activeRooms.length})
+          {t('rooms.flowering', { count: activeRooms.length })}
         </h2>
         {activeRooms.length === 0 ? (
           <p className="text-dark-400">{t('rooms.noActiveCycles')}</p>
@@ -601,7 +601,7 @@ export default function ActiveRooms() {
                 <div className="flex items-start justify-between mb-3">
                   <h3 className="text-lg font-semibold text-white">{room.name}</h3>
                   <span className="text-xs px-2 py-1 rounded bg-primary-900/50 text-primary-400">
-                    {t('rooms.dayN', { day: room.currentDay || 1 })}
+                    {t('rooms.dayN', { n: room.currentDay || 1 })}
                   </span>
                 </div>
 
@@ -672,7 +672,7 @@ export default function ActiveRooms() {
       <div>
         <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
           <span className="w-3 h-3 rounded-full bg-dark-500" />
-          {t('rooms.available')} ({inactiveRooms.length})
+          {t('rooms.available', { count: inactiveRooms.length })}
         </h2>
         {inactiveRooms.length === 0 ? (
           <p className="text-dark-400">{t('rooms.allOccupied')}</p>
