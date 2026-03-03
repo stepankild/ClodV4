@@ -32,6 +32,7 @@ function migrateLayout(layout) {
 // ── Sheet sizes ──
 const SHEET_SIZES = [
   { name: 'Браслеты 8×10"', w: 203, h: 254, marginLR: 6.5, marginTB: 2, gap: 0, defaultCols: 10, defaultCount: 10 },
+  { name: 'Браслеты 12.6×25.5', w: 126, h: 255, marginLR: 0.5, marginTB: 0, gap: 0, defaultCols: 5, defaultCount: 5 },
   { name: 'A4', w: 210, h: 297 },
   { name: 'A5', w: 148, h: 210 },
   { name: 'Letter', w: 216, h: 279 },
