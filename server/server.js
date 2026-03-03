@@ -191,7 +191,14 @@ app.set('io', io);
 // Listen first so Railway gets a response (no 502). DB connects after.
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} (frontend: ${hasFrontend ? 'yes' : 'no'})`);
-  connectDB().catch((err) => {
+  connectDB().then(async () => {
+    // One-time migration: remove test room
+    try {
+      const FlowerRoom = (await import('./models/FlowerRoom.js')).default;
+      const result = await FlowerRoom.deleteOne({ isTestRoom: true });
+      if (result.deletedCount > 0) console.log('Migration: deleted test room');
+    } catch (e) { /* ignore */ }
+  }).catch((err) => {
     console.error('MongoDB connection failed:', err.message);
     // Don't exit — server stays up; API will return errors until DB is fixed
   });
