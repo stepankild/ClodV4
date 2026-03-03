@@ -402,6 +402,24 @@ export const completeSession = async (req, res) => {
       }
 
       const totalWet = (session.plants || []).reduce((sum, p) => sum + (p.wetWeight || 0), 0);
+
+      // Не создавать архив если ни одного куста не записано (пустой сбор)
+      if (!session.plants || session.plants.length === 0 || totalWet === 0) {
+        // Сброс комнаты без архива
+        room.cycleName = '';
+        room.strain = '';
+        room.plantsCount = 0;
+        room.startDate = null;
+        room.expectedHarvestDate = null;
+        room.notes = '';
+        room.isActive = false;
+        room.currentCycleId = null;
+        if (room.roomLayout) room.roomLayout.plantPositions = [];
+        if (room.flowerStrains) room.flowerStrains = [];
+        await room.save();
+        return res.json({ session, crewData, roomSquareMeters: room.squareMeters || null });
+      }
+
       // Берём только задачи текущего цикла (по cycleId), не прошлых
       const taskQuery = { room: room._id, completed: true };
       if (room.currentCycleId) {

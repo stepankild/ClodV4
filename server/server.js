@@ -192,12 +192,33 @@ app.set('io', io);
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} (frontend: ${hasFrontend ? 'yes' : 'no'})`);
   connectDB().then(async () => {
-    // One-time migration: remove test room
+    // One-time migration: remove test room + cleanup empty archives
     try {
       const FlowerRoom = (await import('./models/FlowerRoom.js')).default;
-      const result = await FlowerRoom.deleteOne({ isTestRoom: true });
-      if (result.deletedCount > 0) console.log('Migration: deleted test room');
-    } catch (e) { /* ignore */ }
+      const CycleArchive = (await import('./models/CycleArchive.js')).default;
+
+      // 1. Delete test room
+      const testRoom = await FlowerRoom.findOne({ isTestRoom: true });
+      if (testRoom) {
+        await CycleArchive.deleteMany({ room: testRoom._id });
+        await FlowerRoom.deleteOne({ _id: testRoom._id });
+        console.log('Migration: deleted test room and its archives');
+      }
+
+      // 2. Delete archives without a real harvest (wetWeight=0 AND dryWeight=0 AND no plant weights)
+      const emptyArchives = await CycleArchive.deleteMany({
+        'harvestData.wetWeight': { $in: [0, null] },
+        'harvestData.dryWeight': { $in: [0, null] },
+        $or: [
+          { 'harvestMapData.plants': { $size: 0 } },
+          { 'harvestMapData.plants': { $exists: false } },
+          { 'harvestMapData.plants': { $not: { $elemMatch: { wetWeight: { $gt: 0 } } } } }
+        ]
+      });
+      if (emptyArchives.deletedCount > 0) {
+        console.log(`Migration: deleted ${emptyArchives.deletedCount} empty archive(s) without harvest data`);
+      }
+    } catch (e) { console.error('Migration error:', e.message); }
   }).catch((err) => {
     console.error('MongoDB connection failed:', err.message);
     // Don't exit — server stays up; API will return errors until DB is fixed
