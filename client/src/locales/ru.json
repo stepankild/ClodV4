@@ -1430,7 +1430,8 @@
     "trimEntries": "записей",
     "shrinkage": "Усушка",
     "totalPlants": "Всего кустов",
-    "byStrainEst": "(по сорту)"
+    "byStrainEst": "(по сорту)",
+    "shrinkageCycles": "по {{count}} циклам"
   },
   "labels": {
     "title": "Печать этикеток",

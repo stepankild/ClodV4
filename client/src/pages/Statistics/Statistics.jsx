@@ -445,8 +445,9 @@ const Statistics = () => {
   const cyclesPerYearFarm = avgCycleDays && avgCycleDays > 0 ? (DAYS_PER_YEAR / avgCycleDays) * safeRooms.length : null;
   const avgGpw = roundTo(total.avgGramsPerWatt, 2);
   const avgGpp = roundTo(total.avgGramsPerPlant, 1);
-  const shrinkageRatio = total.totalWetWeight > 0 && total.totalDryWeight > 0
-    ? roundTo((1 - total.totalDryWeight / total.totalWetWeight) * 100, 1)
+  // Усушка: считаем только по циклам где есть и wet и dry вес
+  const shrinkageRatio = total.shrinkageWet > 0 && total.shrinkageDry > 0
+    ? roundTo((1 - total.shrinkageDry / total.shrinkageWet) * 100, 1)
     : null;
 
   // Best strain & room by g/plant
@@ -578,6 +579,9 @@ const Statistics = () => {
           <div className="text-2xl font-bold text-orange-400 mt-1">
             {shrinkageRatio != null ? `${shrinkageRatio}%` : '—'}
           </div>
+          {total.shrinkageCycles > 0 && (
+            <p className="text-dark-500 text-xs mt-0.5">{t('stats.shrinkageCycles', { count: total.shrinkageCycles })}</p>
+          )}
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
           <div className="text-dark-400 text-xs font-medium">{t('stats.avgCycle')}</div>
