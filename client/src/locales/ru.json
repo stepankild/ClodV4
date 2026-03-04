@@ -895,15 +895,19 @@
     "title": "Карта вегетации",
     "spotsUsed": "мест занято",
     "clear": "Очистить всё",
-    "applyTemplateConfirm": "Применить шаблон? Текущая сетка будет заменена.",
     "selectBatch": "Выберите батч для размещения",
     "noBatches": "Нет активных батчей",
     "tableDefault": "Стол",
-    "fillRow": "Заполнить ряд",
-    "clearRow": "Очистить ряд",
+    "fillTable": "Заполнить стол",
+    "clearTable": "Очистить стол",
     "mapSaved": "Карта сохранена",
     "showMap": "Карта",
-    "hideMap": "Скрыть карту"
+    "hideMap": "Скрыть карту",
+    "setupTitle": "Настройка карты вегетации",
+    "tablesCount": "Столов",
+    "spotsPerTable": "Мест на столе",
+    "spotsWord": "мест",
+    "setupBtn": "Настройка"
   },
   "trim": {
     "title": "Трим",

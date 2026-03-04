@@ -895,15 +895,19 @@
     "title": "Vegetation Map",
     "spotsUsed": "spots used",
     "clear": "Clear all",
-    "applyTemplateConfirm": "Apply template? Current grid will be replaced.",
     "selectBatch": "Select batch to place",
     "noBatches": "No active batches",
     "tableDefault": "Table",
-    "fillRow": "Fill row",
-    "clearRow": "Clear row",
+    "fillTable": "Fill table",
+    "clearTable": "Clear table",
     "mapSaved": "Map saved",
     "showMap": "Map",
-    "hideMap": "Hide map"
+    "hideMap": "Hide map",
+    "setupTitle": "Vegetation Map Setup",
+    "tablesCount": "Tables",
+    "spotsPerTable": "Spots per table",
+    "spotsWord": "spots",
+    "setupBtn": "Setup"
   },
   "trim": {
     "title": "Trim",
