@@ -910,13 +910,17 @@
     "tablesInRow": "Столов",
     "plantsPerTable": "Растений на столе",
     "colsOnTable": "Колонок",
-    "gapAfterCol": "Разрыв после",
-    "colLayout": "колонок",
+    "rowsOnTable": "Рядов",
     "addRow": "+ Добавить ряд",
     "rowsWord": "рядов",
     "tablesWord": "столов",
+    "plantsWord": "раст.",
     "fillRow": "Заполнить ряд",
-    "clearRow": "Очистить ряд"
+    "clearRow": "Очистить ряд",
+    "deadSpotsLabel": "Мёртвые зоны (слив)",
+    "removeDead": "Убрать мёртвую зону",
+    "addDead": "Добавить мёртвую зону",
+    "moreRows": "ещё рядов"
   },
   "trim": {
     "title": "Трим",

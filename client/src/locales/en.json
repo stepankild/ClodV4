@@ -910,13 +910,17 @@
     "tablesInRow": "Tables",
     "plantsPerTable": "Plants per table",
     "colsOnTable": "Columns",
-    "gapAfterCol": "Gap after col",
-    "colLayout": "columns",
+    "rowsOnTable": "Rows",
     "addRow": "+ Add row",
     "rowsWord": "rows",
     "tablesWord": "tables",
+    "plantsWord": "plants",
     "fillRow": "Fill row",
-    "clearRow": "Clear row"
+    "clearRow": "Clear row",
+    "deadSpotsLabel": "Dead spots (drain)",
+    "removeDead": "Remove dead spot",
+    "addDead": "Add dead spot",
+    "moreRows": "more rows"
   },
   "trim": {
     "title": "Trim",

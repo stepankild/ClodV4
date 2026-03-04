@@ -3,14 +3,14 @@ import { useTranslation } from 'react-i18next';
 import VegMapCell from './VegMapCell';
 import { STRAIN_COLORS } from '../RoomMap/PlantCell';
 
+// Default dead spots: center of first row (index 2 in a 5-col grid → 0*5+2=2)
+const DEFAULT_DEAD_SPOTS = [2];
+
 export default function VegMap({ vegMapData, batches, onSave, saving }) {
   const { t } = useTranslation();
 
-  // vegRows: [{name, tablesCount, plantsPerTable, tableCols, tableGapAfterCol}]
   const [vegRows, setVegRows] = useState(
-    vegMapData?.vegRows?.length > 0
-      ? vegMapData.vegRows
-      : []
+    vegMapData?.vegRows?.length > 0 ? vegMapData.vegRows : []
   );
   const [batchPositions, setBatchPositions] = useState(vegMapData?.batchPositions || []);
   const [editMode, setEditMode] = useState(false);
@@ -21,11 +21,11 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
   // Setup state
   const [setupRows, setSetupRows] = useState(
     vegRows.length > 0
-      ? vegRows.map(r => ({ ...r }))
-      : [{ name: `${t('vegMap.rowDefault')} 1`, tablesCount: 8, plantsPerTable: 54, tableCols: 4, tableGapAfterCol: 2 }]
+      ? vegRows.map(r => ({ ...r, deadSpots: r.deadSpots || [] }))
+      : [{ name: `${t('vegMap.rowDefault')} 1`, tablesCount: 8, plantsPerTable: 54, tableCols: 5, tableRows: 11, deadSpots: DEFAULT_DEAD_SPOTS }]
   );
 
-  // Compute flat table list from vegRows for rendering
+  // Flat table list
   const flatTables = useMemo(() => {
     const tables = [];
     vegRows.forEach((row, rowIdx) => {
@@ -36,29 +36,27 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
           flatIdx: tables.length,
           rowName: row.name,
           plantsPerTable: row.plantsPerTable,
-          tableCols: row.tableCols || 4,
-          tableGapAfterCol: row.tableGapAfterCol || 0
+          tableCols: row.tableCols || 5,
+          tableRows: row.tableRows || 11,
+          deadSpots: new Set(row.deadSpots || [])
         });
       }
     });
     return tables;
   }, [vegRows]);
 
-  // Mapping batchId -> index for colors
   const batchIndexMap = useMemo(() => {
     const m = {};
     batches.forEach((b, i) => { m[b._id] = i; });
     return m;
   }, [batches]);
 
-  // Mapping batchId -> name
   const batchNameMap = useMemo(() => {
     const m = {};
     batches.forEach(b => { m[b._id] = b.name || '—'; });
     return m;
   }, [batches]);
 
-  // Mapping cell -> batchId
   const positionMap = useMemo(() => {
     const m = {};
     batchPositions.forEach(p => {
@@ -68,7 +66,6 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
     return m;
   }, [batchPositions]);
 
-  // Count cells per batch
   const batchCellCounts = useMemo(() => {
     const counts = {};
     Object.values(positionMap).forEach(bid => {
@@ -93,10 +90,8 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
   const addSetupRow = () => {
     setSetupRows(prev => [...prev, {
       name: `${t('vegMap.rowDefault')} ${prev.length + 1}`,
-      tablesCount: 8,
-      plantsPerTable: 54,
-      tableCols: 4,
-      tableGapAfterCol: 2
+      tablesCount: 8, plantsPerTable: 54, tableCols: 5, tableRows: 11,
+      deadSpots: DEFAULT_DEAD_SPOTS
     }]);
   };
 
@@ -105,20 +100,38 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
     setSetupRows(prev => prev.filter((_, i) => i !== idx));
   };
 
+  // Recalculate plantsPerTable based on grid and dead spots
+  const calcPlants = (cols, rows, deadSpots) => {
+    return cols * rows - (deadSpots?.length || 0);
+  };
+
+  const toggleDeadSpot = (rowIdx, gridIdx) => {
+    setSetupRows(prev => {
+      const updated = [...prev];
+      const row = { ...updated[rowIdx] };
+      const ds = [...(row.deadSpots || [])];
+      const i = ds.indexOf(gridIdx);
+      if (i >= 0) ds.splice(i, 1);
+      else ds.push(gridIdx);
+      row.deadSpots = ds;
+      row.plantsPerTable = calcPlants(row.tableCols, row.tableRows, ds);
+      return [...prev.slice(0, rowIdx), row, ...prev.slice(rowIdx + 1)];
+    });
+  };
+
   const handleApplySetup = () => {
     const newRows = setupRows.map(r => ({
       name: r.name,
       tablesCount: Math.max(1, Math.min(50, r.tablesCount)),
-      plantsPerTable: Math.max(1, Math.min(200, r.plantsPerTable)),
-      tableCols: Math.max(1, Math.min(10, r.tableCols)),
-      tableGapAfterCol: Math.max(0, Math.min(r.tableCols - 1, r.tableGapAfterCol))
+      plantsPerTable: calcPlants(r.tableCols, r.tableRows, r.deadSpots),
+      tableCols: Math.max(1, Math.min(20, r.tableCols)),
+      tableRows: Math.max(1, Math.min(50, r.tableRows)),
+      deadSpots: r.deadSpots || []
     }));
 
-    // Calculate total tables in new layout to clean positions
     const totalNewTables = newRows.reduce((s, r) => s + r.tablesCount, 0);
     const cleaned = batchPositions.filter(p => {
       if (p.row >= totalNewTables) return false;
-      // Find which row/table this flatIdx belongs to
       let remaining = p.row;
       for (const r of newRows) {
         if (remaining < r.tablesCount) {
@@ -139,7 +152,6 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
     if (!editMode) return;
     const key = `${flatTableIdx}:${posIdx}`;
     const existing = positionMap[key];
-
     if (existing) {
       setBatchPositions(prev => prev.filter(p => !(p.row === flatTableIdx && p.position === posIdx)));
     } else if (activeBatchId) {
@@ -151,10 +163,9 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
     if (!activeBatchId) return;
     const table = flatTables[flatTableIdx];
     if (!table) return;
-    const total = table.plantsPerTable;
     const cleaned = batchPositions.filter(p => p.row !== flatTableIdx);
     const newPositions = [...cleaned];
-    for (let p = 0; p < total; p++) {
+    for (let p = 0; p < table.plantsPerTable; p++) {
       newPositions.push({ row: flatTableIdx, position: p, batchId: activeBatchId });
     }
     setBatchPositions(newPositions);
@@ -213,81 +224,108 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
   // ==================== SETUP SCREEN ====================
   if (showSetup || !hasGrid) {
     const setupTotalTables = setupRows.reduce((s, r) => s + (r.tablesCount || 0), 0);
-    const setupTotalSpots = setupRows.reduce((s, r) => s + (r.tablesCount || 0) * (r.plantsPerTable || 0), 0);
+    const setupTotalSpots = setupRows.reduce((s, r) => s + (r.tablesCount || 0) * calcPlants(r.tableCols, r.tableRows, r.deadSpots), 0);
 
     return (
       <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 space-y-4">
         <h3 className="text-white font-semibold text-sm">{t('vegMap.setupTitle')}</h3>
 
         <div className="space-y-3">
-          {setupRows.map((row, idx) => (
-            <div key={idx} className="bg-dark-700/30 rounded-lg p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={row.name}
-                  onChange={e => updateSetupRow(idx, 'name', e.target.value)}
-                  placeholder={`${t('vegMap.rowDefault')} ${idx + 1}`}
-                  className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-white text-sm"
-                />
-                {setupRows.length > 1 && (
-                  <button type="button" onClick={() => removeSetupRow(idx)}
-                    className="text-dark-500 hover:text-red-400 text-lg leading-none px-1 shrink-0"
-                  >&#10005;</button>
-                )}
-              </div>
+          {setupRows.map((row, idx) => {
+            const gridTotal = (row.tableCols || 5) * (row.tableRows || 11);
+            const deadSet = new Set(row.deadSpots || []);
+            const plants = calcPlants(row.tableCols, row.tableRows, row.deadSpots);
 
-              <div className="flex items-center gap-3 flex-wrap text-xs">
-                <div className="flex items-center gap-1">
-                  <span className="text-dark-400">{t('vegMap.tablesInRow')}</span>
-                  <input type="number" min={1} max={50}
-                    value={row.tablesCount}
-                    onChange={e => updateSetupRow(idx, 'tablesCount', Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
-                    className="w-14 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
+            return (
+              <div key={idx} className="bg-dark-700/30 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={row.name}
+                    onChange={e => updateSetupRow(idx, 'name', e.target.value)}
+                    placeholder={`${t('vegMap.rowDefault')} ${idx + 1}`}
+                    className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-white text-sm"
                   />
+                  {setupRows.length > 1 && (
+                    <button type="button" onClick={() => removeSetupRow(idx)}
+                      className="text-dark-500 hover:text-red-400 text-lg leading-none px-1 shrink-0"
+                    >&#10005;</button>
+                  )}
                 </div>
-                <span className="text-dark-600">×</span>
-                <div className="flex items-center gap-1">
-                  <span className="text-dark-400">{t('vegMap.plantsPerTable')}</span>
-                  <input type="number" min={1} max={200}
-                    value={row.plantsPerTable}
-                    onChange={e => updateSetupRow(idx, 'plantsPerTable', Math.max(1, Math.min(200, parseInt(e.target.value) || 1)))}
-                    className="w-14 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
-                  />
-                </div>
-                <span className="text-dark-500">= <span className="text-white font-medium">{(row.tablesCount || 0) * (row.plantsPerTable || 0)}</span></span>
-              </div>
 
-              <div className="flex items-center gap-3 flex-wrap text-xs">
-                <div className="flex items-center gap-1">
-                  <span className="text-dark-400">{t('vegMap.colsOnTable')}</span>
-                  <input type="number" min={1} max={10}
-                    value={row.tableCols}
-                    onChange={e => {
-                      const v = Math.max(1, Math.min(10, parseInt(e.target.value) || 1));
-                      updateSetupRow(idx, 'tableCols', v);
-                      // Reset gap if it's now invalid
-                      if (row.tableGapAfterCol >= v) updateSetupRow(idx, 'tableGapAfterCol', 0);
-                    }}
-                    className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
-                  />
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-dark-400">{t('vegMap.gapAfterCol')}</span>
-                  <input type="number" min={0} max={row.tableCols - 1}
-                    value={row.tableGapAfterCol}
-                    onChange={e => updateSetupRow(idx, 'tableGapAfterCol', Math.max(0, Math.min(row.tableCols - 1, parseInt(e.target.value) || 0)))}
-                    className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
-                  />
-                </div>
-                {row.tableGapAfterCol > 0 && (
+                <div className="flex items-center gap-3 flex-wrap text-xs">
+                  <div className="flex items-center gap-1">
+                    <span className="text-dark-400">{t('vegMap.tablesInRow')}</span>
+                    <input type="number" min={1} max={50}
+                      value={row.tablesCount}
+                      onChange={e => updateSetupRow(idx, 'tablesCount', Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+                      className="w-14 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <span className="text-dark-400">{t('vegMap.colsOnTable')}</span>
+                    <input type="number" min={1} max={20}
+                      value={row.tableCols}
+                      onChange={e => {
+                        const v = Math.max(1, Math.min(20, parseInt(e.target.value) || 1));
+                        updateSetupRow(idx, 'tableCols', v);
+                        // Recalc plants
+                        const newPlants = calcPlants(v, row.tableRows, row.deadSpots);
+                        updateSetupRow(idx, 'plantsPerTable', newPlants);
+                      }}
+                      className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
+                    />
+                  </div>
+                  <span className="text-dark-600">×</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-dark-400">{t('vegMap.rowsOnTable')}</span>
+                    <input type="number" min={1} max={50}
+                      value={row.tableRows}
+                      onChange={e => {
+                        const v = Math.max(1, Math.min(50, parseInt(e.target.value) || 1));
+                        updateSetupRow(idx, 'tableRows', v);
+                        const newPlants = calcPlants(row.tableCols, v, row.deadSpots);
+                        updateSetupRow(idx, 'plantsPerTable', newPlants);
+                      }}
+                      className="w-12 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center"
+                    />
+                  </div>
                   <span className="text-dark-500">
-                    {row.tableGapAfterCol}+{row.tableCols - row.tableGapAfterCol} {t('vegMap.colLayout')}
+                    = <span className="text-white font-medium">{plants}</span> {t('vegMap.plantsWord')} × {row.tablesCount} = <span className="text-white font-medium">{plants * (row.tablesCount || 0)}</span>
                   </span>
-                )}
+                </div>
+
+                {/* Dead spot preview — mini table grid */}
+                <div className="space-y-1">
+                  <span className="text-[10px] text-dark-500">{t('vegMap.deadSpotsLabel')} ({(row.deadSpots || []).length})</span>
+                  <div className="inline-flex flex-col gap-px bg-dark-800/50 rounded p-1">
+                    {Array.from({ length: Math.min(row.tableRows || 11, 3) }, (_, r) => (
+                      <div key={r} className="flex gap-px">
+                        {Array.from({ length: row.tableCols || 5 }, (_, c) => {
+                          const gi = r * (row.tableCols || 5) + c;
+                          const isDead = deadSet.has(gi);
+                          return (
+                            <button key={c} type="button"
+                              onClick={() => toggleDeadSpot(idx, gi)}
+                              className={`w-4 h-4 rounded-[2px] border transition text-[7px] leading-none flex items-center justify-center ${
+                                isDead
+                                  ? 'bg-red-900/50 border-red-700 text-red-400'
+                                  : 'bg-dark-600/50 border-dark-600 hover:border-dark-400'
+                              }`}
+                              title={isDead ? t('vegMap.removeDead') : t('vegMap.addDead')}
+                            >{isDead ? '×' : ''}</button>
+                          );
+                        })}
+                      </div>
+                    ))}
+                    {(row.tableRows || 11) > 3 && (
+                      <div className="text-[8px] text-dark-600 text-center">...{(row.tableRows || 11) - 3} {t('vegMap.moreRows')}</div>
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <button type="button" onClick={addSetupRow}
@@ -320,19 +358,89 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
   // ==================== MAP VIEW ====================
   const assignedCount = Object.keys(positionMap).length;
 
-  // Group flat tables by rowIdx
-  const tablesByRow = [];
-  vegRows.forEach((row, rowIdx) => {
-    tablesByRow.push({
-      row,
-      rowIdx,
-      tables: flatTables.filter(t => t.rowIdx === rowIdx)
-    });
-  });
+  // Group tables by row
+  const tablesByRow = vegRows.map((row, rowIdx) => ({
+    row,
+    rowIdx,
+    tables: flatTables.filter(t => t.rowIdx === rowIdx)
+  }));
+
+  // Render a single table grid
+  const renderTable = (table, editMode) => {
+    const { flatIdx, plantsPerTable, tableCols, tableRows: tRows, deadSpots } = table;
+    const tableCellCount = batchPositions.filter(p => p.row === flatIdx).length;
+
+    // Map grid index → position index (skipping dead spots)
+    // posIdx is sequential among live spots
+    let posCounter = 0;
+    const gridToPosMap = {};
+    for (let gi = 0; gi < tableCols * tRows; gi++) {
+      if (!deadSpots.has(gi)) {
+        gridToPosMap[gi] = posCounter++;
+      }
+    }
+
+    return (
+      <div key={flatIdx} className="flex flex-col items-center shrink-0">
+        {/* Table header */}
+        <div className="flex items-center gap-0.5 mb-0.5">
+          <span className="text-[9px] text-dark-500 font-medium">{table.tableInRow + 1}</span>
+          {editMode && (
+            <>
+              <button type="button" onClick={() => handleFillTable(flatIdx)}
+                className="text-[8px] px-0.5 rounded text-dark-600 hover:text-dark-300 hover:bg-dark-700 transition"
+                title={t('vegMap.fillTable')}>&#9635;</button>
+              <button type="button" onClick={() => handleClearTable(flatIdx)}
+                className="text-[8px] px-0.5 rounded text-dark-600 hover:text-red-400 hover:bg-dark-700 transition"
+                title={t('vegMap.clearTable')}>&#10005;</button>
+            </>
+          )}
+        </div>
+
+        {/* Table grid */}
+        <div className="flex flex-col" style={{ gap: '1px' }}>
+          {Array.from({ length: tRows }, (_, rowInTable) => (
+            <div key={rowInTable} className="flex" style={{ gap: '1px' }}>
+              {Array.from({ length: tableCols }, (_, colIdx) => {
+                const gridIdx = rowInTable * tableCols + colIdx;
+                const isDead = deadSpots.has(gridIdx);
+
+                if (isDead) {
+                  return <div key={colIdx} className="w-[14px] h-[14px] sm:w-[16px] sm:h-[16px]" />;
+                }
+
+                const posIdx = gridToPosMap[gridIdx];
+                const batchId = positionMap[`${flatIdx}:${posIdx}`];
+                const batchIdx = batchId ? batchIndexMap[batchId] : undefined;
+                const batchName = batchId ? batchNameMap[batchId] : undefined;
+
+                return (
+                  <VegMapCell
+                    key={colIdx}
+                    batchLabel={batchName}
+                    batchIndex={batchIdx}
+                    isEmpty={!batchId}
+                    isActive={editMode && !!activeBatchId && !batchId}
+                    onClick={() => handleCellClick(flatIdx, posIdx)}
+                    micro
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+
+        {/* Fill count */}
+        {!editMode && tableCellCount > 0 && (
+          <span className="text-[8px] text-dark-600 mt-0.5">{tableCellCount}</span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
-      {/* Header + buttons */}
+      {/* Header */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <h4 className="text-sm font-medium text-white">
           {t('vegMap.title')}
@@ -357,7 +465,7 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
             <>
               <button type="button" onClick={() => setEditMode(true)}
                 className="px-3 py-1 text-xs bg-dark-700 text-white rounded hover:bg-dark-600 transition">{t('common.edit')}</button>
-              <button type="button" onClick={() => { setSetupRows(vegRows.map(r => ({ ...r }))); setShowSetup(true); }}
+              <button type="button" onClick={() => { setSetupRows(vegRows.map(r => ({ ...r, deadSpots: r.deadSpots || [] }))); setShowSetup(true); }}
                 className="px-2 py-1 text-xs bg-dark-700 text-dark-300 rounded hover:bg-dark-600 transition">{t('vegMap.setupBtn')}</button>
             </>
           )}
@@ -371,7 +479,7 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
         </div>
       )}
 
-      {/* Batch palette (edit mode) */}
+      {/* Batch palette */}
       {editMode && (
         <div className="bg-dark-700/50 border border-dark-600 rounded-lg p-3">
           <div className="text-xs text-dark-400 mb-2">{t('vegMap.selectBatch')}</div>
@@ -397,112 +505,45 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
         </div>
       )}
 
-      {/* Map: rows → tables → grid of cells */}
-      {tablesByRow.map(({ row, rowIdx, tables }) => {
-        const rowCellCount = tables.reduce((s, t) => {
-          return s + batchPositions.filter(p => p.row === t.flatIdx).length;
-        }, 0);
-        const rowTotalSpots = row.tablesCount * row.plantsPerTable;
+      {/* Map: ряды горизонтально, столы в ряду вертикально */}
+      <div className="overflow-x-auto pb-2">
+        <div className="flex gap-4 min-w-min">
+          {tablesByRow.map(({ row, rowIdx, tables }) => {
+            const rowCellCount = tables.reduce((s, t) =>
+              s + batchPositions.filter(p => p.row === t.flatIdx).length, 0);
+            const rowTotalSpots = row.tablesCount * row.plantsPerTable;
 
-        return (
-          <div key={rowIdx} className="space-y-1.5">
-            {/* Row header */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-dark-300 font-medium">{row.name || `${t('vegMap.rowDefault')} ${rowIdx + 1}`}</span>
-              <span className="text-[10px] text-dark-500">{rowCellCount}/{rowTotalSpots}</span>
-              {editMode && (
-                <>
-                  <button type="button" onClick={() => handleFillRow(rowIdx)}
-                    className="text-[10px] px-1.5 py-0.5 rounded text-dark-500 hover:text-dark-300 hover:bg-dark-700 transition"
-                    title={t('vegMap.fillRow')}>&#9635; {t('vegMap.fillRow')}</button>
-                  <button type="button" onClick={() => handleClearRow(rowIdx)}
-                    className="text-[10px] px-1.5 py-0.5 rounded text-dark-500 hover:text-red-400 hover:bg-dark-700 transition"
-                    title={t('vegMap.clearRow')}>&#10005; {t('vegMap.clearRow')}</button>
-                </>
-              )}
-            </div>
+            return (
+              <div key={rowIdx} className="flex flex-col items-center shrink-0">
+                {/* Row header */}
+                <div className="flex items-center gap-1 mb-1.5">
+                  <span className="text-xs text-dark-300 font-medium">
+                    {row.name || `${t('vegMap.rowDefault')} ${rowIdx + 1}`}
+                  </span>
+                  <span className="text-[10px] text-dark-500">{rowCellCount}/{rowTotalSpots}</span>
+                  {editMode && (
+                    <>
+                      <button type="button" onClick={() => handleFillRow(rowIdx)}
+                        className="text-[9px] px-1 py-0.5 rounded text-dark-500 hover:text-dark-300 hover:bg-dark-700 transition"
+                        title={t('vegMap.fillRow')}>&#9635;</button>
+                      <button type="button" onClick={() => handleClearRow(rowIdx)}
+                        className="text-[9px] px-1 py-0.5 rounded text-dark-500 hover:text-red-400 hover:bg-dark-700 transition"
+                        title={t('vegMap.clearRow')}>&#10005;</button>
+                    </>
+                  )}
+                </div>
 
-            {/* Tables in row — horizontal scroll */}
-            <div className="overflow-x-auto pb-1">
-              <div className="flex gap-3 min-w-min">
-                {tables.map((table) => {
-                  const { flatIdx, plantsPerTable, tableCols, tableGapAfterCol } = table;
-                  const tableRows = Math.ceil(plantsPerTable / tableCols);
-                  const tableCellCount = batchPositions.filter(p => p.row === flatIdx).length;
-
-                  return (
-                    <div key={flatIdx} className="flex flex-col items-center shrink-0">
-                      {/* Table header */}
-                      <div className="flex items-center gap-0.5 mb-1">
-                        <span className="text-[10px] text-dark-500 font-medium">
-                          {table.tableInRow + 1}
-                        </span>
-                        {editMode && (
-                          <>
-                            <button type="button" onClick={() => handleFillTable(flatIdx)}
-                              className="text-[8px] px-0.5 py-0.5 rounded text-dark-600 hover:text-dark-300 hover:bg-dark-700 transition"
-                              title={t('vegMap.fillTable')}>&#9635;</button>
-                            <button type="button" onClick={() => handleClearTable(flatIdx)}
-                              className="text-[8px] px-0.5 py-0.5 rounded text-dark-600 hover:text-red-400 hover:bg-dark-700 transition"
-                              title={t('vegMap.clearTable')}>&#10005;</button>
-                          </>
-                        )}
-                      </div>
-
-                      {/* Table grid: cols with optional gap */}
-                      <div className="flex" style={{ gap: tableGapAfterCol > 0 ? 0 : '1px' }}>
-                        {Array.from({ length: tableCols }, (_, colIdx) => {
-                          // Insert visual gap after tableGapAfterCol
-                          const showGapBefore = tableGapAfterCol > 0 && colIdx === tableGapAfterCol;
-
-                          return (
-                            <div key={colIdx} className="flex" style={{ gap: 0 }}>
-                              {showGapBefore && (
-                                <div className="w-1.5 sm:w-2" />
-                              )}
-                              <div className="flex flex-col" style={{ gap: '1px' }}>
-                                {Array.from({ length: tableRows }, (_, rowInTable) => {
-                                  const posIdx = rowInTable * tableCols + colIdx;
-                                  if (posIdx >= plantsPerTable) {
-                                    return <div key={rowInTable} className="w-[14px] h-[14px] sm:w-[16px] sm:h-[16px]" />;
-                                  }
-                                  const batchId = positionMap[`${flatIdx}:${posIdx}`];
-                                  const batchIdx = batchId ? batchIndexMap[batchId] : undefined;
-                                  const batchName = batchId ? batchNameMap[batchId] : undefined;
-                                  return (
-                                    <VegMapCell
-                                      key={rowInTable}
-                                      batchLabel={batchName}
-                                      batchIndex={batchIdx}
-                                      isEmpty={!batchId}
-                                      isActive={editMode && !!activeBatchId && !batchId}
-                                      onClick={() => handleCellClick(flatIdx, posIdx)}
-                                      micro
-                                    />
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Fill count under table */}
-                      {!editMode && tableCellCount > 0 && (
-                        <span className="text-[8px] text-dark-600 mt-0.5">
-                          {tableCellCount}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
+                {/* Tables stacked vertically with gaps */}
+                <div className="flex flex-col gap-2">
+                  {tables.map(table => renderTable(table, editMode))}
+                </div>
               </div>
-            </div>
-          </div>
-        );
-      })}
+            );
+          })}
+        </div>
+      </div>
 
-      {/* Batch legend */}
+      {/* Legend */}
       {batches.length > 0 && !editMode && (
         <div className="flex flex-wrap gap-3 text-xs">
           {batches.map((b, idx) => {
