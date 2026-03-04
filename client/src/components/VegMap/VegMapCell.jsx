@@ -1,8 +1,8 @@
 import { STRAIN_COLORS } from '../RoomMap/PlantCell';
 
-export default function VegMapCell({ batchLabel, batchIndex, isEmpty, isActive, onClick, compact, micro }) {
+export default function VegMapCell({ batchLabel, strainLabel, batchIndex, isEmpty, isActive, onClick, compact, micro }) {
   const sizeClass = micro
-    ? 'w-[14px] h-[14px] sm:w-[16px] sm:h-[16px]'
+    ? 'w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]'
     : compact
       ? 'w-[32px] h-[24px] sm:w-[36px] sm:h-[28px]'
       : 'min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px]';
@@ -26,11 +26,16 @@ export default function VegMapCell({ batchLabel, batchIndex, isEmpty, isActive, 
 
   const color = STRAIN_COLORS[batchIndex % STRAIN_COLORS.length] || STRAIN_COLORS[0];
 
+  // Short strain label for micro cells (max 3 chars)
+  const shortLabel = strainLabel
+    ? (strainLabel.length > 3 ? strainLabel.slice(0, 3) : strainLabel)
+    : (batchLabel && batchLabel.length > 3 ? batchLabel.slice(0, 3) : batchLabel);
+
   return (
     <button
       type="button"
       onClick={onClick}
-      title={batchLabel}
+      title={`${batchLabel}${strainLabel && strainLabel !== batchLabel ? ` (${strainLabel})` : ''}`}
       className={`
         ${sizeClass}
         ${color.bg} border ${color.border} rounded-[2px]
@@ -40,11 +45,15 @@ export default function VegMapCell({ batchLabel, batchIndex, isEmpty, isActive, 
         ${isActive ? 'ring-1 ring-white scale-105' : ''}
       `}
     >
-      {!compact && !micro && (
+      {micro ? (
+        <span className={`text-[7px] sm:text-[8px] font-medium ${color.text} leading-none truncate select-none`}>
+          {shortLabel}
+        </span>
+      ) : !compact ? (
         <span className={`text-[9px] font-medium ${color.text} leading-tight truncate max-w-[40px] select-none`}>
           {batchLabel && batchLabel.length > 6 ? batchLabel.slice(0, 6) : batchLabel}
         </span>
-      )}
+      ) : null}
     </button>
   );
 }

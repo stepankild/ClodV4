@@ -57,6 +57,33 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
     return m;
   }, [batches]);
 
+  // Strain label per batch (short name for cell display)
+  const batchStrainMap = useMemo(() => {
+    const m = {};
+    batches.forEach(b => {
+      const strains = Array.isArray(b.strains) && b.strains.length > 0
+        ? b.strains.map(s => s.strain).filter(Boolean)
+        : (b.strain ? [b.strain] : []);
+      m[b._id] = strains.length > 0 ? strains[0] : (b.name || '');
+    });
+    return m;
+  }, [batches]);
+
+  // Available (good) plant count per batch
+  const batchGoodCountMap = useMemo(() => {
+    const m = {};
+    batches.forEach(b => {
+      const fromStrains = Array.isArray(b.strains) && b.strains.length > 0
+        ? b.strains.reduce((s, x) => s + (Number(x.quantity) || 0), 0)
+        : 0;
+      const total = fromStrains || Number(b.quantity) || 0;
+      const died = Number(b.diedCount) || 0;
+      const disposed = Number(b.disposedCount) || 0;
+      m[b._id] = Math.max(0, total - died - disposed);
+    });
+    return m;
+  }, [batches]);
+
   const positionMap = useMemo(() => {
     const m = {};
     batchPositions.forEach(p => {
@@ -148,6 +175,13 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
     setShowSetup(false);
   };
 
+  // Check if batch has capacity left
+  const canPlaceBatch = useCallback((batchId, extraCount = 1) => {
+    const goodCount = batchGoodCountMap[batchId] || 0;
+    const placed = batchCellCounts[batchId] || 0;
+    return placed + extraCount <= goodCount;
+  }, [batchGoodCountMap, batchCellCounts]);
+
   const handleCellClick = useCallback((flatTableIdx, posIdx) => {
     if (!editMode) return;
     const key = `${flatTableIdx}:${posIdx}`;
@@ -155,17 +189,26 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
     if (existing) {
       setBatchPositions(prev => prev.filter(p => !(p.row === flatTableIdx && p.position === posIdx)));
     } else if (activeBatchId) {
+      if (!canPlaceBatch(activeBatchId)) return; // limit reached
       setBatchPositions(prev => [...prev, { row: flatTableIdx, position: posIdx, batchId: activeBatchId }]);
     }
-  }, [editMode, positionMap, activeBatchId]);
+  }, [editMode, positionMap, activeBatchId, canPlaceBatch]);
 
   const handleFillTable = (flatTableIdx) => {
     if (!activeBatchId) return;
     const table = flatTables[flatTableIdx];
     if (!table) return;
     const cleaned = batchPositions.filter(p => p.row !== flatTableIdx);
+    // Count how many of this batch are already placed (elsewhere)
+    const placedElsewhere = cleaned.filter(p => {
+      const bid = typeof p.batchId === 'object' ? (p.batchId?._id || p.batchId) : p.batchId;
+      return String(bid) === String(activeBatchId);
+    }).length;
+    const goodCount = batchGoodCountMap[activeBatchId] || 0;
+    const canPlace = Math.max(0, goodCount - placedElsewhere);
+    const toPlace = Math.min(table.plantsPerTable, canPlace);
     const newPositions = [...cleaned];
-    for (let p = 0; p < table.plantsPerTable; p++) {
+    for (let p = 0; p < toPlace; p++) {
       newPositions.push({ row: flatTableIdx, position: p, batchId: activeBatchId });
     }
     setBatchPositions(newPositions);
@@ -180,11 +223,20 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
     const tablesInRow = flatTables.filter(t => t.rowIdx === rowIdx);
     const flatIdxs = new Set(tablesInRow.map(t => t.flatIdx));
     const cleaned = batchPositions.filter(p => !flatIdxs.has(p.row));
+    // Count how many of this batch are placed outside this row
+    const placedElsewhere = cleaned.filter(p => {
+      const bid = typeof p.batchId === 'object' ? (p.batchId?._id || p.batchId) : p.batchId;
+      return String(bid) === String(activeBatchId);
+    }).length;
+    const goodCount = batchGoodCountMap[activeBatchId] || 0;
+    let remaining = Math.max(0, goodCount - placedElsewhere);
     const newPositions = [...cleaned];
     tablesInRow.forEach(table => {
-      for (let p = 0; p < table.plantsPerTable; p++) {
+      const toPlace = Math.min(table.plantsPerTable, remaining);
+      for (let p = 0; p < toPlace; p++) {
         newPositions.push({ row: table.flatIdx, position: p, batchId: activeBatchId });
       }
+      remaining -= toPlace;
     });
     setBatchPositions(newPositions);
   };
@@ -406,18 +458,20 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
                 const isDead = deadSpots.has(gridIdx);
 
                 if (isDead) {
-                  return <div key={colIdx} className="w-[14px] h-[14px] sm:w-[16px] sm:h-[16px]" />;
+                  return <div key={colIdx} className="w-[18px] h-[18px] sm:w-[20px] sm:h-[20px]" />;
                 }
 
                 const posIdx = gridToPosMap[gridIdx];
                 const batchId = positionMap[`${flatIdx}:${posIdx}`];
                 const batchIdx = batchId ? batchIndexMap[batchId] : undefined;
                 const batchName = batchId ? batchNameMap[batchId] : undefined;
+                const strainLabel = batchId ? batchStrainMap[batchId] : undefined;
 
                 return (
                   <VegMapCell
                     key={colIdx}
                     batchLabel={batchName}
+                    strainLabel={strainLabel}
                     batchIndex={batchIdx}
                     isEmpty={!batchId}
                     isActive={editMode && !!activeBatchId && !batchId}
@@ -487,14 +541,19 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
             {batches.map((b, idx) => {
               const color = STRAIN_COLORS[idx % STRAIN_COLORS.length];
               const isActive = activeBatchId === b._id;
+              const placed = batchCellCounts[b._id] || 0;
+              const goodCount = batchGoodCountMap[b._id] || 0;
+              const isFull = placed >= goodCount;
               return (
                 <button key={b._id} type="button"
                   onClick={() => setActiveBatchId(isActive ? null : b._id)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition ${color.bg} ${color.border} ${color.text} ${
                     isActive ? 'ring-2 ring-white scale-105' : 'hover:brightness-125'
-                  }`}>
+                  } ${isFull && !isActive ? 'opacity-50' : ''}`}>
                   {b.name || '—'}
-                  <span className="ml-1 opacity-60">({batchCellCounts[b._id] || 0})</span>
+                  <span className={`ml-1 ${isFull ? 'text-red-400/80' : 'opacity-60'}`}>
+                    {placed}/{goodCount}
+                  </span>
                 </button>
               );
             })}
@@ -548,13 +607,14 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
         <div className="flex flex-wrap gap-3 text-xs">
           {batches.map((b, idx) => {
             const color = STRAIN_COLORS[idx % STRAIN_COLORS.length];
-            const count = batchCellCounts[b._id] || 0;
-            if (count === 0) return null;
+            const placed = batchCellCounts[b._id] || 0;
+            const goodCount = batchGoodCountMap[b._id] || 0;
+            if (placed === 0) return null;
             return (
               <div key={b._id} className="flex items-center gap-1.5">
                 <span className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
                 <span className="text-dark-300">{b.name || '—'}</span>
-                <span className="text-dark-500">{count}</span>
+                <span className="text-dark-500">{placed}/{goodCount}</span>
               </div>
             );
           })}
