@@ -904,10 +904,19 @@
     "showMap": "Карта",
     "hideMap": "Скрыть карту",
     "setupTitle": "Настройка карты вегетации",
-    "tablesCount": "Столов",
-    "spotsPerTable": "Мест на столе",
+    "setupBtn": "Настройка",
     "spotsWord": "мест",
-    "setupBtn": "Настройка"
+    "rowDefault": "Ряд",
+    "tablesInRow": "Столов",
+    "plantsPerTable": "Растений на столе",
+    "colsOnTable": "Колонок",
+    "gapAfterCol": "Разрыв после",
+    "colLayout": "колонок",
+    "addRow": "+ Добавить ряд",
+    "rowsWord": "рядов",
+    "tablesWord": "столов",
+    "fillRow": "Заполнить ряд",
+    "clearRow": "Очистить ряд"
   },
   "trim": {
     "title": "Трим",

@@ -8,7 +8,7 @@ export const getVegMap = async (req, res) => {
   try {
     let doc = await VegMap.findOne();
     if (!doc) {
-      return res.json({ customRows: [], batchPositions: [], fillDirection: 'topDown' });
+      return res.json({ vegRows: [], customRows: [], batchPositions: [], fillDirection: 'topDown' });
     }
 
     // Lazy cleanup: убрать позиции удалённых/несуществующих батчей
@@ -41,13 +41,14 @@ export const getVegMap = async (req, res) => {
 // @route   PUT /api/veg-map
 export const updateVegMap = async (req, res) => {
   try {
-    const { customRows, batchPositions, fillDirection } = req.body;
+    const { vegRows, customRows, batchPositions, fillDirection } = req.body;
 
     let doc = await VegMap.findOne();
     if (!doc) {
       doc = new VegMap();
     }
 
+    if (vegRows !== undefined) doc.vegRows = vegRows;
     if (customRows !== undefined) doc.customRows = customRows;
     if (batchPositions !== undefined) doc.batchPositions = batchPositions;
     if (fillDirection !== undefined) doc.fillDirection = fillDirection;

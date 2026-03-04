@@ -904,10 +904,19 @@
     "showMap": "Map",
     "hideMap": "Hide map",
     "setupTitle": "Vegetation Map Setup",
-    "tablesCount": "Tables",
-    "spotsPerTable": "Spots per table",
+    "setupBtn": "Setup",
     "spotsWord": "spots",
-    "setupBtn": "Setup"
+    "rowDefault": "Row",
+    "tablesInRow": "Tables",
+    "plantsPerTable": "Plants per table",
+    "colsOnTable": "Columns",
+    "gapAfterCol": "Gap after col",
+    "colLayout": "columns",
+    "addRow": "+ Add row",
+    "rowsWord": "rows",
+    "tablesWord": "tables",
+    "fillRow": "Fill row",
+    "clearRow": "Clear row"
   },
   "trim": {
     "title": "Trim",
