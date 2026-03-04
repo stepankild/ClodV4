@@ -891,6 +891,20 @@
     "disposedLoss": "Disposed",
     "vegDuration": "Duration"
   },
+  "vegMap": {
+    "title": "Vegetation Map",
+    "spotsUsed": "spots used",
+    "clear": "Clear all",
+    "applyTemplateConfirm": "Apply template? Current grid will be replaced.",
+    "selectBatch": "Select batch to place",
+    "noBatches": "No active batches",
+    "tableDefault": "Table",
+    "fillRow": "Fill row",
+    "clearRow": "Clear row",
+    "mapSaved": "Map saved",
+    "showMap": "Map",
+    "hideMap": "Hide map"
+  },
   "trim": {
     "title": "Trim",
     "subtitle": "Drying, trimming, and yield tracking by room",

@@ -6,6 +6,8 @@ import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
 import StrainSelect from '../../components/StrainSelect';
 import { localizeRoomName } from '../../utils/localizeRoomName';
+import VegMap from '../../components/VegMap/VegMap';
+import { vegMapService } from '../../services/vegMapService';
 
 const getDaysInVeg = (transplantedToVegAt) => {
   if (!transplantedToVegAt) return 0;
@@ -128,6 +130,10 @@ const Vegetation = () => {
   });
   const editFormStrainKey = useRef(0);
   const editFormLightKey = useRef(0);
+  const [showVegMap, setShowVegMap] = useState(false);
+  const [vegMapData, setVegMapData] = useState(null);
+  const [vegMapLoading, setVegMapLoading] = useState(false);
+  const [vegMapSaving, setVegMapSaving] = useState(false);
 
   useEffect(() => {
     load();
@@ -155,6 +161,37 @@ const Vegetation = () => {
       setCloneCuts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadVegMap = async () => {
+    setVegMapLoading(true);
+    try {
+      const data = await vegMapService.get();
+      setVegMapData(data);
+    } catch (err) {
+      console.error('Load veg map error:', err);
+    } finally {
+      setVegMapLoading(false);
+    }
+  };
+
+  const handleToggleVegMap = () => {
+    if (!showVegMap && !vegMapData) {
+      loadVegMap();
+    }
+    setShowVegMap(prev => !prev);
+  };
+
+  const handleSaveVegMap = async (data) => {
+    setVegMapSaving(true);
+    try {
+      const saved = await vegMapService.save(data);
+      setVegMapData(saved);
+    } catch (err) {
+      console.error('Save veg map error:', err);
+    } finally {
+      setVegMapSaving(false);
     }
   };
 
@@ -494,8 +531,19 @@ const Vegetation = () => {
         </div>
       )}
 
-      {canCreateVeg && (
-        <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={handleToggleVegMap}
+          className={`px-4 py-2 rounded-lg transition font-medium ${
+            showVegMap
+              ? 'bg-dark-700 text-primary-400 border border-primary-600'
+              : 'bg-dark-700 text-dark-300 hover:bg-dark-600'
+          }`}
+        >
+          {showVegMap ? t('vegMap.hideMap') : t('vegMap.showMap')}
+        </button>
+        {canCreateVeg && (
           <button
             type="button"
             onClick={openAddModal}
@@ -503,6 +551,24 @@ const Vegetation = () => {
           >
             {t('vegetation.addBatch')}
           </button>
+        )}
+      </div>
+
+      {/* Veg Map */}
+      {showVegMap && (
+        <div className="mb-6 bg-dark-800 rounded-xl border border-dark-700 p-5">
+          {vegMapLoading ? (
+            <div className="flex items-center justify-center h-24">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
+            </div>
+          ) : (
+            <VegMap
+              vegMapData={vegMapData}
+              batches={batches}
+              onSave={handleSaveVegMap}
+              saving={vegMapSaving}
+            />
+          )}
         </div>
       )}
 
