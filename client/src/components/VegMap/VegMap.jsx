@@ -66,8 +66,8 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
   }, [customRows]);
 
   const handleQuickSetup = () => {
-    const tables = Math.max(1, Math.min(50, tableCount));
-    const spots = Math.max(1, Math.min(50, spotsPerTable));
+    const tables = Math.max(1, Math.min(100, tableCount));
+    const spots = Math.max(1, Math.min(100, spotsPerTable));
     const newRows = Array.from({ length: tables }, (_, i) => ({
       name: `${t('vegMap.tableDefault')} ${i + 1}`,
       cols: 1,
@@ -151,9 +151,9 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
             <label className="text-sm text-dark-300">{t('vegMap.tablesCount')}</label>
             <input
               type="number"
-              min={1} max={50}
+              min={1} max={100}
               value={tableCount}
-              onChange={e => setTableCount(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+              onChange={e => setTableCount(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
               className="w-16 bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-white text-sm text-center"
             />
           </div>
@@ -162,9 +162,9 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
             <label className="text-sm text-dark-300">{t('vegMap.spotsPerTable')}</label>
             <input
               type="number"
-              min={1} max={50}
+              min={1} max={100}
               value={spotsPerTable}
-              onChange={e => setSpotsPerTable(Math.max(1, Math.min(50, parseInt(e.target.value) || 1)))}
+              onChange={e => setSpotsPerTable(Math.max(1, Math.min(100, parseInt(e.target.value) || 1)))}
               className="w-16 bg-dark-700 border border-dark-600 rounded px-2 py-1.5 text-white text-sm text-center"
             />
           </div>
