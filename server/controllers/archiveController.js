@@ -111,9 +111,11 @@ export const getArchiveStats = async (req, res) => {
           shrinkageDry: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: ['$harvestData.dryWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
           shrinkageCycles: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: ['$harvestData.dryWeight', 0] }] }, 1, 0] } },
           avgDaysFlowering: { $avg: '$actualDays' },
-          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
-          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
-          avgGramsPerDay: { $avg: '$metrics.gramsPerDay' },
+          // Средние показатели: только по циклам с dryWeight > 0
+          _gppSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerPlant', 0] }, 0] } },
+          _gppCount: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, 1, 0] } },
+          _gpwSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerWatt', 0] }, 0] } },
+          _gpdSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerDay', 0] }, 0] } },
           // Потери на триме: считаем только по завершённым циклам (trimStatus = completed, dry > 0, trimWeight > 0)
           trimLossDry: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
           trimLossTrimmed: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.trimWeight', 0] } },
@@ -194,6 +196,8 @@ export const getArchiveStats = async (req, res) => {
           }
         }
       },
+      // Исключаем циклы без сухого веса из статистики по сортам
+      { $match: { _entryDryWeight: { $gt: 0 } } },
       {
         $group: {
           _id: '$_strainEntries.strain',
@@ -251,22 +255,25 @@ export const getArchiveStats = async (req, res) => {
       { $group: { _id: null, totalTrimWeight: { $sum: '$weight' }, totalTrimEntries: { $sum: 1 } } }
     ]);
 
-    const totalData = totalStats[0] || {
-      totalCycles: 0,
-      totalPlants: 0,
-      totalDryWeight: 0,
-      totalWetWeight: 0,
-      shrinkageWet: 0,
-      shrinkageDry: 0,
-      shrinkageCycles: 0,
-      avgDaysFlowering: 0,
-      avgGramsPerPlant: 0,
-      avgGramsPerWatt: 0,
-      avgGramsPerDay: 0,
-      trimLossDry: 0,
-      trimLossTrimmed: 0,
-      trimLossPopcorn: 0,
-      trimLossCycles: 0
+    const raw = totalStats[0] || {};
+    const gppCount = raw._gppCount || 0;
+    const totalData = {
+      totalCycles: raw.totalCycles || 0,
+      totalPlants: raw.totalPlants || 0,
+      totalDryWeight: raw.totalDryWeight || 0,
+      totalWetWeight: raw.totalWetWeight || 0,
+      shrinkageWet: raw.shrinkageWet || 0,
+      shrinkageDry: raw.shrinkageDry || 0,
+      shrinkageCycles: raw.shrinkageCycles || 0,
+      avgDaysFlowering: raw.avgDaysFlowering || 0,
+      // Средние только по циклам с dryWeight > 0
+      avgGramsPerPlant: gppCount > 0 ? raw._gppSum / gppCount : 0,
+      avgGramsPerWatt: gppCount > 0 ? raw._gpwSum / gppCount : 0,
+      avgGramsPerDay: gppCount > 0 ? raw._gpdSum / gppCount : 0,
+      trimLossDry: raw.trimLossDry || 0,
+      trimLossTrimmed: raw.trimLossTrimmed || 0,
+      trimLossPopcorn: raw.trimLossPopcorn || 0,
+      trimLossCycles: raw.trimLossCycles || 0
     };
     totalData.totalTrimWeight = trimTotalAgg[0]?.totalTrimWeight || 0;
     totalData.totalTrimEntries = trimTotalAgg[0]?.totalTrimEntries || 0;
