@@ -773,9 +773,9 @@ const Vegetation = () => {
         const completedBatches = deletedBatches.filter((b) => b.sentToFlowerCount > 0);
         if (completedBatches.length === 0) return null;
         return (
-          <div className="mt-10 bg-dark-800 rounded-xl border border-dark-700 p-5">
-            <h2 className="text-lg font-semibold text-white mb-4">{t('vegetation.previousBatches')}</h2>
-            <div className="space-y-4">
+          <div className="mt-8">
+            <h3 className="text-sm font-medium text-dark-400 mb-2">{t('vegetation.previousBatches')}</h3>
+            <div className="space-y-1.5">
               {completedBatches.map((b) => {
                 const initial = getBatchInitialTotal(b) || b.initialQuantity || getBatchTotal(b);
                 const sent = b.sentToFlowerCount || 0;
@@ -786,55 +786,24 @@ const Vegetation = () => {
                 const vegEnd = b.transplantedToFlowerAt ? new Date(b.transplantedToFlowerAt) : (b.deletedAt ? new Date(b.deletedAt) : null);
                 const vegDays = vegStart && vegEnd ? Math.max(0, Math.floor((vegEnd - vegStart) / (1000 * 60 * 60 * 24))) : null;
                 return (
-                  <div key={b._id} className="bg-dark-700/40 rounded-lg border border-dark-600 p-4">
-                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
-                      <div>
-                        <span className="text-white font-medium">{b.name || t('vegetation.unnamedBatch')}</span>
-                        <span className="text-dark-400 text-sm ml-2">{formatStrainsShort(getStrainsFromBatch(b))}</span>
-                      </div>
-                      {vegDays != null && (
-                        <span className="text-dark-400 text-sm">
-                          {t('vegetation.vegDaysLabel')}: <span className="text-white font-medium">{vegDays}</span> {t('vegetation.daysShort')}
-                        </span>
-                      )}
-                    </div>
-                    {/* Progress bar */}
-                    <div className="w-full h-6 bg-dark-600 rounded-full overflow-hidden flex">
+                  <div key={b._id} className="flex items-center gap-3 py-1.5 px-3 rounded-lg bg-dark-800/50 hover:bg-dark-800 transition-colors">
+                    <span className="text-dark-300 text-sm font-medium truncate min-w-0 shrink-0" style={{ maxWidth: '180px' }} title={b.name}>
+                      {b.name || t('vegetation.unnamedBatch')}
+                    </span>
+                    <div className="flex-1 h-2 bg-dark-700 rounded-full overflow-hidden flex min-w-[80px]">
                       {sentPct > 0 && (
-                        <div
-                          className="h-full bg-green-500/80 flex items-center justify-center text-xs font-medium text-white"
-                          style={{ width: `${sentPct}%` }}
-                          title={t('vegetation.sentToFlower')}
-                        >
-                          {sentPct >= 15 && `${sent}`}
-                        </div>
+                        <div className="h-full bg-green-500/70 rounded-l-full" style={{ width: `${sentPct}%` }} title={`${t('vegetation.toFlowerLabel')}: ${sent}`} />
                       )}
                       {disposedPct > 0 && (
-                        <div
-                          className="h-full bg-red-500/60 flex items-center justify-center text-xs font-medium text-white"
-                          style={{ width: `${disposedPct}%` }}
-                          title={t('vegetation.disposedLoss')}
-                        >
-                          {disposedPct >= 10 && `${disposed}`}
-                        </div>
+                        <div className="h-full bg-red-500/50" style={{ width: `${disposedPct}%` }} title={`${t('vegetation.disposedLoss')}: ${disposed}`} />
                       )}
                     </div>
-                    {/* Legend */}
-                    <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-dark-400">
-                      <span>{t('vegetation.initialLabel')}: <span className="text-white">{initial}</span></span>
-                      <span className="flex items-center gap-1">
-                        <span className="inline-block w-2.5 h-2.5 rounded-sm bg-green-500/80" />
-                        {t('vegetation.toFlowerLabel')}: <span className="text-green-400">{sent}</span>
-                      </span>
-                      {disposed > 0 && (
-                        <span className="flex items-center gap-1">
-                          <span className="inline-block w-2.5 h-2.5 rounded-sm bg-red-500/60" />
-                          {t('vegetation.disposedLoss')}: <span className="text-red-400">{disposed}</span>
-                        </span>
-                      )}
-                      {vegDays != null && (
-                        <span>{t('vegetation.vegDuration')}: <span className="text-white">{vegDays} {t('vegetation.daysShort')}</span></span>
-                      )}
+                    <div className="flex items-center gap-2 text-xs text-dark-500 shrink-0">
+                      <span className="text-green-400/80">{sent}</span>
+                      <span>/</span>
+                      <span>{initial}</span>
+                      {disposed > 0 && <span className="text-red-400/70">-{disposed}</span>}
+                      {vegDays != null && <span className="text-dark-500">{vegDays}{t('vegetation.daysShort')}</span>}
                     </div>
                   </div>
                 );
