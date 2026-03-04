@@ -772,47 +772,55 @@ const Vegetation = () => {
       {(() => {
         const completedBatches = deletedBatches.filter((b) => b.sentToFlowerCount > 0);
         if (completedBatches.length === 0) return null;
+        const fmtShort = (d) => d ? new Date(d).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit' }) : '';
         return (
-          <div className="mt-8">
-            <h3 className="text-sm font-medium text-dark-400 mb-2">{t('vegetation.previousBatches')}</h3>
-            <div className="space-y-1.5">
-              {completedBatches.map((b) => {
-                const initial = getBatchInitialTotal(b) || b.initialQuantity || getBatchTotal(b);
-                const sent = b.sentToFlowerCount || 0;
-                const disposed = (b.disposedCount || 0) + (b.diedCount || 0);
-                const sentPct = initial > 0 ? Math.round((sent / initial) * 100) : 0;
-                const disposedPct = initial > 0 ? Math.round((disposed / initial) * 100) : 0;
-                const vegStart = b.transplantedToVegAt ? new Date(b.transplantedToVegAt) : null;
-                const vegEnd = b.transplantedToFlowerAt ? new Date(b.transplantedToFlowerAt) : (b.deletedAt ? new Date(b.deletedAt) : null);
-                const vegDays = vegStart && vegEnd ? Math.max(0, Math.floor((vegEnd - vegStart) / (1000 * 60 * 60 * 24))) : null;
-                const fmtShort = (d) => d ? new Date(d).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit' }) : '';
-                return (
-                  <div key={b._id} className="flex items-center gap-3 py-1.5 px-3 rounded-lg bg-dark-800/50 hover:bg-dark-800 transition-colors">
-                    <span className="text-dark-300 text-sm font-medium truncate min-w-0 shrink-0" style={{ maxWidth: '180px' }} title={b.name}>
-                      {b.name || t('vegetation.unnamedBatch')}
-                    </span>
-                    <span className="text-dark-500 text-xs shrink-0">
-                      {fmtShort(b.transplantedToVegAt)}{vegEnd ? ` — ${fmtShort(vegEnd)}` : ''}
-                    </span>
-                    <div className="w-24 h-2 bg-dark-700 rounded-full overflow-hidden flex shrink-0">
-                      {sentPct > 0 && (
-                        <div className="h-full bg-green-500/70 rounded-l-full" style={{ width: `${sentPct}%` }} title={`${t('vegetation.toFlowerLabel')}: ${sent}`} />
-                      )}
-                      {disposedPct > 0 && (
-                        <div className="h-full bg-red-500/50" style={{ width: `${disposedPct}%` }} title={`${t('vegetation.disposedLoss')}: ${disposed}`} />
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 text-xs text-dark-500 shrink-0">
-                      <span className="text-green-400/80">{sent}</span>
-                      <span>/</span>
-                      <span>{initial}</span>
-                      {disposed > 0 && <span className="text-red-400/70">-{disposed}</span>}
-                      {vegDays != null && <span className="text-dark-500">{vegDays}{t('vegetation.daysShort')}</span>}
-                    </div>
-                  </div>
-                );
-              })}
+          <div className="mt-8 bg-dark-800/60 rounded-xl border border-dark-700/60 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-dark-700/60">
+              <h3 className="text-sm font-medium text-dark-400">{t('vegetation.previousBatches')}</h3>
             </div>
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="text-dark-500 border-b border-dark-700/40">
+                  <th className="px-4 py-2 text-left font-medium">{t('vegetation.nameCol')}</th>
+                  <th className="px-3 py-2 text-left font-medium">{t('vegetation.vegDaysLabel')}</th>
+                  <th className="px-3 py-2 text-center font-medium">{t('vegetation.toFlowerLabel')}</th>
+                  <th className="px-3 py-2 text-right font-medium" style={{ width: 120 }}>{t('common.progress')}</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-dark-700/30">
+                {completedBatches.map((b) => {
+                  const initial = getBatchInitialTotal(b) || b.initialQuantity || getBatchTotal(b);
+                  const sent = b.sentToFlowerCount || 0;
+                  const disposed = (b.disposedCount || 0) + (b.diedCount || 0);
+                  const sentPct = initial > 0 ? Math.round((sent / initial) * 100) : 0;
+                  const disposedPct = initial > 0 ? Math.round((disposed / initial) * 100) : 0;
+                  const vegStart = b.transplantedToVegAt ? new Date(b.transplantedToVegAt) : null;
+                  const vegEnd = b.transplantedToFlowerAt ? new Date(b.transplantedToFlowerAt) : (b.deletedAt ? new Date(b.deletedAt) : null);
+                  const vegDays = vegStart && vegEnd ? Math.max(0, Math.floor((vegEnd - vegStart) / (1000 * 60 * 60 * 24))) : null;
+                  return (
+                    <tr key={b._id} className="hover:bg-dark-700/20">
+                      <td className="px-4 py-2.5">
+                        <div className="text-dark-300 text-sm">{b.name || t('vegetation.unnamedBatch')}</div>
+                        <div className="text-dark-500 mt-0.5">
+                          {fmtShort(b.transplantedToVegAt)} — {fmtShort(vegEnd)}
+                          {vegDays != null && <span className="text-dark-500 ml-1">({vegDays} {t('vegetation.daysShort')})</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-dark-400">
+                        {sent}{disposed > 0 ? <span className="text-red-400/60 ml-1">-{disposed}</span> : ''} <span className="text-dark-600">/ {initial}</span>
+                      </td>
+                      <td className="px-3 py-2.5 text-center text-green-400/80">{sentPct}%</td>
+                      <td className="px-3 py-2.5">
+                        <div className="w-full h-1.5 bg-dark-700 rounded-full overflow-hidden flex">
+                          {sentPct > 0 && <div className="h-full bg-green-500/60" style={{ width: `${sentPct}%` }} />}
+                          {disposedPct > 0 && <div className="h-full bg-red-500/40" style={{ width: `${disposedPct}%` }} />}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         );
       })()}
