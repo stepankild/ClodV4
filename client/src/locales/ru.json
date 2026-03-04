@@ -883,7 +883,13 @@
     "errorSpecifyCount": "Укажите количество",
     "errorMaxGood": "Максимум {{max}} хороших кустов",
     "deleteBatchConfirm": "Удалить бэтч?",
-    "disposeConfirm": "Списать {{count}} оставшихся кустов?"
+    "disposeConfirm": "Списать {{count}} оставшихся кустов?",
+    "previousBatches": "Предыдущие батчи",
+    "vegDaysLabel": "На веге",
+    "daysShort": "дн",
+    "initialLabel": "Начало",
+    "disposedLoss": "Утилизировано",
+    "vegDuration": "Длительность"
   },
   "trim": {
     "title": "Трим",

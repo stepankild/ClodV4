@@ -883,7 +883,13 @@
     "errorSpecifyCount": "Specify quantity",
     "errorMaxGood": "Maximum {{max}} healthy plants",
     "deleteBatchConfirm": "Delete batch?",
-    "disposeConfirm": "Dispose {{count}} remaining plants?"
+    "disposeConfirm": "Dispose {{count}} remaining plants?",
+    "previousBatches": "Previous Batches",
+    "vegDaysLabel": "In veg",
+    "daysShort": "d",
+    "initialLabel": "Initial",
+    "disposedLoss": "Disposed",
+    "vegDuration": "Duration"
   },
   "trim": {
     "title": "Trim",
