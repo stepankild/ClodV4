@@ -785,12 +785,16 @@ const Vegetation = () => {
                 const vegStart = b.transplantedToVegAt ? new Date(b.transplantedToVegAt) : null;
                 const vegEnd = b.transplantedToFlowerAt ? new Date(b.transplantedToFlowerAt) : (b.deletedAt ? new Date(b.deletedAt) : null);
                 const vegDays = vegStart && vegEnd ? Math.max(0, Math.floor((vegEnd - vegStart) / (1000 * 60 * 60 * 24))) : null;
+                const fmtShort = (d) => d ? new Date(d).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit' }) : '';
                 return (
                   <div key={b._id} className="flex items-center gap-3 py-1.5 px-3 rounded-lg bg-dark-800/50 hover:bg-dark-800 transition-colors">
                     <span className="text-dark-300 text-sm font-medium truncate min-w-0 shrink-0" style={{ maxWidth: '180px' }} title={b.name}>
                       {b.name || t('vegetation.unnamedBatch')}
                     </span>
-                    <div className="flex-1 h-2 bg-dark-700 rounded-full overflow-hidden flex min-w-[80px]">
+                    <span className="text-dark-500 text-xs shrink-0">
+                      {fmtShort(b.transplantedToVegAt)}{vegEnd ? ` — ${fmtShort(vegEnd)}` : ''}
+                    </span>
+                    <div className="w-24 h-2 bg-dark-700 rounded-full overflow-hidden flex shrink-0">
                       {sentPct > 0 && (
                         <div className="h-full bg-green-500/70 rounded-l-full" style={{ width: `${sentPct}%` }} title={`${t('vegetation.toFlowerLabel')}: ${sent}`} />
                       )}
