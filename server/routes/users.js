@@ -1,5 +1,6 @@
 import express from 'express';
 import { body } from 'express-validator';
+import { validate } from '../middleware/validate.js';
 import {
   getUsers,
   getUser,
@@ -48,14 +49,16 @@ router.post('/', [
   checkPermission('users:create'),
   body('email').isEmail().withMessage('Введите корректный email'),
   body('password').isLength({ min: 6 }).withMessage('Пароль должен быть минимум 6 символов'),
-  body('name').notEmpty().withMessage('Введите имя')
+  body('name').notEmpty().withMessage('Введите имя'),
+  validate
 ], createUser);
 
 router.put('/:id', [
   checkPermission('users:update'),
   body('email').optional().isEmail().withMessage('Введите корректный email'),
   body('password').optional().isLength({ min: 6 }).withMessage('Пароль должен быть минимум 6 символов'),
-  body('name').optional().notEmpty().withMessage('Введите имя')
+  body('name').optional().notEmpty().withMessage('Введите имя'),
+  validate
 ], updateUser);
 
 router.delete('/:id', checkPermission('users:delete'), deleteUser);

@@ -1,33 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { userService } from '../../services/userService';
 import UserForm from '../Admin/UserForm';
 import RoleForm from '../Admin/RoleForm';
 
 // ── Shared constants ──
-const MODULE_LABELS = {
-  view: 'Видимость разделов',
-  rooms: 'Комнаты',
-  tasks: 'Задачи',
-  clones: 'Клоны',
-  vegetation: 'Вегетация',
-  harvest: 'Сбор урожая',
-  trim: 'Трим',
-  archive: 'Архив',
-  cycles: 'Циклы',
-  templates: 'Шаблоны',
-  users: 'Пользователи',
-  system: 'Система'
-};
 const MODULE_ORDER = ['view', 'rooms', 'tasks', 'clones', 'vegetation', 'harvest', 'trim', 'archive', 'cycles', 'templates', 'users', 'system'];
-
-const formatDate = (d) => {
-  if (!d) return '—';
-  return new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-};
 
 // ── Grouped permissions viewer (read-only) ──
 const RolePermissionsView = ({ permissions, allPermissions }) => {
+  const { t, i18n } = useTranslation();
+
   // Group role's permissions by module
   const rolePermIds = new Set((permissions || []).map(p => p._id));
   // Group ALL permissions by module to show total counts
@@ -47,13 +31,13 @@ const RolePermissionsView = ({ permissions, allPermissions }) => {
   if (permissions?.some(p => p.name === '*')) {
     return (
       <div className="mt-3 px-3 py-2 bg-amber-900/20 border border-amber-800/40 rounded-lg text-amber-400 text-sm">
-        Полный доступ ко всем функциям (*)
+        {t('workers.fullAccessAll')}
       </div>
     );
   }
 
   if (activeModules.length === 0) {
-    return <div className="mt-3 text-dark-500 text-sm">Нет назначенных прав</div>;
+    return <div className="mt-3 text-dark-500 text-sm">{t('workers.noPermissions')}</div>;
   }
 
   return (
@@ -66,7 +50,7 @@ const RolePermissionsView = ({ permissions, allPermissions }) => {
           <div key={moduleKey} className="bg-dark-900/50 rounded-lg px-3 py-2 border border-dark-700/50">
             <div className="flex items-center justify-between mb-1.5">
               <span className="text-xs font-semibold text-dark-300 uppercase tracking-wider">
-                {MODULE_LABELS[moduleKey] || moduleKey}
+                {t(`workers.moduleLabels.${moduleKey}`, moduleKey)}
               </span>
               <span className={`text-xs font-medium ${allActive ? 'text-green-400' : 'text-dark-500'}`}>
                 {activeInModule.length}/{allInModule.length}
@@ -91,6 +75,7 @@ const RolePermissionsView = ({ permissions, allPermissions }) => {
 
 // ── Main component ──
 const Workers = () => {
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const canEditUsers = hasPermission && hasPermission('users:update');
 
@@ -115,6 +100,11 @@ const Workers = () => {
   const [deletedRoles, setDeletedRoles] = useState([]);
   const [restoringId, setRestoringId] = useState(null);
 
+  const formatDate = (d) => {
+    if (!d) return '—';
+    return new Date(d).toLocaleString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -127,12 +117,12 @@ const Workers = () => {
       setRoles(rolesData);
       setPermissions(Array.isArray(permsData) ? permsData : []);
     } catch (err) {
-      setError('Ошибка загрузки данных');
+      setError(t('workers.loadError'));
       console.error(err);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   const loadTrash = useCallback(async () => {
     try {
@@ -165,7 +155,7 @@ const Workers = () => {
       // Refresh trash if open
       if (showTrash) loadTrash();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка удаления');
+      setError(err.response?.data?.message || t('workers.deleteError'));
     }
   };
 
@@ -204,7 +194,7 @@ const Workers = () => {
       setDeleteRoleConfirm(null);
       if (showTrash) loadTrash();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка удаления роли');
+      setError(err.response?.data?.message || t('workers.deleteRoleError'));
     }
   };
 
@@ -213,7 +203,7 @@ const Workers = () => {
       const updated = await userService.approveUser(userId);
       setUsers(users.map(u => u._id === updated._id ? updated : u));
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка одобрения');
+      setError(err.response?.data?.message || t('workers.approveError'));
     }
   };
 
@@ -232,7 +222,7 @@ const Workers = () => {
         setRoles(rolesData);
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка восстановления');
+      setError(err.response?.data?.message || t('workers.restoreError'));
     } finally {
       setRestoringId(null);
     }
@@ -247,6 +237,15 @@ const Workers = () => {
   const approvedUsers = users.filter(u => u.isApproved);
   const trashCount = deletedUsers.length + deletedRoles.length;
 
+  const getPermCountLabel = (count) => {
+    if (i18n.language === 'ru') {
+      if (count === 1) return t('workers.permCount_one', { count });
+      if (count >= 2 && count <= 4) return t('workers.permCount_few', { count });
+      return t('workers.permCount_many', { count });
+    }
+    return count === 1 ? t('workers.permCount_one', { count }) : t('workers.permCount_other', { count });
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -260,9 +259,9 @@ const Workers = () => {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-white">Работники</h1>
+          <h1 className="text-2xl font-bold text-white">{t('workers.title')}</h1>
           <p className="text-dark-400 mt-1">
-            Управление пользователями, ролями и правами доступа.
+            {t('workers.subtitle')}
           </p>
         </div>
         {canEditUsers && (
@@ -273,7 +272,7 @@ const Workers = () => {
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            <span>Добавить</span>
+            <span>{t('workers.addUser')}</span>
           </button>
         )}
       </div>
@@ -281,7 +280,7 @@ const Workers = () => {
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex items-center justify-between">
           <span className="text-sm">{error}</span>
-          <button onClick={() => setError('')} className="ml-3 text-red-400 hover:text-red-300 text-sm font-medium">Закрыть</button>
+          <button onClick={() => setError('')} className="ml-3 text-red-400 hover:text-red-300 text-sm font-medium">{t('common.close')}</button>
         </div>
       )}
 
@@ -289,9 +288,9 @@ const Workers = () => {
       <div className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden mb-6">
         <div className="px-4 py-3 border-b border-dark-700 flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h2 className="text-lg font-semibold text-white">Роли и права</h2>
+            <h2 className="text-lg font-semibold text-white">{t('workers.rolesAndPermissions')}</h2>
             <p className="text-dark-400 text-sm mt-0.5">
-              Нажмите на роль, чтобы увидеть подробные разрешения по модулям.
+              {t('workers.rolesSubtitle')}
             </p>
           </div>
           {canEditUsers && (
@@ -301,7 +300,7 @@ const Workers = () => {
               className="flex items-center gap-2 px-3 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium"
             >
               <span className="text-lg leading-none">+</span>
-              Создать роль
+              {t('workers.createRole')}
             </button>
           )}
         </div>
@@ -327,10 +326,10 @@ const Workers = () => {
                       </svg>
                       <span className="font-medium text-white">{r.name}</span>
                       {r.isSystem && (
-                        <span className="text-xs px-1.5 py-0.5 bg-dark-600 text-dark-400 rounded">системная</span>
+                        <span className="text-xs px-1.5 py-0.5 bg-dark-600 text-dark-400 rounded">{t('workers.systemTag')}</span>
                       )}
                       <span className="text-xs text-dark-500">
-                        {hasWildcard ? 'полный доступ' : `${permCount} ${permCount === 1 ? 'право' : permCount < 5 ? 'права' : 'прав'}`}
+                        {hasWildcard ? t('workers.fullAccess') : getPermCountLabel(permCount)}
                       </span>
                     </div>
                     {r.description && (
@@ -344,7 +343,7 @@ const Workers = () => {
                         onClick={() => setRoleFormRole(r)}
                         className="px-2 py-1.5 text-primary-400 hover:bg-primary-900/30 rounded-lg text-sm font-medium"
                       >
-                        Изменить
+                        {t('workers.editRole')}
                       </button>
                       {!r.isSystem && (
                         <button
@@ -352,7 +351,7 @@ const Workers = () => {
                           onClick={() => setDeleteRoleConfirm(r)}
                           className="px-2 py-1.5 text-red-400 hover:bg-red-900/30 rounded-lg text-sm font-medium"
                         >
-                          Удалить
+                          {t('workers.deleteRole')}
                         </button>
                       )}
                     </div>
@@ -376,7 +375,7 @@ const Workers = () => {
             <svg className="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
-            <h2 className="text-lg font-semibold text-yellow-400">Ожидают одобрения ({pendingUsers.length})</h2>
+            <h2 className="text-lg font-semibold text-yellow-400">{t('workers.pendingApproval', { count: pendingUsers.length })}</h2>
           </div>
           <div className="divide-y divide-yellow-700/30">
             {pendingUsers.map(user => (
@@ -385,7 +384,7 @@ const Workers = () => {
                   <div className="font-medium text-white">{user.name}</div>
                   <div className="text-sm text-dark-400">{user.email}</div>
                   <div className="text-xs text-dark-500 mt-1">
-                    Зарегистрирован: {new Date(user.createdAt).toLocaleDateString('ru-RU')}
+                    {t('workers.registered', { date: new Date(user.createdAt).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU') })}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -395,23 +394,23 @@ const Workers = () => {
                         onClick={() => handleApprove(user._id)}
                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 transition font-medium"
                       >
-                        Одобрить
+                        {t('workers.approve')}
                       </button>
                       <button
                         onClick={() => handleEdit(user)}
                         className="px-3 py-2 text-primary-400 hover:bg-primary-900/30 rounded-lg transition"
-                        title="Редактировать и назначить роль"
+                        title={t('workers.configureTooltip')}
                       >
-                        Настроить
+                        {t('workers.configure')}
                       </button>
                     </>
                   )}
                   <button
                     onClick={() => setDeleteConfirm(user)}
                     className="px-3 py-2 text-red-400 hover:bg-red-900/30 rounded-lg transition"
-                    title="Отклонить заявку"
+                    title={t('workers.rejectTooltip')}
                   >
-                    Отклонить
+                    {t('workers.reject')}
                   </button>
                 </div>
               </div>
@@ -426,12 +425,12 @@ const Workers = () => {
           <table className="w-full">
             <thead className="bg-dark-900">
               <tr>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Работник</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Логин (email)</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Роли</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Статус</th>
-                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Последний вход</th>
-                <th className="px-6 py-4 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">Действия</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('workers.worker')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('workers.loginEmail')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('workers.roles')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('workers.status')}</th>
+                <th className="px-6 py-4 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('workers.lastLogin')}</th>
+                <th className="px-6 py-4 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('workers.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dark-700">
@@ -453,7 +452,7 @@ const Workers = () => {
                         </span>
                       ))}
                       {(!user.roles || user.roles.length === 0) && (
-                        <span className="text-xs text-dark-500">Нет ролей</span>
+                        <span className="text-xs text-dark-500">{t('workers.noRoles')}</span>
                       )}
                     </div>
                   </td>
@@ -463,7 +462,7 @@ const Workers = () => {
                         user.isActive ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'
                       }`}
                     >
-                      {user.isActive ? 'Активен' : 'Неактивен'}
+                      {user.isActive ? t('workers.active') : t('workers.inactive')}
                     </span>
                   </td>
                   <td className="px-6 py-4">
@@ -476,7 +475,7 @@ const Workers = () => {
                       <button
                         onClick={() => handleEdit(user)}
                         className="p-2 text-dark-400 hover:text-blue-400 hover:bg-dark-700 rounded-lg transition"
-                        title="Изменить логин, пароль, роли"
+                        title={t('workers.editTooltip')}
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -485,7 +484,7 @@ const Workers = () => {
                       <button
                         onClick={() => setDeleteConfirm(user)}
                         className="p-2 text-dark-400 hover:text-red-400 hover:bg-dark-700 rounded-lg transition"
-                        title="Удалить (можно восстановить)"
+                        title={t('workers.deleteTooltip')}
                       >
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -499,7 +498,7 @@ const Workers = () => {
           </table>
         </div>
         {approvedUsers.length === 0 && (
-          <div className="text-center py-12 text-dark-400">Нет одобренных работников</div>
+          <div className="text-center py-12 text-dark-400">{t('workers.noApprovedWorkers')}</div>
         )}
       </div>
 
@@ -515,7 +514,7 @@ const Workers = () => {
               <svg className="w-5 h-5 text-dark-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
               </svg>
-              <span className="font-medium text-dark-300">Корзина</span>
+              <span className="font-medium text-dark-300">{t('workers.trash')}</span>
               {showTrash && trashCount > 0 && (
                 <span className="text-xs px-1.5 py-0.5 bg-dark-600 text-dark-400 rounded-full">{trashCount}</span>
               )}
@@ -531,14 +530,14 @@ const Workers = () => {
           {showTrash && (
             <div className="border-t border-dark-700 p-4">
               {trashCount === 0 ? (
-                <div className="text-center py-4 text-dark-500 text-sm">Корзина пуста</div>
+                <div className="text-center py-4 text-dark-500 text-sm">{t('workers.trashEmpty')}</div>
               ) : (
                 <div className="space-y-4">
                   {/* Deleted users */}
                   {deletedUsers.length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-dark-400 uppercase mb-2">
-                        Удалённые пользователи ({deletedUsers.length})
+                        {t('workers.deletedUsers', { count: deletedUsers.length })}
                       </h3>
                       <div className="space-y-1">
                         {deletedUsers.map(u => (
@@ -546,14 +545,14 @@ const Workers = () => {
                             <div>
                               <span className="text-sm text-white">{u.name}</span>
                               <span className="text-dark-500 text-xs ml-2">{u.email}</span>
-                              <span className="text-dark-600 text-xs ml-2">удалён {formatDate(u.deletedAt)}</span>
+                              <span className="text-dark-600 text-xs ml-2">{t('workers.deleted', { date: formatDate(u.deletedAt) })}</span>
                             </div>
                             <button
                               onClick={() => handleRestore('user', u._id)}
                               disabled={!!restoringId}
                               className="px-3 py-1 bg-green-700/50 text-green-400 rounded text-xs hover:bg-green-700/70 disabled:opacity-50 font-medium"
                             >
-                              Восстановить
+                              {t('workers.restore')}
                             </button>
                           </div>
                         ))}
@@ -565,7 +564,7 @@ const Workers = () => {
                   {deletedRoles.length > 0 && (
                     <div>
                       <h3 className="text-xs font-semibold text-dark-400 uppercase mb-2">
-                        Удалённые роли ({deletedRoles.length})
+                        {t('workers.deletedRoles', { count: deletedRoles.length })}
                       </h3>
                       <div className="space-y-1">
                         {deletedRoles.map(r => (
@@ -573,14 +572,14 @@ const Workers = () => {
                             <div>
                               <span className="text-sm text-white">{r.name}</span>
                               {r.description && <span className="text-dark-500 text-xs ml-2">{r.description}</span>}
-                              <span className="text-dark-600 text-xs ml-2">удалена {formatDate(r.deletedAt)}</span>
+                              <span className="text-dark-600 text-xs ml-2">{t('workers.deletedFem', { date: formatDate(r.deletedAt) })}</span>
                             </div>
                             <button
                               onClick={() => handleRestore('role', r._id)}
                               disabled={!!restoringId}
                               className="px-3 py-1 bg-green-700/50 text-green-400 rounded text-xs hover:bg-green-700/70 disabled:opacity-50 font-medium"
                             >
-                              Восстановить
+                              {t('workers.restore')}
                             </button>
                           </div>
                         ))}
@@ -617,9 +616,9 @@ const Workers = () => {
       {deleteRoleConfirm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-dark-800 rounded-xl p-6 max-w-md w-full mx-4 border border-dark-700">
-            <h3 className="text-lg font-semibold text-white mb-2">Удалить роль?</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('workers.deleteRoleConfirm')}</h3>
             <p className="text-dark-400 mb-6">
-              Роль &laquo;{deleteRoleConfirm.name}&raquo; будет перемещена в корзину. Сначала снимите её у всех пользователей.
+              {t('workers.deleteRoleMessage', { name: deleteRoleConfirm.name })}
             </p>
             <div className="flex justify-end space-x-3">
               <button
@@ -627,14 +626,14 @@ const Workers = () => {
                 onClick={() => setDeleteRoleConfirm(null)}
                 className="px-4 py-2 text-dark-300 hover:bg-dark-700 rounded-lg transition"
               >
-                Отмена
+                {t('common.cancel')}
               </button>
               <button
                 type="button"
                 onClick={handleDeleteRole}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition"
               >
-                Удалить
+                {t('common.delete')}
               </button>
             </div>
           </div>
@@ -644,22 +643,22 @@ const Workers = () => {
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
           <div className="bg-dark-800 rounded-xl p-6 max-w-md w-full mx-4 border border-dark-700">
-            <h3 className="text-lg font-semibold text-white mb-2">Удалить работника?</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('workers.deleteWorkerConfirm')}</h3>
             <p className="text-dark-400 mb-6">
-              &laquo;{deleteConfirm.name}&raquo; будет перемещён в корзину. Его можно будет восстановить.
+              {t('workers.deleteWorkerMessage', { name: deleteConfirm.name })}
             </p>
             <div className="flex justify-end space-x-3">
               <button
                 onClick={() => setDeleteConfirm(null)}
                 className="px-4 py-2 text-dark-300 hover:bg-dark-700 rounded-lg transition"
               >
-                Отмена
+                {t('common.cancel')}
               </button>
               <button
                 onClick={() => handleDelete(deleteConfirm._id)}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-500 transition"
               >
-                В корзину
+                {t('workers.moveToTrash')}
               </button>
             </div>
           </div>

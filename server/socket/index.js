@@ -39,7 +39,8 @@ export function initializeSocket(httpServer, allowedOrigins) {
         if (!origin) return callback(null, true);
         if (allowedOrigins.includes(origin)) return callback(null, true);
         if (origin.endsWith('.railway.app')) return callback(null, true);
-        callback(null, true); // fallback — разрешаем все (как в Express CORS)
+        console.warn(`Socket.io CORS blocked origin: ${origin}`);
+        callback(new Error('Not allowed by CORS'));
       },
       credentials: true
     },

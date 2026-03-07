@@ -1,26 +1,31 @@
 import mongoose from 'mongoose';
 
+const PRODUCT_TYPES = ['insecticide', 'fungicide', 'acaricide', 'bio', 'fertilizer', 'ph_adjuster', 'other'];
+
+
 const treatmentProductSchema = new mongoose.Schema({
   name: { type: String, required: true, trim: true },
   type: {
     type: String,
-    enum: ['chemical', 'biological'],
-    required: true
+    enum: PRODUCT_TYPES,
+    default: 'other'
   },
-  description: { type: String, default: '' },
-  defaultDosage: { type: String, default: '' },
-  applicationMethod: {
-    type: String,
-    enum: ['spray', 'soil_drench', 'release', 'other'],
-    default: 'spray'
-  },
+  activeIngredient: { type: String, default: '' },
+  concentration: { type: String, default: '' },
+  targetPests: [{ type: String, trim: true }],
+  safetyIntervalDays: { type: Number, default: null },
+  instructions: { type: String, default: '' },
   notes: { type: String, default: '' },
-  isActive: { type: Boolean, default: true },
   deletedAt: { type: Date, default: null }
-}, { timestamps: true });
+}, {
+  timestamps: true
+});
 
-treatmentProductSchema.index({ type: 1 });
+treatmentProductSchema.index({ name: 1 }, { unique: true });
 treatmentProductSchema.index({ deletedAt: 1 });
+treatmentProductSchema.index({ type: 1 });
+
+export const PRODUCT_TYPES_LIST = PRODUCT_TYPES;
 
 const TreatmentProduct = mongoose.model('TreatmentProduct', treatmentProductSchema);
 

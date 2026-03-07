@@ -26,7 +26,8 @@ const roomLogSchema = new mongoose.Schema({
       'environment_log',  // Лог условий
       'feeding',          // Подкормка
       'watering',         // Полив
-      'measurement'       // Измерение (pH, EC, и т.д.)
+      'measurement',      // Измерение (pH, EC, и т.д.)
+      'cycle_transfer'    // Перенос цикла в другую комнату
     ],
     required: true
   },

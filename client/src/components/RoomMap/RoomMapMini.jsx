@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { STRAIN_COLORS } from './PlantCell';
 
 function getStrainIndex(plantNumber, flowerStrains) {
@@ -12,6 +13,7 @@ function getStrainIndex(plantNumber, flowerStrains) {
  * Показывает цветные точки растений без интерактивности.
  */
 export default function RoomMapMini({ room, onClick }) {
+  const { t } = useTranslation();
   const layout = room?.roomLayout;
   if (!layout?.customRows?.length) return null;
 
@@ -29,7 +31,7 @@ export default function RoomMapMini({ room, onClick }) {
     <div
       onClick={onClick}
       className={`flex gap-1.5 overflow-hidden ${onClick ? 'cursor-pointer' : ''}`}
-      title="Карта комнаты"
+      title={t('roomMap.roomMapTitle')}
     >
       {customRows.map((row, rowIdx) => {
         const cols = row.cols || 1;

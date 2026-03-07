@@ -2,6 +2,7 @@ import express from 'express';
 import { body } from 'express-validator';
 import { register, login, refreshToken, logout, getMe, changePassword, heartbeat } from '../controllers/authController.js';
 import { protect } from '../middleware/auth.js';
+import { validate } from '../middleware/validate.js';
 
 const router = express.Router();
 
@@ -9,13 +10,13 @@ const router = express.Router();
 router.post('/register', [
   body('email').isEmail().withMessage('Введите корректный email'),
   body('password').isLength({ min: 6 }).withMessage('Пароль должен быть минимум 6 символов'),
-  body('name').notEmpty().withMessage('Введите имя')
-], register);
+  body('name').notEmpty().trim().escape().withMessage('Введите имя')
+], validate, register);
 
 router.post('/login', [
   body('email').isEmail().withMessage('Введите корректный email'),
   body('password').notEmpty().withMessage('Введите пароль')
-], login);
+], validate, login);
 
 router.post('/refresh', refreshToken);
 
@@ -24,7 +25,7 @@ router.post('/logout', protect, logout);
 router.post('/change-password', protect, [
   body('currentPassword').notEmpty().withMessage('Введите текущий пароль'),
   body('newPassword').isLength({ min: 6 }).withMessage('Новый пароль минимум 6 символов')
-], changePassword);
+], validate, changePassword);
 
 router.get('/me', protect, getMe);
 

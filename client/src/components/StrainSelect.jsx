@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { strainService } from '../services/strainService';
 
-// Кэш на уровне модуля — один запрос на все инстансы компонента
+// Module-level cache — single request for all component instances
 let cachedStrains = null;
 let cachePromise = null;
 let cacheTimestamp = 0;
-const CACHE_TTL = 30_000; // 30 сек
+const CACHE_TTL = 30_000; // 30 sec
 
 async function loadStrains() {
   const now = Date.now();
@@ -25,16 +26,19 @@ async function loadStrains() {
   return cachePromise;
 }
 
-// Инвалидировать кэш (после создания нового сорта)
+// Invalidate cache (after creating a new strain)
 export function invalidateStrainCache() {
   cachedStrains = null;
   cacheTimestamp = 0;
 }
 
-const StrainSelect = ({ value, onChange, placeholder = 'Сорт', className = '' }) => {
+const StrainSelect = ({ value, onChange, placeholder, className = '' }) => {
+  const { t } = useTranslation();
   const [strains, setStrains] = useState(cachedStrains || []);
   const [loading, setLoading] = useState(!cachedStrains);
   const selectRef = useRef(null);
+
+  const displayPlaceholder = placeholder || t('strainSelect.placeholder');
 
   useEffect(() => {
     let cancelled = false;
@@ -47,9 +51,9 @@ const StrainSelect = ({ value, onChange, placeholder = 'Сорт', className = '
   const handleChange = async (e) => {
     const val = e.target.value;
     if (val === '__add__') {
-      const name = prompt('Название нового сорта:');
+      const name = prompt(t('strains.newStrainPlaceholder') + ':');
       if (!name || !name.trim()) {
-        // Вернуть предыдущее значение
+        // Restore previous value
         if (selectRef.current) selectRef.current.value = value || '';
         return;
       }
@@ -60,7 +64,7 @@ const StrainSelect = ({ value, onChange, placeholder = 'Сорт', className = '
         setStrains(fresh);
         onChange(created.name);
       } catch (err) {
-        alert(err.response?.data?.message || 'Ошибка создания сорта');
+        alert(err.response?.data?.message || t('strains.createError'));
         if (selectRef.current) selectRef.current.value = value || '';
       }
       return;
@@ -78,11 +82,11 @@ const StrainSelect = ({ value, onChange, placeholder = 'Сорт', className = '
       className={`${baseClass} ${className}`}
       disabled={loading}
     >
-      <option value="">{loading ? 'Загрузка...' : placeholder}</option>
+      <option value="">{loading ? t('common.loading') : displayPlaceholder}</option>
       {strains.map(s => (
         <option key={s._id} value={s.name}>{s.name}</option>
       ))}
-      <option value="__add__">+ Добавить новый</option>
+      <option value="__add__">{t('strains.addStrain')}</option>
     </select>
   );
 };

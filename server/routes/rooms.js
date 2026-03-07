@@ -6,7 +6,8 @@ import {
   updateRoom,
   startCycle,
   harvestRoom,
-  addNote
+  addNote,
+  transferCycle
 } from '../controllers/flowerRoomController.js';
 import { getPlans, createPlan, updatePlan, deletePlan, getDeletedPlans, restorePlan } from '../controllers/plannedController.js';
 import { getTemplates, createTemplate, deleteTemplate, getDeletedTemplates, restoreTemplate } from '../controllers/roomTemplateController.js';
@@ -43,5 +44,6 @@ router.put('/:id', checkPermission('rooms:edit'), updateRoom);
 router.post('/:id/start', checkPermission('rooms:start_cycle'), startCycle);
 router.post('/:id/note', checkPermission('rooms:notes'), addNote);
 router.post('/:id/harvest', checkPermission('harvest:complete'), harvestRoom);
+router.post('/:sourceId/transfer/:targetId', checkPermission('rooms:start_cycle'), transferCycle);
 
 export default router;

@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
 import { vegBatchService } from '../../services/vegBatchService';
@@ -31,13 +33,6 @@ const getDaysUntilCut = (cutDate) => {
   return Math.floor((cut - today) / (24 * 60 * 60 * 1000));
 };
 
-const formatDate = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
-};
-
-const formatNum = (n) => (n != null && Number.isFinite(n) ? Number(n).toLocaleString('ru-RU') : '—');
-
 // ── Urgency helpers ──
 const getProgressColor = (progress) => {
   if (progress >= 95) return 'bg-red-500';
@@ -54,6 +49,15 @@ const getBorderColor = (room) => {
 };
 
 const Overview = () => {
+  const { t, i18n } = useTranslation();
+
+  const formatDate = (date) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit', year: '2-digit' });
+  };
+
+  const formatNum = (n) => (n != null && Number.isFinite(n) ? Number(n).toLocaleString(i18n.language === 'en' ? 'en-US' : 'ru-RU') : '—');
+
   const [rooms, setRooms] = useState([]);
   const safeRooms = (Array.isArray(rooms) ? rooms : []).filter((r) => r != null);
   const [loading, setLoading] = useState(true);
@@ -93,7 +97,7 @@ const Overview = () => {
     } catch (err) {
       const msg = err.response?.data?.message || err.message;
       const isNetwork = err.code === 'ECONNREFUSED' || err.message?.includes('Network Error');
-      setError(isNetwork ? 'Не удалось подключиться к серверу.' : msg || 'Ошибка загрузки');
+      setError(isNetwork ? t('overview.networkError') : msg || t('overview.loadError'));
       console.error(err);
     } finally {
       setLoading(false);
@@ -144,17 +148,34 @@ const Overview = () => {
   // Alerts — things requiring attention
   const alerts = [];
 
-  // Найти актуальный клон-бэтч для комнаты: самый свежий по cutDate,
-  // чья дата нарезки в пределах ±60 дней от расчётной даты нарезки для текущего цикла
   const findCurrentCut = (room) => {
     const cutDate = getCutDateForRoom(room);
     const roomCuts = safeCloneCuts
-      .filter(c => String(c.room?._id || c.room || '') === String(room._id))
+      .filter(c => !c.deletedAt && String(c.room?._id || c.room || '') === String(room._id))
       .sort((a, b) => new Date(b.cutDate) - new Date(a.cutDate));
     if (!cutDate || roomCuts.length === 0) return roomCuts[0] || null;
     const target = new Date(cutDate).getTime();
-    const margin = 60 * 24 * 60 * 60 * 1000; // ±60 дней
+    const margin = 60 * 24 * 60 * 60 * 1000;
     return roomCuts.find(c => Math.abs(new Date(c.cutDate).getTime() - target) <= margin) || null;
+  };
+
+  const hasVegBatchForRoom = (room) => {
+    const cutDate = getCutDateForRoom(room);
+    const allRoomCuts = safeCloneCuts
+      .filter(c => String(c.room?._id || c.room || '') === String(room._id));
+    if (allRoomCuts.length === 0) return false;
+    let relevantCuts = allRoomCuts;
+    if (cutDate) {
+      const target = new Date(cutDate).getTime();
+      const margin = 60 * 24 * 60 * 60 * 1000;
+      relevantCuts = allRoomCuts.filter(c => Math.abs(new Date(c.cutDate).getTime() - target) <= margin);
+    }
+    const relevantCutIds = new Set(relevantCuts.map(c => String(c._id)));
+    return safeVegBatches.some(b =>
+      !b.deletedAt &&
+      !b.transplantedToFlowerAt &&
+      relevantCutIds.has(String(b.sourceCloneCut?._id || b.sourceCloneCut || ''))
+    );
   };
 
   safeRooms.forEach(room => {
@@ -163,18 +184,16 @@ const Overview = () => {
     const daysUntil = getDaysUntilCut(cutDate);
     const cut = findCurrentCut(room);
     const isDone = cut?.isDone ?? false;
-    const hasTransplanted = cut && safeVegBatches.some(
-      b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id)
-    );
+    const hasTransplanted = hasVegBatchForRoom(room);
     if (!isDone && !hasTransplanted && daysUntil !== null && daysUntil <= 3) {
       alerts.push({
         type: daysUntil < 0 ? 'danger' : 'warning',
         icon: '✂️',
         text: daysUntil < 0
-          ? `${room.name}: нарезка клонов просрочена на ${-daysUntil} дн.`
+          ? t('overview.alerts.clonesOverdue', { name: localizeRoomName(room.name, t), days: -daysUntil })
           : daysUntil === 0
-            ? `${room.name}: нарезать клоны сегодня!`
-            : `${room.name}: нарезать клоны через ${daysUntil} дн.`,
+            ? t('overview.alerts.clonesToday', { name: localizeRoomName(room.name, t) })
+            : t('overview.alerts.clonesIn', { name: localizeRoomName(room.name, t), days: daysUntil }),
         link: '/clones'
       });
     }
@@ -186,7 +205,7 @@ const Overview = () => {
       alerts.push({
         type: 'danger',
         icon: '🌿',
-        text: `${room.name}: готова к сбору урожая (день ${room.currentDay} из ${room.floweringDays})`,
+        text: t('overview.alerts.readyToHarvest', { name: localizeRoomName(room.name, t), currentDay: room.currentDay, floweringDays: room.floweringDays }),
         link: '/harvest'
       });
     }
@@ -197,13 +216,13 @@ const Overview = () => {
     r.isActive && (!r.lighting?.lampCount || !r.lighting?.lampWattage)
   );
   if (roomsMissingLamps.length > 0) {
-    const names = roomsMissingLamps.map(r => r.name).join(', ');
+    const names = roomsMissingLamps.map(r => localizeRoomName(r.name, t)).join(', ');
     alerts.push({
       type: 'warning',
       icon: '💡',
       text: roomsMissingLamps.length === 1
-        ? `${names}: не указаны лампы (кол-во / мощность)`
-        : `Не указаны лампы (кол-во / мощность): ${names}`,
+        ? t('overview.alerts.lampsNotSet', { names })
+        : t('overview.alerts.lampsNotSetMultiple', { names }),
       link: '/active'
     });
   }
@@ -217,7 +236,7 @@ const Overview = () => {
         alerts.push({
           type: 'warning',
           icon: '⚠️',
-          text: `${room.name}: просрочена задача «${task.title}»`,
+          text: t('overview.alerts.taskOverdue', { name: localizeRoomName(room.name, t), title: task.title }),
           link: '/active'
         });
       }
@@ -228,27 +247,27 @@ const Overview = () => {
     <div>
       {/* Header */}
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white">Обзор фермы</h1>
-        <p className="text-dark-400 mt-1 text-sm">Общая картина. Редактирование — в <Link to="/active" className="text-primary-400 hover:text-primary-300">Активных комнатах</Link></p>
+        <h1 className="text-2xl font-bold text-white">{t('overview.title')}</h1>
+        <p className="text-dark-400 mt-1 text-sm">{t('overview.subtitle')} <Link to="/active" className="text-primary-400 hover:text-primary-300">{t('overview.activeRoomsLink')}</Link></p>
       </div>
 
       {error && (
         <div className="bg-red-900/30 border border-red-800 text-red-400 px-4 py-3 rounded-lg mb-6 flex flex-wrap items-center gap-3">
           <span>{error}</span>
           <button type="button" onClick={() => { setError(''); loadSummary(); }} className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium">
-            Повторить
+            {t('overview.retry')}
           </button>
         </div>
       )}
 
-      {/* ═══ Farm summary stats ═══ */}
+      {/* Farm summary stats */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
-          <div className="text-dark-400 text-xs font-medium">Активных</div>
+          <div className="text-dark-400 text-xs font-medium">{t('overview.stats.active')}</div>
           <div className="text-xl font-bold text-primary-400 mt-0.5">{activeRooms.length}<span className="text-dark-500 text-sm font-normal"> / {safeRooms.length}</span></div>
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
-          <div className="text-dark-400 text-xs font-medium">Кустов</div>
+          <div className="text-dark-400 text-xs font-medium">{t('overview.stats.plants')}</div>
           <div className="text-xl font-bold text-green-400 mt-0.5">{totalPlants > 0 ? formatNum(totalPlants) : '—'}</div>
           {totalPlants > 0 && (
             <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1">
@@ -259,29 +278,29 @@ const Overview = () => {
           )}
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
-          <div className="text-dark-400 text-xs font-medium">Ближайший урожай</div>
+          <div className="text-dark-400 text-xs font-medium">{t('overview.stats.nearestHarvest')}</div>
           <div className="text-xl font-bold text-white mt-0.5">
             {nearestDays != null ? (
-              nearestDays <= 0 ? <span className="text-red-400">Сейчас!</span> : `${nearestDays} дн.`
+              nearestDays <= 0 ? <span className="text-red-400">{t('overview.stats.harvestNow')}</span> : t('overview.stats.daysShort', { days: nearestDays })
             ) : '—'}
           </div>
-          {nearestHarvest && <p className="text-dark-500 text-xs mt-0.5">{nearestHarvest.name}</p>}
+          {nearestHarvest && <p className="text-dark-500 text-xs mt-0.5">{localizeRoomName(nearestHarvest.name, t)}</p>}
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
-          <div className="text-dark-400 text-xs font-medium">Сортов в цвете</div>
+          <div className="text-dark-400 text-xs font-medium">{t('overview.stats.strainsFlowering')}</div>
           <div className="text-xl font-bold text-purple-400 mt-0.5">
             {[...new Set(activeRooms.map(r => r.strain).filter(Boolean))].length || '—'}
           </div>
         </div>
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
-          <div className="text-dark-400 text-xs font-medium">Задач ожидает</div>
+          <div className="text-dark-400 text-xs font-medium">{t('overview.stats.pendingTasks')}</div>
           <div className="text-xl font-bold text-white mt-0.5">
             {safeRooms.reduce((s, r) => s + (r.pendingTasks?.length || 0), 0) || '—'}
           </div>
         </div>
       </div>
 
-      {/* ═══ Alerts ═══ */}
+      {/* Alerts */}
       {alerts.length > 0 && (
         <div className="mb-6 space-y-2">
           {alerts.map((a, i) => (
@@ -304,16 +323,14 @@ const Overview = () => {
         </div>
       )}
 
-      {/* ═══ Room cards ═══ */}
+      {/* Room cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
         {safeRooms.map((room) => {
           const cutDate = getCutDateForRoom(room);
           const daysUntilCut = cutDate ? getDaysUntilCut(cutDate) : null;
           const cut = findCurrentCut(room);
-          const hasTransplantedRoom = cut && safeVegBatches.some(
-            b => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id)
-          );
-          const clonesDone = (cut?.isDone ?? false) || !!hasTransplantedRoom;
+          const hasTransplantedRoom = hasVegBatchForRoom(room);
+          const clonesDone = (cut?.isDone ?? false) || hasTransplantedRoom;
           const hasCutPlan = cutDate != null;
 
           return (
@@ -322,26 +339,26 @@ const Overview = () => {
               <div className="px-4 pt-4 pb-2 flex items-start justify-between">
                 <div className="min-w-0">
                   <Link to="/active" className="text-base font-semibold text-white hover:text-primary-400 transition block truncate">
-                    {room.name}
+                    {localizeRoomName(room.name, t)}
                   </Link>
                   {room.isActive ? (
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="text-primary-400 text-sm font-medium truncate">{room.strain || room.cycleName || '—'}</span>
                       {room.plantsCount > 0 && (
-                        <span className="text-dark-500 text-xs shrink-0">{room.plantsCount} кустов</span>
+                        <span className="text-dark-500 text-xs shrink-0">{t('overview.card.plantsCount', { count: room.plantsCount })}</span>
                       )}
                     </div>
                   ) : (
-                    <span className="text-dark-500 text-xs">Нет активного цикла</span>
+                    <span className="text-dark-500 text-xs">{t('overview.card.noCycle')}</span>
                   )}
                 </div>
                 {room.isActive ? (
                   <span className="inline-flex items-center gap-1.5 text-xs font-medium shrink-0 ml-2">
                     <span className="w-2 h-2 rounded-full bg-primary-500 animate-pulse" />
-                    <span className="text-primary-400">Цветёт</span>
+                    <span className="text-primary-400">{t('overview.card.flowering')}</span>
                   </span>
                 ) : (
-                  <span className="text-dark-600 text-xs shrink-0 ml-2">Свободна</span>
+                  <span className="text-dark-600 text-xs shrink-0 ml-2">{t('overview.card.free')}</span>
                 )}
               </div>
 
@@ -349,7 +366,7 @@ const Overview = () => {
               {(room.squareMeters > 0 || room.lighting?.lampType) && (
                 <div className="px-4 pb-2 flex flex-wrap gap-1.5">
                   {room.squareMeters > 0 && (
-                    <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">зел. {room.squareMeters} м²</span>
+                    <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">{t('overview.card.greenArea', { area: room.squareMeters })}</span>
                   )}
                   {room.lighting?.lampType && (
                     <span className="px-2 py-0.5 bg-dark-700 rounded text-dark-400 text-xs">{room.lighting.lampType}</span>
@@ -364,7 +381,7 @@ const Overview = () => {
                   <div className="mb-3">
                     <div className="flex justify-between text-xs mb-1">
                       <span className="text-dark-400">
-                        День <span className="text-white font-medium">{room.currentDay ?? 0}</span>
+                        {t('overview.card.day')} <span className="text-white font-medium">{room.currentDay ?? 0}</span>
                         <span className="text-dark-600"> / {room.floweringDays ?? '?'}</span>
                       </span>
                       <span className={`font-medium ${(room.progress ?? 0) >= 95 ? 'text-red-400' : (room.progress ?? 0) >= 80 ? 'text-yellow-400' : 'text-primary-400'}`}>
@@ -378,10 +395,10 @@ const Overview = () => {
                       />
                     </div>
                     <div className="flex justify-between text-xs text-dark-500 mt-1">
-                      <span>Урожай: {formatDate(room.expectedHarvestDate)}</span>
+                      <span>{t('overview.card.harvest')}: {formatDate(room.expectedHarvestDate)}</span>
                       {room.daysRemaining != null && room.daysRemaining >= 0 && (
                         <span className={room.daysRemaining <= 3 ? 'text-red-400 font-medium' : ''}>
-                          {room.daysRemaining === 0 ? 'Сегодня!' : `${room.daysRemaining} дн.`}
+                          {room.daysRemaining === 0 ? t('overview.card.today') : t('overview.stats.daysShort', { days: room.daysRemaining })}
                         </span>
                       )}
                     </div>
@@ -395,12 +412,12 @@ const Overview = () => {
                     return (
                       <div className="flex gap-2 mb-3">
                         <div className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs ${trimDone ? 'bg-green-900/30 text-green-400' : day >= 14 ? 'bg-red-900/20 text-red-400' : 'bg-dark-700/50 text-dark-400'}`}>
-                          <div className="font-medium">Подрезка</div>
-                          <div>{trimDone ? formatDate(room.trimWeek2Done) : day >= 14 ? 'Просрочено' : `через ${14 - day} дн.`}</div>
+                          <div className="font-medium">{t('overview.card.trimming')}</div>
+                          <div>{trimDone ? formatDate(room.trimWeek2Done) : day >= 14 ? t('overview.card.overdue') : t('overview.card.inDays', { days: 14 - day })}</div>
                         </div>
                         <div className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs ${defolDone ? 'bg-green-900/30 text-green-400' : day >= 28 ? 'bg-red-900/20 text-red-400' : 'bg-dark-700/50 text-dark-400'}`}>
-                          <div className="font-medium">Дефолиация</div>
-                          <div>{defolDone ? formatDate(room.defoliationWeek4Done) : day >= 28 ? 'Просрочено' : `через ${28 - day} дн.`}</div>
+                          <div className="font-medium">{t('overview.card.defoliation')}</div>
+                          <div>{defolDone ? formatDate(room.defoliationWeek4Done) : day >= 28 ? t('overview.card.overdue') : t('overview.card.inDays', { days: 28 - day })}</div>
                         </div>
                       </div>
                     );
@@ -409,29 +426,29 @@ const Overview = () => {
                   {/* Completed tasks — compact chips */}
                   {room.completedTasks && Object.keys(room.completedTasks).length > 0 && (
                     <div className="border-t border-dark-700 pt-2 mb-2">
-                      <div className="text-xs text-dark-500 mb-1.5">Выполнено</div>
+                      <div className="text-xs text-dark-500 mb-1.5">{t('overview.card.completed')}</div>
                       <div className="flex flex-wrap gap-1">
                         {room.completedTasks.net?.length > 0 && (
-                          <span className="px-2 py-0.5 bg-green-900/30 text-green-400 rounded text-xs">Сетки</span>
+                          <span className="px-2 py-0.5 bg-green-900/30 text-green-400 rounded text-xs">{t('overview.card.nets')}</span>
                         )}
-                        {room.completedTasks.spray?.map((t, i) => (
+                        {room.completedTasks.spray?.map((task, i) => (
                           <span key={`sp-${i}`} className="px-2 py-0.5 bg-blue-900/30 text-blue-400 rounded text-xs truncate max-w-[140px]">
-                            {t.sprayProduct || 'Обработка'}
+                            {task.sprayProduct || t('overview.card.spray')}
                           </span>
                         ))}
-                        {room.completedTasks.feed?.map((t, i) => (
+                        {room.completedTasks.feed?.map((task, i) => (
                           <span key={`fd-${i}`} className="px-2 py-0.5 bg-emerald-900/30 text-emerald-400 rounded text-xs truncate max-w-[140px]">
-                            {t.feedProduct || 'Подкормка'}
+                            {task.feedProduct || t('overview.card.feeding')}
                           </span>
                         ))}
                         {room.completedTasks.trim?.length > 0 && (
                           <span className="px-2 py-0.5 bg-purple-900/30 text-purple-400 rounded text-xs">
-                            Подрезка ×{room.completedTasks.trim.length}
+                            {t('overview.card.trimmingCount', { count: room.completedTasks.trim.length })}
                           </span>
                         )}
                         {room.completedTasks.defoliation?.length > 0 && (
                           <span className="px-2 py-0.5 bg-yellow-900/30 text-yellow-400 rounded text-xs">
-                            Дефол. ×{room.completedTasks.defoliation.length}
+                            {t('overview.card.defoliationCount', { count: room.completedTasks.defoliation.length })}
                           </span>
                         )}
                       </div>
@@ -441,7 +458,7 @@ const Overview = () => {
                   {/* Pending tasks — compact */}
                   {room.pendingTasks?.length > 0 && (
                     <div className="border-t border-dark-700 pt-2 mb-2">
-                      <div className="text-xs text-dark-500 mb-1">Запланировано ({room.pendingTasks.length})</div>
+                      <div className="text-xs text-dark-500 mb-1">{t('overview.card.scheduled', { count: room.pendingTasks.length })}</div>
                       <div className="space-y-0.5">
                         {room.pendingTasks.slice(0, 3).map(task => {
                           const isOverdue = task.scheduledDate && new Date(task.scheduledDate) < today;
@@ -456,7 +473,7 @@ const Overview = () => {
                           );
                         })}
                         {room.pendingTasks.length > 3 && (
-                          <div className="text-xs text-dark-600">+{room.pendingTasks.length - 3} ещё</div>
+                          <div className="text-xs text-dark-600">{t('overview.card.more', { count: room.pendingTasks.length - 3 })}</div>
                         )}
                       </div>
                     </div>
@@ -474,14 +491,14 @@ const Overview = () => {
                       : daysUntilCut !== null && daysUntilCut <= 7 ? 'bg-yellow-900/20 text-yellow-400'
                       : 'bg-dark-700/30 text-dark-400'
                   }`}>
-                    <span className="font-medium">✂️ Клоны</span>
+                    <span className="font-medium">{t('overview.card.clonesLabel')}</span>
                     <span>
-                      {hasTransplantedRoom ? 'В веге ✓' :
-                        clonesDone ? 'Нарезано ✓' :
+                      {hasTransplantedRoom ? t('overview.card.inVeg') :
+                        clonesDone ? t('overview.card.clonesCut') :
                         daysUntilCut === null ? '—' :
-                        daysUntilCut < 0 ? `Просрочено ${-daysUntilCut} дн.` :
-                        daysUntilCut === 0 ? 'Сегодня!' :
-                        `через ${daysUntilCut} дн.`}
+                        daysUntilCut < 0 ? t('overview.card.overdueByDays', { days: -daysUntilCut }) :
+                        daysUntilCut === 0 ? t('overview.card.today') :
+                        t('overview.card.inDays', { days: daysUntilCut })}
                     </span>
                   </div>
                 )}
@@ -489,10 +506,10 @@ const Overview = () => {
                 {/* Last archive */}
                 {room.lastArchive && (
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-dark-500">Прошлый:</span>
+                    <span className="text-dark-500">{t('overview.card.previous')}:</span>
                     <Link to={`/archive/${room.lastArchive._id}`} className="text-primary-400 hover:text-primary-300 truncate text-right">
-                      {room.lastArchive.strain || room.lastArchive.cycleName || 'Цикл'}
-                      {room.lastArchive.harvestData?.dryWeight > 0 && ` · ${room.lastArchive.harvestData.dryWeight}г`}
+                      {room.lastArchive.strain || room.lastArchive.cycleName || t('overview.card.cycle')}
+                      {room.lastArchive.harvestData?.dryWeight > 0 && ` · ${room.lastArchive.harvestData.dryWeight}${t('overview.card.grams')}`}
                     </Link>
                   </div>
                 )}
@@ -500,9 +517,9 @@ const Overview = () => {
                 {/* Planned cycle */}
                 {room.plannedCycle && (
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="text-dark-500">План:</span>
+                    <span className="text-dark-500">{t('overview.card.plan')}:</span>
                     <span className="text-dark-300 truncate text-right">
-                      {room.plannedCycle.strain || room.plannedCycle.cycleName || 'Цикл'}
+                      {room.plannedCycle.strain || room.plannedCycle.cycleName || t('overview.card.cycle')}
                       {room.plannedCycle.plannedStartDate && ` · ${formatDate(room.plannedCycle.plannedStartDate)}`}
                     </span>
                   </div>
@@ -516,7 +533,7 @@ const Overview = () => {
                       className="flex items-center gap-1.5 text-xs text-dark-500 hover:text-dark-300 w-full text-left"
                     >
                       <span className={`transition-transform inline-block ${expandedNotes[room._id] ? 'rotate-90' : ''}`} style={{ fontSize: '8px' }}>▶</span>
-                      Заметки
+                      {t('overview.card.notes')}
                     </button>
                     {expandedNotes[room._id] && (
                       <p className="text-xs text-dark-300 mt-1.5 whitespace-pre-wrap bg-dark-700/30 rounded-lg p-2 max-h-24 overflow-y-auto">
@@ -531,19 +548,19 @@ const Overview = () => {
         })}
       </div>
 
-      {/* ═══ Quick links ═══ */}
+      {/* Quick links */}
       <div className="mt-6 flex flex-wrap gap-3">
         <Link to="/active" className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-primary-400 hover:border-primary-700/50 transition text-sm font-medium">
-          Активные комнаты →
+          {t('overview.links.activeRooms')} →
         </Link>
         <Link to="/clones" className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-primary-400 hover:border-primary-700/50 transition text-sm font-medium">
-          Клоны →
+          {t('overview.links.clones')} →
         </Link>
         <Link to="/statistics" className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-primary-400 hover:border-primary-700/50 transition text-sm font-medium">
-          Статистика →
+          {t('overview.links.statistics')} →
         </Link>
         <Link to="/archive" className="px-4 py-2 bg-dark-800 border border-dark-700 rounded-lg text-primary-400 hover:border-primary-700/50 transition text-sm font-medium">
-          Архив →
+          {t('overview.links.archive')} →
         </Link>
       </div>
     </div>

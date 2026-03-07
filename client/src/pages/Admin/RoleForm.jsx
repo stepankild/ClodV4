@@ -1,21 +1,8 @@
 import { useState, useEffect } from 'react';
-
-const MODULE_LABELS = {
-  view: 'Видимость разделов',
-  rooms: 'Комнаты',
-  tasks: 'Задачи',
-  clones: 'Клоны',
-  vegetation: 'Вегетация',
-  harvest: 'Сбор урожая',
-  trim: 'Трим',
-  archive: 'Архив',
-  cycles: 'Циклы',
-  templates: 'Шаблоны',
-  users: 'Пользователи',
-  system: 'Система'
-};
+import { useTranslation } from 'react-i18next';
 
 const RoleForm = ({ role, permissions, onSubmit, onClose }) => {
+  const { t } = useTranslation();
   const isCreate = !role;
   const isSystem = role?.isSystem ?? false;
   const hasWildcard = role?.permissions?.some((p) => p.name === '*');
@@ -67,7 +54,7 @@ const RoleForm = ({ role, permissions, onSubmit, onClose }) => {
       });
       onClose();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('admin.saveError'));
     } finally {
       setLoading(false);
     }
@@ -90,7 +77,7 @@ const RoleForm = ({ role, permissions, onSubmit, onClose }) => {
       <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg max-h-[90vh] flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-dark-700">
           <h2 className="text-lg font-semibold text-white">
-            {isCreate ? 'Создать роль' : 'Права роли'}
+            {isCreate ? t('admin.createRole') : t('admin.editRole')}
           </h2>
           <button
             type="button"
@@ -112,7 +99,7 @@ const RoleForm = ({ role, permissions, onSubmit, onClose }) => {
         <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0 overflow-hidden">
           <div className="p-4 space-y-4 overflow-y-auto">
             <div>
-              <label className="block text-xs font-medium text-dark-400 mb-1">Название роли</label>
+              <label className="block text-xs font-medium text-dark-400 mb-1">{t('admin.roleName')}</label>
               <input
                 type="text"
                 value={name}
@@ -120,28 +107,28 @@ const RoleForm = ({ role, permissions, onSubmit, onClose }) => {
                 required
                 readOnly={isSystem && role?.name === 'SuperAdmin'}
                 className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500 read-only:opacity-70"
-                placeholder="Например: Оператор"
+                placeholder={t('admin.roleNamePlaceholder')}
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-dark-400 mb-1">Описание</label>
+              <label className="block text-xs font-medium text-dark-400 mb-1">{t('admin.roleDescription')}</label>
               <input
                 type="text"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm placeholder-dark-500"
-                placeholder="Краткое описание"
+                placeholder={t('admin.roleDescPlaceholder')}
               />
             </div>
 
             {hasWildcard && (
               <div className="text-amber-400/90 text-sm bg-amber-900/20 border border-amber-800/50 rounded-lg px-3 py-2">
-                У этой роли полный доступ (*). Изменение списка прав не меняет доступ.
+                {t('admin.wildcardNote')}
               </div>
             )}
 
             <div>
-              <label className="block text-xs font-medium text-dark-400 mb-2">Права (что видит и что может делать)</label>
+              <label className="block text-xs font-medium text-dark-400 mb-2">{t('admin.permissionsLabel')}</label>
               <div className="space-y-4 border border-dark-600 rounded-lg p-3 bg-dark-900/50">
                 {sortedModules.map((moduleKey) => {
                   const perms = permsByModule[moduleKey] || [];
@@ -149,14 +136,14 @@ const RoleForm = ({ role, permissions, onSubmit, onClose }) => {
                   <div key={moduleKey}>
                     <div className="flex items-center gap-2 mb-2">
                       <span className="text-xs font-semibold text-dark-300 uppercase tracking-wider">
-                        {MODULE_LABELS[moduleKey] || moduleKey}
+                        {t(`admin.moduleLabels.${moduleKey}`, moduleKey)}
                       </span>
                       <button
                         type="button"
                         onClick={() => toggleAllInModule(moduleKey)}
                         className="text-xs text-primary-400 hover:text-primary-300"
                       >
-                        {perms.every((p) => selectedIds.includes(p._id)) ? 'Снять все' : 'Выбрать все'}
+                        {perms.every((p) => selectedIds.includes(p._id)) ? t('admin.deselectAll') : t('admin.selectAll')}
                       </button>
                     </div>
                     <div className="space-y-1.5 pl-1">
@@ -190,14 +177,14 @@ const RoleForm = ({ role, permissions, onSubmit, onClose }) => {
               onClick={onClose}
               className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg text-sm font-medium"
             >
-              Отмена
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
               disabled={loading}
               className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 text-sm font-medium disabled:opacity-50"
             >
-              {loading ? 'Сохранение...' : isCreate ? 'Создать роль' : 'Сохранить'}
+              {loading ? t('common.saving') : isCreate ? t('admin.createRole') : t('common.save')}
             </button>
           </div>
         </form>

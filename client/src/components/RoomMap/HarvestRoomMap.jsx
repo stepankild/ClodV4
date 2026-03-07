@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { STRAIN_COLORS } from './PlantCell';
 
 function getStrainIndex(plantNumber, flowerStrains) {
@@ -12,6 +13,7 @@ function getStrainIndex(plantNumber, flowerStrains) {
  * Показывает три состояния: собран (зелёный), не собран (цветной, кликабельный), пусто (серый).
  */
 export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights, onPlantClick }) {
+  const { t } = useTranslation();
   const layout = room?.roomLayout;
   if (!layout?.customRows?.length) return null;
 
@@ -38,7 +40,7 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
     );
     const harvested = placed.filter(n => harvestedPlants.has(n));
     return {
-      strain: fs.strain || `Сорт ${idx + 1}`,
+      strain: fs.strain || t('roomMap.strainDefault', { num: idx + 1 }),
       color: STRAIN_COLORS[idx % STRAIN_COLORS.length],
       total: placed.length,
       harvested: harvested.length,
@@ -60,7 +62,7 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
             <div key={rowIdx} className="flex flex-col items-center shrink-0">
               {/* Название ряда */}
               <span className="text-xs text-dark-400 font-medium whitespace-nowrap mb-1">
-                {row.name || `Ряд ${rowIdx + 1}`}
+                {row.name || t('roomMap.rowDefault', { num: rowIdx + 1 })}
               </span>
 
               {/* Сетка */}
@@ -94,7 +96,9 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
                         <div
                           key={posIdx}
                           className="min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px] bg-green-500/25 border border-green-500/60 rounded-md flex flex-col items-center justify-center gap-0 transition"
-                          title={`#${plantNumber} — собран${weight != null ? ` (${weight} г)` : ''}`}
+                          title={weight != null
+                            ? t('roomMap.harvestedWithWeight', { num: plantNumber, weight })
+                            : t('roomMap.harvestedNoWeight', { num: plantNumber })}
                         >
                           <span className="text-[10px] font-bold text-green-400 leading-tight flex items-center gap-0.5">
                             <span className="text-green-500 text-[8px]">✓</span>
@@ -102,7 +106,7 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
                           </span>
                           {weight != null && (
                             <span className="text-[8px] text-green-500/70 leading-tight">
-                              {weight}г
+                              {weight}{t('common.grams')}
                             </span>
                           )}
                         </div>
@@ -119,7 +123,7 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
                         key={posIdx}
                         type="button"
                         onClick={() => onPlantClick && onPlantClick(plantNumber)}
-                        title={`#${plantNumber} — нажмите чтобы записать`}
+                        title={t('roomMap.clickToRecord', { num: plantNumber })}
                         className={`
                           min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px]
                           ${color.bg} border ${color.border} rounded-md
@@ -157,7 +161,7 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
             </div>
           ))}
           <div className="flex items-center gap-1.5 ml-auto">
-            <span className="text-dark-400">Всего:</span>
+            <span className="text-dark-400">{t('roomMap.totalLabel')}</span>
             <span className="text-white font-medium">{totalHarvested}/{totalPlaced}</span>
           </div>
         </div>

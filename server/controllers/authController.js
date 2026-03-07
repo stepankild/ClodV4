@@ -3,6 +3,7 @@ import Role from '../models/Role.js';
 import { generateAccessToken, generateRefreshToken, verifyRefreshToken } from '../utils/jwt.js';
 import AuditLog from '../models/AuditLog.js';
 import { getClientIp } from '../utils/getClientIp.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Register new user (requires admin approval)
 // @route   POST /api/auth/register
@@ -13,7 +14,7 @@ export const register = async (req, res) => {
     // Проверка существующего пользователя
     const existingUser = await User.findOne({ email });
     if (existingUser) {
-      return res.status(400).json({ message: 'Пользователь с таким email уже существует' });
+      return res.status(400).json({ message: t('auth.emailExists', req.lang) });
     }
 
     // Создаём пользователя без ролей, ждёт одобрения
@@ -29,7 +30,7 @@ export const register = async (req, res) => {
     await user.save();
 
     res.status(201).json({
-      message: 'Регистрация успешна! Ожидайте одобрения администратора.',
+      message: t('auth.registerSuccess', req.lang),
       user: {
         id: user._id,
         email: user.email,
@@ -39,7 +40,7 @@ export const register = async (req, res) => {
     });
   } catch (error) {
     console.error('Register error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -55,26 +56,27 @@ export const login = async (req, res) => {
     });
 
     if (!user) {
-      return res.status(401).json({ message: 'Неверный email или пароль' });
+      return res.status(401).json({ message: t('auth.invalidCredentials', req.lang) });
     }
 
     if (!user.isActive) {
-      return res.status(401).json({ message: 'Аккаунт деактивирован' });
+      return res.status(401).json({ message: t('auth.accountDisabled', req.lang) });
     }
 
     // Проверка одобрения
     if (!user.isApproved) {
-      return res.status(403).json({ message: 'Ваш аккаунт ожидает одобрения администратором' });
+      return res.status(403).json({ message: t('auth.pendingApproval', req.lang) });
     }
 
     const isMatch = await user.comparePassword(password);
 
     if (!isMatch) {
-      return res.status(401).json({ message: 'Неверный email или пароль' });
+      return res.status(401).json({ message: t('auth.invalidCredentials', req.lang) });
     }
 
-    const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
+    const tv = user.tokenVersion || 0;
+    const accessToken = generateAccessToken(user._id, tv);
+    const refreshToken = generateRefreshToken(user._id, tv);
 
     // Save refresh token to database
     user.refreshToken = refreshToken;
@@ -110,7 +112,7 @@ export const login = async (req, res) => {
     });
   } catch (error) {
     console.error('Login error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -121,7 +123,7 @@ export const refreshToken = async (req, res) => {
     const { refreshToken } = req.body;
 
     if (!refreshToken) {
-      return res.status(401).json({ message: 'Refresh token не предоставлен' });
+      return res.status(401).json({ message: t('auth.refreshTokenMissing', req.lang) });
     }
 
     try {
@@ -129,33 +131,35 @@ export const refreshToken = async (req, res) => {
       const user = await User.findById(decoded.userId);
 
       if (!user) {
-        return res.status(401).json({ message: 'Пользователь не найден' });
+        return res.status(401).json({ message: t('auth.userNotFound', req.lang) });
       }
 
-      // НЕ проверяем user.refreshToken !== refreshToken:
-      // эта проверка убивала сессии при логине с другого устройства/вкладки,
-      // потому что новый login перезаписывал refreshToken в БД.
-      // Достаточно проверки подписи JWT (verifyRefreshToken выше).
-
       if (!user.isActive) {
-        return res.status(401).json({ message: 'Аккаунт деактивирован' });
+        return res.status(401).json({ message: t('auth.accountDisabled', req.lang) });
       }
 
       if (user.deletedAt) {
-        return res.status(401).json({ message: 'Аккаунт удалён' });
+        return res.status(401).json({ message: t('auth.accountDeleted', req.lang) });
       }
 
-      const newAccessToken = generateAccessToken(user._id);
+      // Проверяем tokenVersion — если пароль был изменён, старые токены невалидны
+      const tokenV = decoded.v ?? 0;
+      const userV = user.tokenVersion || 0;
+      if (tokenV !== userV) {
+        return res.status(401).json({ message: t('auth.sessionInvalid', req.lang) });
+      }
+
+      const newAccessToken = generateAccessToken(user._id, userV);
       res.json({
         accessToken: newAccessToken,
         refreshToken              // возвращаем тот же refresh token
       });
     } catch (error) {
-      return res.status(401).json({ message: 'Недействительный refresh token' });
+      return res.status(401).json({ message: t('auth.tokenInvalid', req.lang) });
     }
   } catch (error) {
     console.error('Refresh token error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -182,10 +186,10 @@ export const logout = async (req, res) => {
         });
       } catch (_) {}
     }
-    res.json({ message: 'Выход выполнен успешно' });
+    res.json({ message: t('auth.logoutSuccess', req.lang) });
   } catch (error) {
     console.error('Logout error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -196,24 +200,33 @@ export const changePassword = async (req, res) => {
     const { currentPassword, newPassword } = req.body;
 
     if (!currentPassword || !newPassword) {
-      return res.status(400).json({ message: 'Укажите текущий и новый пароль' });
+      return res.status(400).json({ message: t('auth.passwordRequired', req.lang) });
     }
 
     if (newPassword.length < 6) {
-      return res.status(400).json({ message: 'Новый пароль должен быть минимум 6 символов' });
+      return res.status(400).json({ message: t('auth.passwordTooShort', req.lang) });
     }
 
     const user = await User.findById(req.user._id);
     if (!user) {
-      return res.status(404).json({ message: 'Пользователь не найден' });
+      return res.status(404).json({ message: t('auth.userNotFound', req.lang) });
     }
 
     const isMatch = await user.comparePassword(currentPassword);
     if (!isMatch) {
-      return res.status(400).json({ message: 'Неверный текущий пароль' });
+      return res.status(400).json({ message: t('auth.wrongPassword', req.lang) });
     }
 
     user.password = newPassword;
+    // Инкрементируем tokenVersion — все старые токены на всех устройствах станут невалидны
+    user.tokenVersion = (user.tokenVersion || 0) + 1;
+    user.refreshToken = null; // очищаем старый refresh token
+    await user.save();
+
+    // Генерируем новые токены с новой версией для текущей сессии
+    const newAccessToken = generateAccessToken(user._id, user.tokenVersion);
+    const newRefreshToken = generateRefreshToken(user._id, user.tokenVersion);
+    user.refreshToken = newRefreshToken;
     await user.save();
 
     // Audit log
@@ -229,10 +242,14 @@ export const changePassword = async (req, res) => {
       });
     } catch (_) {}
 
-    res.json({ message: 'Пароль успешно изменён' });
+    res.json({
+      message: t('auth.passwordChanged', req.lang),
+      accessToken: newAccessToken,
+      refreshToken: newRefreshToken
+    });
   } catch (error) {
     console.error('Change password error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -248,7 +265,7 @@ export const heartbeat = async (req, res) => {
     res.json({ ok: true });
   } catch (error) {
     console.error('Heartbeat error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -274,6 +291,6 @@ export const getMe = async (req, res) => {
     });
   } catch (error) {
     console.error('Get me error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

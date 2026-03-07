@@ -1,83 +1,52 @@
 import api from './api';
 
 export const treatmentService = {
-  // Products
-  async getProducts(type) {
-    const params = type ? { type } : {};
-    const response = await api.get('/treatments/products', { params });
+  async getAll(params = {}) {
+    const response = await api.get('/treatments', { params });
     return response.data;
   },
 
-  async createProduct(data) {
-    const response = await api.post('/treatments/products', data);
+  async getCalendar(from, to) {
+    const response = await api.get('/treatments/calendar', { params: { from, to } });
     return response.data;
   },
 
-  async updateProduct(id, data) {
-    const response = await api.put(`/treatments/products/${id}`, data);
+  async getRoomHistory(roomId) {
+    const response = await api.get(`/treatments/room/${roomId}`);
     return response.data;
   },
 
-  async deleteProduct(id) {
-    const response = await api.delete(`/treatments/products/${id}`);
+  async create(data) {
+    const response = await api.post('/treatments', data);
     return response.data;
   },
 
-  // Protocols
-  async getProtocols(phase) {
-    const params = phase ? { phase } : {};
-    const response = await api.get('/treatments/protocols', { params });
+  async update(id, data) {
+    const response = await api.put(`/treatments/${id}`, data);
     return response.data;
   },
 
-  async getProtocol(id) {
-    const response = await api.get(`/treatments/protocols/${id}`);
+  async complete(id) {
+    const response = await api.put(`/treatments/${id}/complete`);
     return response.data;
   },
 
-  async createProtocol(data) {
-    const response = await api.post('/treatments/protocols', data);
+  async skip(id, notes) {
+    const response = await api.put(`/treatments/${id}/skip`, { notes });
     return response.data;
   },
 
-  async updateProtocol(id, data) {
-    const response = await api.put(`/treatments/protocols/${id}`, data);
+  async delete(id) {
+    await api.delete(`/treatments/${id}`);
+  },
+
+  async getDeleted() {
+    const response = await api.get('/treatments/deleted');
     return response.data;
   },
 
-  async deleteProtocol(id) {
-    const response = await api.delete(`/treatments/protocols/${id}`);
-    return response.data;
-  },
-
-  async setDefaultProtocol(id) {
-    const response = await api.post(`/treatments/protocols/${id}/set-default`);
-    return response.data;
-  },
-
-  // Schedules
-  async getSchedule(targetType, targetId) {
-    const response = await api.get(`/treatments/schedule/${targetType}/${targetId}`);
-    return response.data;
-  },
-
-  async applyProtocol(data) {
-    const response = await api.post('/treatments/schedule/apply', data);
-    return response.data;
-  },
-
-  async updateSchedule(id, data) {
-    const response = await api.put(`/treatments/schedule/${id}`, data);
-    return response.data;
-  },
-
-  async completeTreatment(scheduleId, data) {
-    const response = await api.post(`/treatments/schedule/${scheduleId}/complete`, data);
-    return response.data;
-  },
-
-  async getUpcoming(scheduleId) {
-    const response = await api.get(`/treatments/schedule/${scheduleId}/upcoming`);
+  async restore(id) {
+    const response = await api.post(`/treatments/deleted/${id}/restore`);
     return response.data;
   }
 };

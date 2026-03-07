@@ -3,11 +3,14 @@ import RoomTask from '../models/RoomTask.js';
 import RoomLog from '../models/RoomLog.js';
 import CycleArchive from '../models/CycleArchive.js';
 import PlannedCycle from '../models/PlannedCycle.js';
+import HarvestSession from '../models/HarvestSession.js';
+import CloneCut from '../models/CloneCut.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted } from '../utils/softDelete.js';
 import { applyDefaultProtocol } from './treatmentController.js';
 import RoomTreatmentSchedule from '../models/RoomTreatmentSchedule.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get all flower rooms
 // @route   GET /api/rooms
@@ -28,19 +31,6 @@ export const getRooms = async (req, res) => {
       rooms = await FlowerRoom.insertMany(defaultRooms);
     }
 
-    // Ensure test room exists
-    const hasTestRoom = rooms.some(r => r.isTestRoom === true);
-    if (!hasTestRoom) {
-      const testRoom = await FlowerRoom.create({
-        roomNumber: 6,
-        name: 'Тест',
-        isActive: false,
-        isTestRoom: true
-      });
-      rooms.push(testRoom);
-      rooms.sort((a, b) => a.roomNumber - b.roomNumber);
-    }
-
     // Добавляем количество невыполненных задач к каждой комнате
     const roomsWithTasks = await Promise.all(rooms.map(async (room) => {
       const pendingTasks = await RoomTask.countDocuments({
@@ -56,7 +46,7 @@ export const getRooms = async (req, res) => {
     res.json(roomsWithTasks);
   } catch (error) {
     console.error('Get rooms error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -71,19 +61,6 @@ export const getRoomsSummary = async (req, res) => {
         defaultRooms.push({ roomNumber: i, name: `Комната ${i}`, isActive: false });
       }
       rooms = await FlowerRoom.insertMany(defaultRooms);
-    }
-
-    // Ensure test room exists
-    const hasTestRoom = rooms.some(r => r.isTestRoom === true);
-    if (!hasTestRoom) {
-      const testRoom = await FlowerRoom.create({
-        roomNumber: 6,
-        name: 'Тест',
-        isActive: false,
-        isTestRoom: true
-      });
-      rooms.push(testRoom);
-      rooms.sort((a, b) => a.roomNumber - b.roomNumber);
     }
 
     const summary = await Promise.all(rooms.map(async (room) => {
@@ -155,8 +132,7 @@ export const getRoomsSummary = async (req, res) => {
     res.json(summary);
   } catch (error) {
     console.error('Get rooms summary error:', error);
-    const msg = error?.message || 'Ошибка сервера';
-    res.status(500).json({ message: msg });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -167,7 +143,7 @@ export const getRoom = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     // Получаем задачи комнаты
@@ -188,7 +164,7 @@ export const getRoom = async (req, res) => {
     });
   } catch (error) {
     console.error('Get room error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -201,13 +177,13 @@ export const updateRoom = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     if (cycleName !== undefined) {
       const perms = await req.user.getPermissions();
       if (!perms.includes('*') && !perms.includes('cycles:edit_name')) {
-        return res.status(403).json({ message: 'Нет прав на изменение названия цикла' });
+        return res.status(403).json({ message: t('rooms.noPermissionCycleName', req.lang) });
       }
       room.cycleName = String(cycleName).trim();
     }
@@ -232,7 +208,7 @@ export const updateRoom = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Update room error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -245,11 +221,11 @@ export const startCycle = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     if (room.isActive) {
-      return res.status(400).json({ message: 'В этой комнате уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай).' });
+      return res.status(400).json({ message: t('rooms.cycleAlreadyActive', req.lang) });
     }
 
     // Генерируем ID для нового цикла
@@ -313,7 +289,7 @@ export const startCycle = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Start cycle error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -325,7 +301,7 @@ export const addNote = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     // Добавляем заметку к существующим
@@ -350,7 +326,7 @@ export const addNote = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Add note error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -361,7 +337,7 @@ export const harvestRoom = async (req, res) => {
     const room = await FlowerRoom.findById(req.params.id);
 
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     // Deactivate treatment schedules
@@ -396,6 +372,222 @@ export const harvestRoom = async (req, res) => {
     res.json(room);
   } catch (error) {
     console.error('Harvest room error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
+  }
+};
+
+// @desc    Transfer active cycle from one room to another (full or partial)
+// @route   POST /api/rooms/:sourceId/transfer/:targetId
+// @body    { reason, transferStrains?: [{ strain, quantity }] }
+export const transferCycle = async (req, res) => {
+  try {
+    const { sourceId, targetId } = req.params;
+    const { reason, transferStrains } = req.body;
+
+    // Validate IDs
+    if (!mongoose.Types.ObjectId.isValid(sourceId) || !mongoose.Types.ObjectId.isValid(targetId)) {
+      return res.status(400).json({ message: t('rooms.invalidRoomId', req.lang) });
+    }
+    if (sourceId === targetId) {
+      return res.status(400).json({ message: t('rooms.sameRoom', req.lang) });
+    }
+
+    // Load both rooms
+    const [sourceRoom, targetRoom] = await Promise.all([
+      FlowerRoom.findById(sourceId),
+      FlowerRoom.findById(targetId)
+    ]);
+
+    if (!sourceRoom) return res.status(404).json({ message: t('rooms.sourceNotFound', req.lang) });
+    if (!targetRoom) return res.status(404).json({ message: t('rooms.targetNotFound', req.lang) });
+
+    // Validate states
+    if (!sourceRoom.isActive) {
+      return res.status(400).json({ message: t('rooms.sourceNotActive', req.lang) });
+    }
+    if (targetRoom.isActive) {
+      return res.status(400).json({ message: t('rooms.targetAlreadyActive', req.lang) });
+    }
+
+    // Check no active harvest session
+    const activeHarvest = await HarvestSession.findOne({
+      room: sourceId,
+      status: 'in_progress'
+    });
+    if (activeHarvest) {
+      // Auto-close stale harvest session to allow transfer
+      activeHarvest.status = 'completed';
+      activeHarvest.completedAt = new Date();
+      await activeHarvest.save();
+    }
+
+    const cycleId = sourceRoom.currentCycleId;
+    const currentDay = sourceRoom.currentDay;
+    const sourceRoomName = sourceRoom.name;
+    const targetRoomName = targetRoom.name;
+    const originalPlantsCount = sourceRoom.plantsCount;
+
+    // Determine transferred vs disposed strains
+    const isPartial = Array.isArray(transferStrains) && transferStrains.length > 0;
+    let targetFlowerStrains;
+    let transferredTotal = 0;
+    let disposedTotal = 0;
+    const transferDetails = [];
+
+    if (isPartial) {
+      // Build a map of transfer quantities by strain name
+      const transferMap = new Map(
+        transferStrains.map(s => [String(s.strain || '').trim(), Math.max(0, parseInt(s.quantity, 10) || 0)])
+      );
+
+      // Validate and build target strains
+      targetFlowerStrains = [];
+      for (const original of (sourceRoom.flowerStrains || [])) {
+        const strainName = original.strain || '';
+        const origQty = original.quantity || 0;
+        const transferQty = Math.min(transferMap.get(strainName) || 0, origQty);
+        const disposedQty = origQty - transferQty;
+
+        transferDetails.push({ strain: strainName, original: origQty, transferred: transferQty, disposed: disposedQty });
+        transferredTotal += transferQty;
+        disposedTotal += disposedQty;
+
+        if (transferQty > 0) {
+          targetFlowerStrains.push({ strain: strainName, quantity: transferQty });
+        }
+      }
+
+      if (transferredTotal === 0) {
+        return res.status(400).json({ message: t('rooms.transferAtLeastOne', req.lang) });
+      }
+
+      // Recalculate sequential numbering for target
+      let currentStart = 1;
+      for (const fs of targetFlowerStrains) {
+        fs.startNumber = currentStart;
+        fs.endNumber = currentStart + fs.quantity - 1;
+        currentStart = fs.endNumber + 1;
+      }
+    } else {
+      // Full transfer — copy everything
+      targetFlowerStrains = (sourceRoom.flowerStrains || []).map(s => ({
+        strain: s.strain, quantity: s.quantity, startNumber: s.startNumber, endNumber: s.endNumber
+      }));
+      transferredTotal = originalPlantsCount;
+
+      for (const s of (sourceRoom.flowerStrains || [])) {
+        transferDetails.push({ strain: s.strain || '', original: s.quantity || 0, transferred: s.quantity || 0, disposed: 0 });
+      }
+    }
+
+    // Transfer cycle data to target room
+    targetRoom.cycleName = sourceRoom.cycleName;
+    targetRoom.strain = targetFlowerStrains.map(s => s.strain).filter(Boolean).join(' / ') || sourceRoom.strain;
+    targetRoom.plantsCount = transferredTotal;
+    targetRoom.flowerStrains = targetFlowerStrains;
+    targetRoom.startDate = sourceRoom.startDate;
+    targetRoom.floweringDays = sourceRoom.floweringDays;
+    targetRoom.currentCycleId = cycleId;
+    targetRoom.notes = sourceRoom.notes;
+    targetRoom.isActive = true;
+    targetRoom.environment = sourceRoom.environment;
+
+    // Reset source room
+    sourceRoom.cycleName = '';
+    sourceRoom.strain = '';
+    sourceRoom.plantsCount = 0;
+    sourceRoom.flowerStrains = [];
+    sourceRoom.startDate = null;
+    sourceRoom.expectedHarvestDate = null;
+    sourceRoom.notes = '';
+    sourceRoom.isActive = false;
+    sourceRoom.currentCycleId = null;
+    if (sourceRoom.roomLayout) {
+      sourceRoom.roomLayout.plantPositions = [];
+    }
+
+    // Save both rooms (target first for safety)
+    await targetRoom.save();
+    await sourceRoom.save();
+
+    // Transfer tasks and logs to target room
+    await RoomTask.updateMany(
+      { room: sourceId, cycleId: cycleId },
+      { $set: { room: targetId } }
+    );
+    await RoomLog.updateMany(
+      { room: sourceId, cycleId: cycleId },
+      { $set: { room: targetId } }
+    );
+
+    // Archive old CloneCut records in target room (from previous cycles)
+    await CloneCut.updateMany(
+      { room: targetId, deletedAt: null },
+      { $set: { deletedAt: new Date() } }
+    );
+
+    // Transfer CloneCut records from source room to target room
+    await CloneCut.updateMany(
+      { room: sourceId, deletedAt: null },
+      { $set: { room: targetId } }
+    );
+
+    // Build log description
+    const reasonText = reason || t('rooms.noReason', req.lang);
+    const transferSummary = transferDetails
+      .map(d => `${d.strain || '—'}: ${d.transferred}/${d.original}` + (d.disposed > 0 ? ` (списано ${d.disposed})` : ''))
+      .join(', ');
+    const logDescription = disposedTotal > 0
+      ? `${reasonText}\nПеренесено ${transferredTotal} из ${originalPlantsCount} кустов (списано ${disposedTotal}): ${transferSummary}`
+      : reasonText;
+
+    await RoomLog.create({
+      room: sourceId,
+      cycleId: null,
+      type: 'cycle_transfer',
+      title: `Цикл перенесён в ${targetRoomName}`,
+      description: logDescription,
+      data: { targetRoomId: targetId, targetRoomName, transferredCycleId: cycleId, transferDetails },
+      user: req.user._id,
+      dayOfCycle: currentDay
+    });
+
+    await RoomLog.create({
+      room: targetId,
+      cycleId: cycleId,
+      type: 'cycle_transfer',
+      title: `Цикл принят из ${sourceRoomName}`,
+      description: logDescription,
+      data: { sourceRoomId: sourceId, sourceRoomName, transferredCycleId: cycleId, transferDetails },
+      user: req.user._id,
+      dayOfCycle: currentDay
+    });
+
+    // Audit log
+    await createAuditLog(req, {
+      action: 'room.cycle_transfer',
+      entityType: 'FlowerRoom',
+      entityId: sourceId,
+      details: {
+        sourceRoom: sourceRoomName,
+        targetRoom: targetRoomName,
+        cycleName: targetRoom.cycleName,
+        strain: targetRoom.strain,
+        reason: reasonText,
+        dayOfCycle: currentDay,
+        transferred: transferredTotal,
+        disposed: disposedTotal,
+        transferDetails
+      }
+    });
+
+    res.json({
+      source: sourceRoom,
+      target: targetRoom,
+      message: `Цикл перенесён из ${sourceRoomName} в ${targetRoomName}` + (disposedTotal > 0 ? ` (списано ${disposedTotal} кустов)` : '')
+    });
+  } catch (error) {
+    console.error('Transfer cycle error:', error);
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

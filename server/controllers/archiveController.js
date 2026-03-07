@@ -8,6 +8,8 @@ import CloneCut from '../models/CloneCut.js';
 import TrimLog from '../models/TrimLog.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
+import { escapeRegex } from '../utils/escapeRegex.js';
+import { t } from '../utils/i18n.js';
 
 // @desc    Get all archives
 // @route   GET /api/archive
@@ -17,7 +19,7 @@ export const getArchives = async (req, res) => {
 
     const query = { ...notDeleted };
     if (roomId) query.room = roomId;
-    if (strain) query.strain = new RegExp(strain, 'i');
+    if (strain) query.strain = new RegExp(escapeRegex(strain), 'i');
 
     const archives = await CycleArchive.find(query)
       .sort({ harvestDate: -1 })
@@ -51,7 +53,7 @@ export const getArchives = async (req, res) => {
     res.json({ archives, total });
   } catch (error) {
     console.error('Get archives error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -63,13 +65,13 @@ export const getArchive = async (req, res) => {
       .populate('completedTasks.completedBy', 'name');
 
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
     res.json(archive);
   } catch (error) {
     console.error('Get archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -104,40 +106,106 @@ export const getArchiveStats = async (req, res) => {
           totalPlants: { $sum: '$plantsCount' },
           totalDryWeight: { $sum: '$harvestData.dryWeight' },
           totalWetWeight: { $sum: '$harvestData.wetWeight' },
+          // Усушка: считаем только по циклам где и wet > 0 и dry > 0
+          shrinkageWet: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: ['$harvestData.dryWeight', 0] }] }, '$harvestData.wetWeight', 0] } },
+          shrinkageDry: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: ['$harvestData.dryWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
+          shrinkageCycles: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: ['$harvestData.dryWeight', 0] }] }, 1, 0] } },
           avgDaysFlowering: { $avg: '$actualDays' },
-          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
-          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
-          avgGramsPerDay: { $avg: '$metrics.gramsPerDay' }
+          // Средние показатели: только по циклам с dryWeight > 0
+          _gppSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerPlant', 0] }, 0] } },
+          _gppCount: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, 1, 0] } },
+          _gpwSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerWatt', 0] }, 0] } },
+          _gpdSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerDay', 0] }, 0] } },
+          // Потери на триме: считаем только по завершённым циклам (trimStatus = completed, dry > 0, trimWeight > 0)
+          trimLossDry: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
+          trimLossTrimmed: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.trimWeight', 0] } },
+          trimLossPopcorn: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, { $ifNull: ['$harvestData.popcornWeight', 0] }, 0] } },
+          trimLossCycles: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, 1, 0] } }
         }
       }
     ]);
 
-    // Статистика по сортам (unwind по массиву strains, чтобы мультисортовые циклы считались отдельно)
+    // Статистика по сортам — используем strainData (реальные веса по сорту) + harvestMapData.plants (кусты по сорту)
     const strainStats = await CycleArchive.aggregate([
       { $match: { $and: [dateFilter, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] } },
-      // Добавляем поле strainsArr: используем массив strains если он есть и не пуст, иначе берём единичный strain
+      // Строим массив данных по сортам: если есть strainData с весами — используем его,
+      // иначе делаем fallback на равномерное деление
       {
         $addFields: {
-          strainsArr: {
+          _strainEntries: {
             $cond: {
-              if: { $and: [{ $isArray: '$strains' }, { $gt: [{ $size: '$strains' }, 0] }] },
-              then: '$strains',
-              else: [{ $ifNull: ['$strain', '—'] }]
+              if: { $and: [{ $isArray: '$strainData' }, { $gt: [{ $size: '$strainData' }, 0] }] },
+              then: '$strainData',
+              else: [{
+                strain: { $ifNull: ['$strain', '—'] },
+                dryWeight: { $ifNull: ['$harvestData.dryWeight', 0] },
+                wetWeight: { $ifNull: ['$harvestData.wetWeight', 0] }
+              }]
+            }
+          },
+          // Считаем кол-во кустов по сортам из harvestMapData.plants
+          _plantsByStrain: {
+            $cond: {
+              if: { $and: [{ $isArray: '$harvestMapData.plants' }, { $gt: [{ $size: '$harvestMapData.plants' }, 0] }] },
+              then: '$harvestMapData.plants',
+              else: []
             }
           }
         }
       },
-      // Считаем количество сортов для пропорционального деления веса
-      { $addFields: { strainCount: { $size: '$strainsArr' } } },
-      { $unwind: '$strainsArr' },
+      { $unwind: '$_strainEntries' },
+      // Для каждого сорта считаем кол-во кустов из harvestMapData
+      {
+        $addFields: {
+          _strainPlantsCount: {
+            $size: {
+              $filter: {
+                input: '$_plantsByStrain',
+                as: 'p',
+                cond: { $eq: ['$$p.strain', '$_strainEntries.strain'] }
+              }
+            }
+          },
+          // Если strainData.dryWeight > 0, используем реальный вес, иначе fallback на общий / кол-во сортов
+          _entryDryWeight: {
+            $cond: {
+              if: { $gt: [{ $ifNull: ['$_strainEntries.dryWeight', 0] }, 0] },
+              then: '$_strainEntries.dryWeight',
+              else: { $ifNull: ['$harvestData.dryWeight', 0] }
+            }
+          }
+        }
+      },
+      // Вычисляем г/куст для конкретного сорта
+      {
+        $addFields: {
+          _strainGpp: {
+            $cond: {
+              if: { $gt: ['$_strainPlantsCount', 0] },
+              then: { $divide: ['$_entryDryWeight', '$_strainPlantsCount'] },
+              // fallback: используем общий metrics.gramsPerPlant
+              else: { $ifNull: ['$metrics.gramsPerPlant', 0] }
+            }
+          },
+          _strainGpw: {
+            $cond: {
+              if: { $and: [{ $gt: [{ $ifNull: ['$lighting.totalWatts', 0] }, 0] }, { $gt: ['$_entryDryWeight', 0] }] },
+              then: { $divide: ['$_entryDryWeight', '$lighting.totalWatts'] },
+              else: { $ifNull: ['$metrics.gramsPerWatt', 0] }
+            }
+          }
+        }
+      },
+      // Исключаем циклы без сухого веса из статистики по сортам
+      { $match: { _entryDryWeight: { $gt: 0 } } },
       {
         $group: {
-          _id: '$strainsArr',
+          _id: '$_strainEntries.strain',
           cycles: { $sum: 1 },
-          totalWeight: { $sum: { $divide: [{ $ifNull: ['$harvestData.dryWeight', 0] }, '$strainCount'] } },
-          avgWeight: { $avg: { $divide: [{ $ifNull: ['$harvestData.dryWeight', 0] }, '$strainCount'] } },
-          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
-          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
+          totalWeight: { $sum: '$_entryDryWeight' },
+          avgWeight: { $avg: '$_entryDryWeight' },
+          avgGramsPerPlant: { $avg: '$_strainGpp' },
+          avgGramsPerWatt: { $avg: '$_strainGpw' },
           avgDays: { $avg: '$actualDays' }
         }
       },
@@ -146,7 +214,7 @@ export const getArchiveStats = async (req, res) => {
 
     // Статистика по месяцам (для графика)
     const monthlyStats = await CycleArchive.aggregate([
-      { $match: dateFilter },
+      { $match: { $and: [dateFilter, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] } },
       {
         $group: {
           _id: {
@@ -164,32 +232,21 @@ export const getArchiveStats = async (req, res) => {
 
     // Статистика по комнатам (room = ObjectId для привязки к комнате)
     const roomStatsByRoomId = await CycleArchive.aggregate([
-      { $match: dateFilter },
+      { $match: { $and: [dateFilter, { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }] } },
       {
         $group: {
           _id: '$room',
           cycles: { $sum: 1 },
           totalWeight: { $sum: '$harvestData.dryWeight' },
+          totalWetWeight: { $sum: '$harvestData.wetWeight' },
           avgWeight: { $avg: '$harvestData.dryWeight' },
+          totalPlants: { $sum: '$plantsCount' },
           totalDays: { $sum: '$actualDays' },
-          avgDays: { $avg: '$actualDays' }
+          avgDays: { $avg: '$actualDays' },
+          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' }
         }
       }
-    ]);
-
-    const roomStats = await CycleArchive.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: '$roomNumber',
-          cycles: { $sum: 1 },
-          totalWeight: { $sum: '$harvestData.dryWeight' },
-          avgWeight: { $avg: '$harvestData.dryWeight' },
-          totalDays: { $sum: '$actualDays' },
-          avgDays: { $avg: '$actualDays' }
-        }
-      },
-      { $sort: { _id: 1 } }
     ]);
 
     // Total trim weight from TrimLog
@@ -198,15 +255,25 @@ export const getArchiveStats = async (req, res) => {
       { $group: { _id: null, totalTrimWeight: { $sum: '$weight' }, totalTrimEntries: { $sum: 1 } } }
     ]);
 
-    const totalData = totalStats[0] || {
-      totalCycles: 0,
-      totalPlants: 0,
-      totalDryWeight: 0,
-      totalWetWeight: 0,
-      avgDaysFlowering: 0,
-      avgGramsPerPlant: 0,
-      avgGramsPerWatt: 0,
-      avgGramsPerDay: 0
+    const raw = totalStats[0] || {};
+    const gppCount = raw._gppCount || 0;
+    const totalData = {
+      totalCycles: raw.totalCycles || 0,
+      totalPlants: raw.totalPlants || 0,
+      totalDryWeight: raw.totalDryWeight || 0,
+      totalWetWeight: raw.totalWetWeight || 0,
+      shrinkageWet: raw.shrinkageWet || 0,
+      shrinkageDry: raw.shrinkageDry || 0,
+      shrinkageCycles: raw.shrinkageCycles || 0,
+      avgDaysFlowering: raw.avgDaysFlowering || 0,
+      // Средние только по циклам с dryWeight > 0
+      avgGramsPerPlant: gppCount > 0 ? raw._gppSum / gppCount : 0,
+      avgGramsPerWatt: gppCount > 0 ? raw._gpwSum / gppCount : 0,
+      avgGramsPerDay: gppCount > 0 ? raw._gpdSum / gppCount : 0,
+      trimLossDry: raw.trimLossDry || 0,
+      trimLossTrimmed: raw.trimLossTrimmed || 0,
+      trimLossPopcorn: raw.trimLossPopcorn || 0,
+      trimLossCycles: raw.trimLossCycles || 0
     };
     totalData.totalTrimWeight = trimTotalAgg[0]?.totalTrimWeight || 0;
     totalData.totalTrimEntries = trimTotalAgg[0]?.totalTrimEntries || 0;
@@ -215,12 +282,11 @@ export const getArchiveStats = async (req, res) => {
       total: totalData,
       byStrain: strainStats,
       byMonth: monthlyStats,
-      byRoom: roomStats,
       byRoomId: roomStatsByRoomId
     });
   } catch (error) {
     console.error('Get archive stats error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -241,11 +307,11 @@ export const harvestAndArchive = async (req, res) => {
 
     const room = await FlowerRoom.findById(roomId);
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('rooms.notFound', req.lang) });
     }
 
     if (!room.isActive) {
-      return res.status(400).json({ message: 'Комната не активна' });
+      return res.status(400).json({ message: t('archive.roomNotActive', req.lang) });
     }
 
     // Получаем все выполненные задачи этого цикла
@@ -334,7 +400,7 @@ export const harvestAndArchive = async (req, res) => {
     });
     if (existingArchive) {
       return res.status(409).json({
-        message: 'Архив для этого цикла уже существует',
+        message: t('archive.alreadyExists', req.lang),
         archive: existingArchive
       });
     }
@@ -456,7 +522,7 @@ export const harvestAndArchive = async (req, res) => {
     res.json({ archive, room });
   } catch (error) {
     console.error('Harvest and archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -469,7 +535,7 @@ export const updateArchive = async (req, res) => {
     const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
     // Обновление данных клонов
@@ -486,7 +552,7 @@ export const updateArchive = async (req, res) => {
       const perms = await req.user.getPermissions();
       const hasWeightEdit = perms.includes('*') || perms.includes('harvest:edit_weights');
       if (!hasWeightEdit && (harvestData.wetWeight !== undefined || harvestData.dryWeight !== undefined || harvestData.trimWeight !== undefined)) {
-        return res.status(403).json({ message: 'Нет прав на изменение весов при сборе урожая' });
+        return res.status(403).json({ message: t('archive.noWeightPermission', req.lang) });
       }
       archive.harvestData = { ...archive.harvestData, ...harvestData };
       // Пересчитываем метрики
@@ -511,7 +577,7 @@ export const updateArchive = async (req, res) => {
     res.json(archive);
   } catch (error) {
     console.error('Update archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -522,7 +588,7 @@ export const deleteArchive = async (req, res) => {
     const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted });
 
     if (!archive) {
-      return res.status(404).json({ message: 'Архив не найден' });
+      return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
     const roomId = archive.room?.toString?.() || archive.room;
@@ -530,10 +596,10 @@ export const deleteArchive = async (req, res) => {
     archive.deletedAt = new Date();
     await archive.save();
 
-    res.json({ message: 'Архив удалён (можно восстановить)' });
+    res.json({ message: t('archive.deleted', req.lang) });
   } catch (error) {
     console.error('Delete archive error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -555,7 +621,7 @@ export const getRoomLogs = async (req, res) => {
     res.json(logs);
   } catch (error) {
     console.error('Get room logs error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -578,133 +644,155 @@ export const getStrainDetailStats = async (req, res) => {
       dateFilter = { harvestDate: { $gte: d } };
     }
 
+    // Ищем циклы, где этот сорт встречается: в strain, strains[] или strainData[]
     const baseMatch = {
-      strain: strainName,
+      $or: [
+        { strain: strainName },
+        { strains: strainName },
+        { 'strainData.strain': strainName }
+      ],
       ...dateFilter,
       $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }]
     };
+    // MongoDB не поддерживает два $or на верхнем уровне — объединяем через $and
+    const baseMatchFull = {
+      $and: [
+        {
+          $or: [
+            { strain: strainName },
+            { strains: strainName },
+            { 'strainData.strain': strainName }
+          ]
+        },
+        dateFilter,
+        { $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }
+      ]
+    };
 
     // All cycles for this strain, chronological
-    const cycles = await CycleArchive.find(baseMatch)
+    const cycles = await CycleArchive.find(baseMatchFull)
       .sort({ harvestDate: 1 })
-      .select('cycleName roomName roomNumber plantsCount harvestDate startDate actualDays harvestData metrics environment strains strainData quality')
+      .select('cycleName roomName roomNumber plantsCount harvestDate startDate actualDays harvestData metrics environment strains strainData harvestMapData quality lighting')
       .lean();
 
     if (cycles.length === 0) {
       return res.json({ strain: strainName, summary: null, cycles: [], byRoom: [] });
     }
 
-    // Summary aggregation
-    const summaryAgg = await CycleArchive.aggregate([
-      { $match: baseMatch },
-      {
-        $group: {
-          _id: null,
-          totalCycles: { $sum: 1 },
-          totalPlants: { $sum: '$plantsCount' },
-          totalDryWeight: { $sum: '$harvestData.dryWeight' },
-          totalWetWeight: { $sum: '$harvestData.wetWeight' },
-          avgDryPerCycle: { $avg: '$harvestData.dryWeight' },
-          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
-          avgGramsPerWatt: { $avg: '$metrics.gramsPerWatt' },
-          avgDays: { $avg: '$actualDays' },
-          maxDry: { $max: '$harvestData.dryWeight' },
-          minDry: { $min: '$harvestData.dryWeight' },
-          maxGpp: { $max: '$metrics.gramsPerPlant' },
-          minGpp: { $min: '$metrics.gramsPerPlant' }
-        }
-      }
-    ]);
+    // Хелпер: извлечь данные конкретного сорта из цикла
+    const getStrainCycleData = (c) => {
+      const sd = (c.strainData || []).find(s => s.strain === strainName);
+      const plantsOfStrain = (c.harvestMapData?.plants || []).filter(p => p.strain === strainName);
+      const strainPlantsCount = plantsOfStrain.length || null;
 
-    const s = summaryAgg[0];
+      const dryWeight = (sd && sd.dryWeight > 0) ? sd.dryWeight : (c.harvestData?.dryWeight || 0);
+      const wetWeight = (sd && sd.wetWeight > 0) ? sd.wetWeight : (c.harvestData?.wetWeight || 0);
+      const gpp = strainPlantsCount && dryWeight > 0 ? dryWeight / strainPlantsCount : (c.metrics?.gramsPerPlant || 0);
+      const totalWatts = c.lighting?.totalWatts || 0;
+      const gpw = totalWatts > 0 && dryWeight > 0 ? dryWeight / totalWatts : (c.metrics?.gramsPerWatt || 0);
 
-    // Best & worst cycle
-    const bestCycle = cycles.reduce((best, c) =>
-      (c.metrics?.gramsPerPlant || 0) > (best.metrics?.gramsPerPlant || 0) ? c : best, cycles[0]);
-    const worstCycle = cycles.reduce((worst, c) =>
-      (c.metrics?.gramsPerPlant || 0) < (worst.metrics?.gramsPerPlant || 0) ? c : worst, cycles[0]);
+      return { dryWeight, wetWeight, gpp, gpw, plantsCount: strainPlantsCount || c.plantsCount };
+    };
+
+    // Обогащаем циклы данными по сорту
+    const enriched = cycles.map(c => ({ ...c, _sd: getStrainCycleData(c) }));
+
+    // Summary
+    const totalCycles = enriched.length;
+    const totalPlants = enriched.reduce((sum, c) => sum + (c._sd.plantsCount || 0), 0);
+    const totalDryWeight = enriched.reduce((sum, c) => sum + c._sd.dryWeight, 0);
+    const totalWetWeight = enriched.reduce((sum, c) => sum + c._sd.wetWeight, 0);
+    const avgDryPerCycle = totalDryWeight / totalCycles;
+    const avgGpp = enriched.reduce((sum, c) => sum + c._sd.gpp, 0) / totalCycles;
+    const avgGpw = enriched.reduce((sum, c) => sum + c._sd.gpw, 0) / totalCycles;
+    const avgDays = enriched.reduce((sum, c) => sum + (c.actualDays || 0), 0) / totalCycles;
+
+    // Best & worst cycle by g/plant
+    const bestCycle = enriched.reduce((best, c) => c._sd.gpp > best._sd.gpp ? c : best, enriched[0]);
+    const worstCycle = enriched.reduce((worst, c) => c._sd.gpp < worst._sd.gpp ? c : worst, enriched[0]);
 
     // Trend: compare avg of last 3 cycles vs first 3 cycles
     let trend = 'stable';
-    if (cycles.length >= 4) {
-      const first3 = cycles.slice(0, 3);
-      const last3 = cycles.slice(-3);
-      const avgFirst = first3.reduce((sum, c) => sum + (c.metrics?.gramsPerPlant || 0), 0) / first3.length;
-      const avgLast = last3.reduce((sum, c) => sum + (c.metrics?.gramsPerPlant || 0), 0) / last3.length;
+    if (enriched.length >= 4) {
+      const first3 = enriched.slice(0, 3);
+      const last3 = enriched.slice(-3);
+      const avgFirst = first3.reduce((sum, c) => sum + c._sd.gpp, 0) / first3.length;
+      const avgLast = last3.reduce((sum, c) => sum + c._sd.gpp, 0) / last3.length;
       if (avgLast > avgFirst * 1.1) trend = 'up';
       else if (avgLast < avgFirst * 0.9) trend = 'down';
     }
 
     // By room breakdown
-    const byRoom = await CycleArchive.aggregate([
-      { $match: baseMatch },
-      {
-        $group: {
-          _id: { room: '$room', roomName: '$roomName', roomNumber: '$roomNumber' },
-          cycles: { $sum: 1 },
-          totalWeight: { $sum: '$harvestData.dryWeight' },
-          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
-          avgDays: { $avg: '$actualDays' }
-        }
-      },
-      { $sort: { totalWeight: -1 } }
-    ]);
+    const roomMap = {};
+    for (const c of enriched) {
+      const key = String(c.room);
+      if (!roomMap[key]) {
+        roomMap[key] = { room: c.room, roomName: c.roomName, roomNumber: c.roomNumber, cycles: 0, totalWeight: 0, gppSum: 0, daysSum: 0 };
+      }
+      roomMap[key].cycles++;
+      roomMap[key].totalWeight += c._sd.dryWeight;
+      roomMap[key].gppSum += c._sd.gpp;
+      roomMap[key].daysSum += (c.actualDays || 0);
+    }
+    const byRoom = Object.values(roomMap)
+      .map(r => ({
+        roomId: r.room,
+        roomName: r.roomName,
+        roomNumber: r.roomNumber,
+        cycles: r.cycles,
+        totalWeight: Math.round(r.totalWeight),
+        avgGramsPerPlant: Math.round((r.gppSum / r.cycles) * 10) / 10,
+        avgDays: Math.round(r.daysSum / r.cycles)
+      }))
+      .sort((a, b) => b.totalWeight - a.totalWeight);
 
     res.json({
       strain: strainName,
       summary: {
-        totalCycles: s.totalCycles,
-        totalPlants: s.totalPlants,
-        totalDryWeight: s.totalDryWeight,
-        totalWetWeight: s.totalWetWeight,
-        avgDryPerCycle: Math.round(s.avgDryPerCycle || 0),
-        avgGramsPerPlant: Math.round((s.avgGramsPerPlant || 0) * 10) / 10,
-        avgGramsPerWatt: Math.round((s.avgGramsPerWatt || 0) * 100) / 100,
-        avgDays: Math.round(s.avgDays || 0),
+        totalCycles,
+        totalPlants,
+        totalDryWeight,
+        totalWetWeight,
+        avgDryPerCycle: Math.round(avgDryPerCycle || 0),
+        avgGramsPerPlant: Math.round((avgGpp || 0) * 10) / 10,
+        avgGramsPerWatt: Math.round((avgGpw || 0) * 100) / 100,
+        avgDays: Math.round(avgDays || 0),
         bestCycle: {
           cycleName: bestCycle.cycleName,
           roomName: bestCycle.roomName,
           harvestDate: bestCycle.harvestDate,
-          dryWeight: bestCycle.harvestData?.dryWeight,
-          gramsPerPlant: bestCycle.metrics?.gramsPerPlant
+          dryWeight: bestCycle._sd.dryWeight,
+          gramsPerPlant: Math.round(bestCycle._sd.gpp * 10) / 10
         },
         worstCycle: {
           cycleName: worstCycle.cycleName,
           roomName: worstCycle.roomName,
           harvestDate: worstCycle.harvestDate,
-          dryWeight: worstCycle.harvestData?.dryWeight,
-          gramsPerPlant: worstCycle.metrics?.gramsPerPlant
+          dryWeight: worstCycle._sd.dryWeight,
+          gramsPerPlant: Math.round(worstCycle._sd.gpp * 10) / 10
         },
         trend
       },
-      cycles: cycles.map(c => ({
+      cycles: enriched.map(c => ({
         _id: c._id,
         cycleName: c.cycleName,
         roomName: c.roomName,
         roomNumber: c.roomNumber,
-        plantsCount: c.plantsCount,
+        plantsCount: c._sd.plantsCount,
         harvestDate: c.harvestDate,
         startDate: c.startDate,
         actualDays: c.actualDays,
-        dryWeight: c.harvestData?.dryWeight || 0,
-        wetWeight: c.harvestData?.wetWeight || 0,
-        gramsPerPlant: c.metrics?.gramsPerPlant || 0,
-        gramsPerWatt: c.metrics?.gramsPerWatt || 0,
+        dryWeight: c._sd.dryWeight,
+        wetWeight: c._sd.wetWeight,
+        gramsPerPlant: Math.round(c._sd.gpp * 10) / 10,
+        gramsPerWatt: Math.round(c._sd.gpw * 100) / 100,
         quality: c.harvestData?.quality || 'medium'
       })),
-      byRoom: byRoom.map(r => ({
-        roomId: r._id.room,
-        roomName: r._id.roomName,
-        roomNumber: r._id.roomNumber,
-        cycles: r.cycles,
-        totalWeight: Math.round(r.totalWeight),
-        avgGramsPerPlant: Math.round((r.avgGramsPerPlant || 0) * 10) / 10,
-        avgDays: Math.round(r.avgDays || 0)
-      }))
+      byRoom
     });
   } catch (error) {
     console.error('Get strain detail stats error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -795,28 +883,69 @@ export const getRoomDetailStats = async (req, res) => {
       else if (avgLast < avgFirst * 0.9) trend = 'down';
     }
 
-    // By strain breakdown (unwind strains array for multi-strain cycles)
+    // By strain breakdown — используем strainData для реальных весов по сортам
     const byStrain = await CycleArchive.aggregate([
       { $match: baseMatch },
       {
         $addFields: {
-          strainsArr: {
+          _strainEntries: {
             $cond: {
-              if: { $and: [{ $isArray: '$strains' }, { $gt: [{ $size: '$strains' }, 0] }] },
-              then: '$strains',
-              else: [{ $ifNull: ['$strain', '—'] }]
+              if: { $and: [{ $isArray: '$strainData' }, { $gt: [{ $size: '$strainData' }, 0] }] },
+              then: '$strainData',
+              else: [{
+                strain: { $ifNull: ['$strain', '—'] },
+                dryWeight: { $ifNull: ['$harvestData.dryWeight', 0] },
+                wetWeight: { $ifNull: ['$harvestData.wetWeight', 0] }
+              }]
+            }
+          },
+          _plantsByStrain: {
+            $cond: {
+              if: { $and: [{ $isArray: '$harvestMapData.plants' }, { $gt: [{ $size: '$harvestMapData.plants' }, 0] }] },
+              then: '$harvestMapData.plants',
+              else: []
             }
           }
         }
       },
-      { $addFields: { strainCount: { $size: '$strainsArr' } } },
-      { $unwind: '$strainsArr' },
+      { $unwind: '$_strainEntries' },
+      {
+        $addFields: {
+          _strainPlantsCount: {
+            $size: {
+              $filter: {
+                input: '$_plantsByStrain',
+                as: 'p',
+                cond: { $eq: ['$$p.strain', '$_strainEntries.strain'] }
+              }
+            }
+          },
+          _entryDryWeight: {
+            $cond: {
+              if: { $gt: [{ $ifNull: ['$_strainEntries.dryWeight', 0] }, 0] },
+              then: '$_strainEntries.dryWeight',
+              else: { $ifNull: ['$harvestData.dryWeight', 0] }
+            }
+          }
+        }
+      },
+      {
+        $addFields: {
+          _strainGpp: {
+            $cond: {
+              if: { $gt: ['$_strainPlantsCount', 0] },
+              then: { $divide: ['$_entryDryWeight', '$_strainPlantsCount'] },
+              else: { $ifNull: ['$metrics.gramsPerPlant', 0] }
+            }
+          }
+        }
+      },
       {
         $group: {
-          _id: '$strainsArr',
+          _id: '$_strainEntries.strain',
           cycles: { $sum: 1 },
-          totalWeight: { $sum: { $divide: [{ $ifNull: ['$harvestData.dryWeight', 0] }, '$strainCount'] } },
-          avgGramsPerPlant: { $avg: '$metrics.gramsPerPlant' },
+          totalWeight: { $sum: '$_entryDryWeight' },
+          avgGramsPerPlant: { $avg: '$_strainGpp' },
           avgDays: { $avg: '$actualDays' }
         }
       },
@@ -876,7 +1005,7 @@ export const getRoomDetailStats = async (req, res) => {
     });
   } catch (error) {
     console.error('Get room detail stats error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -886,21 +1015,21 @@ export const getDeletedArchives = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get deleted archives error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
 export const restoreArchive = async (req, res) => {
   try {
     const doc = await CycleArchive.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!doc) return res.status(404).json({ message: 'Архив не найден или уже восстановлен' });
+    if (!doc) return res.status(404).json({ message: t('archive.notFoundOrRestored', req.lang) });
     doc.deletedAt = null;
     await doc.save();
     await createAuditLog(req, { action: 'archive.restore', entityType: 'CycleArchive', entityId: doc._id, details: { cycleName: doc.cycleName } });
     res.json(doc);
   } catch (error) {
     console.error('Restore archive error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 

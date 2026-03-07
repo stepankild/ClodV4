@@ -31,6 +31,13 @@ export const roomService = {
     return response.data;
   },
 
+  async transferCycle(sourceId, targetId, reason, transferStrains) {
+    const body = { reason };
+    if (transferStrains && transferStrains.length > 0) body.transferStrains = transferStrains;
+    const response = await api.post(`/rooms/${sourceId}/transfer/${targetId}`, body);
+    return response.data;
+  },
+
   async getPlans(params = {}) {
     const response = await api.get('/rooms/plans', { params });
     return response.data;

@@ -1,14 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { vegBatchService } from '../../services/vegBatchService';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
 import StrainSelect from '../../components/StrainSelect';
-
-const formatDate = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-};
+import { localizeRoomName } from '../../utils/localizeRoomName';
+import VegMap from '../../components/VegMap/VegMap';
+import { vegMapService } from '../../services/vegMapService';
 
 const getDaysInVeg = (transplantedToVegAt) => {
   if (!transplantedToVegAt) return 0;
@@ -38,7 +37,6 @@ const getBatchTotal = (b) => {
 
 const getBatchInitialTotal = (b) => (b.initialQuantity != null && b.initialQuantity !== '') ? Number(b.initialQuantity) : getBatchTotal(b);
 
-// «Хороших» = всего − погибло − утилизировано (не выросшие остаются, их можно отправить в цвет)
 const getBatchGoodCount = (b) => {
   const total = getBatchTotal(b);
   const died = Number(b.diedCount) || 0;
@@ -83,8 +81,14 @@ const PLANTS_PER_TABLE = 54;
 const VEG_CAPACITY = TABLES_TOTAL * PLANTS_PER_TABLE;
 
 const Vegetation = () => {
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const canCreateVeg = hasPermission && hasPermission('vegetation:create');
+
+  const formatDate = (date) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
 
   const [batches, setBatches] = useState([]);
   const [deletedBatches, setDeletedBatches] = useState([]);
@@ -126,6 +130,10 @@ const Vegetation = () => {
   });
   const editFormStrainKey = useRef(0);
   const editFormLightKey = useRef(0);
+  const [showVegMap, setShowVegMap] = useState(false);
+  const [vegMapData, setVegMapData] = useState(null);
+  const [vegMapLoading, setVegMapLoading] = useState(false);
+  const [vegMapSaving, setVegMapSaving] = useState(false);
 
   useEffect(() => {
     load();
@@ -146,13 +154,44 @@ const Vegetation = () => {
       setRooms(Array.isArray(roomsData) ? roomsData : []);
       setCloneCuts(Array.isArray(cutsData) ? cutsData : []);
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Ошибка загрузки');
+      setError(err.response?.data?.message || err.message || t('common.loadError'));
       setBatches([]);
       setDeletedBatches([]);
       setRooms([]);
       setCloneCuts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadVegMap = async () => {
+    setVegMapLoading(true);
+    try {
+      const data = await vegMapService.get();
+      setVegMapData(data);
+    } catch (err) {
+      console.error('Load veg map error:', err);
+    } finally {
+      setVegMapLoading(false);
+    }
+  };
+
+  const handleToggleVegMap = () => {
+    if (!showVegMap && !vegMapData) {
+      loadVegMap();
+    }
+    setShowVegMap(prev => !prev);
+  };
+
+  const handleSaveVegMap = async (data) => {
+    setVegMapSaving(true);
+    try {
+      const saved = await vegMapService.save(data);
+      setVegMapData(saved);
+    } catch (err) {
+      console.error('Save veg map error:', err);
+    } finally {
+      setVegMapSaving(false);
     }
   };
 
@@ -190,7 +229,7 @@ const Vegetation = () => {
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
     if (strains.length === 0) {
-      setError('Укажите хотя бы один сорт и количество');
+      setError(t('vegetation.errorSpecifyStrainAndQty'));
       return;
     }
     setSaving(true);
@@ -207,7 +246,7 @@ const Vegetation = () => {
       setAddModal(false);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('vegetation.saveError'));
     } finally {
       setSaving(false);
     }
@@ -220,7 +259,6 @@ const Vegetation = () => {
     const strains = getStrainsFromBatch(batch);
     const goodTotal = getBatchGoodCount(batch);
     if (strains.length > 0) {
-      // Доступно = всего по сорту − умерших по сорту (не выросшие можно отправить)
       const sendList = strains.map((s) => {
         const died = getDiedForStrain(batch, s.strain);
         const avail = Math.max(0, s.quantity - died);
@@ -239,12 +277,12 @@ const Vegetation = () => {
     e.preventDefault();
     if (!sendToFlowerModal) return;
     if (!sendRoomId) {
-      setError('Выберите комнату цветения.');
+      setError(t('vegetation.errorSelectRoom'));
       return;
     }
     const room = rooms.find((r) => r._id === sendRoomId);
     if (room && room.isActive) {
-      setError('В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.');
+      setError(t('vegetation.errorRoomActive'));
       return;
     }
     setSaving(true);
@@ -263,17 +301,16 @@ const Vegetation = () => {
         if (count > 0 && strainStr) flowerStrainsPayload = [{ strain: strainStr, quantity: count }];
       }
       if (count <= 0) {
-        setError('Укажите количество отправляемых в цвет.');
+        setError(t('vegetation.errorSpecifyCount'));
         setSaving(false);
         return;
       }
       const goodMax = getBatchGoodCount(sendToFlowerModal);
       if (count > goodMax) {
-        setError(`Максимум хороших: ${goodMax}. Уменьшите количество.`);
+        setError(t('vegetation.errorMaxGood', { max: goodMax }));
         setSaving(false);
         return;
       }
-      // Сначала обновляем бэтч (привязка к комнате) — сервер проверит, что комната ещё не активна
       await vegBatchService.update(sendToFlowerModal._id, {
         flowerRoom: sendRoomId,
         transplantedToFlowerAt: sendDate,
@@ -293,27 +330,27 @@ const Vegetation = () => {
       setSendToFlowerModal(null);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('common.error'));
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (id) => {
-    if (!confirm('Удалить бэтч из вегетации?')) return;
+    if (!confirm(t('vegetation.deleteBatchConfirm'))) return;
     try {
       await vegBatchService.delete(id);
       setEditBatch(null);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка удаления');
+      setError(err.response?.data?.message || t('vegetation.deleteError'));
     }
   };
 
   const handleDisposeRemaining = async (batch) => {
     const remainder = getBatchRemainder(batch);
     if (remainder <= 0) return;
-    if (!confirm(`Утилизировать оставшиеся ${remainder} кустов? Бэтч попадёт в корзину (можно восстановить).`)) return;
+    if (!confirm(t('vegetation.disposeConfirm', { count: remainder }))) return;
     try {
       setSaving(true);
       await vegBatchService.disposeRemaining(batch._id);
@@ -321,7 +358,7 @@ const Vegetation = () => {
       setEditBatch(null);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('common.error'));
     } finally {
       setSaving(false);
     }
@@ -333,7 +370,7 @@ const Vegetation = () => {
       await vegBatchService.restore(id);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка восстановления');
+      setError(err.response?.data?.message || t('vegetation.restoreError'));
     } finally {
       setSaving(false);
     }
@@ -360,7 +397,7 @@ const Vegetation = () => {
       setEditingLoss(null);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('vegetation.saveError'));
     }
   };
 
@@ -431,7 +468,7 @@ const Vegetation = () => {
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
     if (strains.length === 0) {
-      setError('Укажите хотя бы один сорт и количество');
+      setError(t('vegetation.errorSpecifyStrainAndQty'));
       return;
     }
     setSaving(true);
@@ -458,7 +495,7 @@ const Vegetation = () => {
       closeEditBatch();
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('vegetation.saveError'));
     } finally {
       setSaving(false);
     }
@@ -475,9 +512,9 @@ const Vegetation = () => {
   return (
     <div className="overflow-x-hidden max-w-full">
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-white">Вегетация</h1>
+        <h1 className="text-2xl font-bold text-white">{t('vegetation.title')}</h1>
         <p className="text-dark-400 mt-1">
-          Бэтчи клонов на вегетации. Отметьте, когда нарезали и когда пересадили в вег — затем привяжите бэтч к комнате цветения.
+          {t('vegetation.subtitle')}
         </p>
       </div>
 
@@ -489,28 +526,57 @@ const Vegetation = () => {
             onClick={() => { setError(''); load(); }}
             className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium"
           >
-            Повторить
+            {t('common.retry')}
           </button>
         </div>
       )}
 
-      {canCreateVeg && (
-        <div className="mb-4 flex justify-end">
+      <div className="mb-4 flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={handleToggleVegMap}
+          className={`px-4 py-2 rounded-lg transition font-medium ${
+            showVegMap
+              ? 'bg-dark-700 text-primary-400 border border-primary-600'
+              : 'bg-dark-700 text-dark-300 hover:bg-dark-600'
+          }`}
+        >
+          {showVegMap ? t('vegMap.hideMap') : t('vegMap.showMap')}
+        </button>
+        {canCreateVeg && (
           <button
             type="button"
             onClick={openAddModal}
             className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition font-medium"
           >
-            Добавить бэтч
+            {t('vegetation.addBatch')}
           </button>
+        )}
+      </div>
+
+      {/* Veg Map */}
+      {showVegMap && (
+        <div className="mb-6 bg-dark-800 rounded-xl border border-dark-700 p-5">
+          {vegMapLoading ? (
+            <div className="flex items-center justify-center h-24">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-500" />
+            </div>
+          ) : (
+            <VegMap
+              vegMapData={vegMapData}
+              batches={batches}
+              onSave={handleSaveVegMap}
+              saving={vegMapSaving}
+            />
+          )}
         </div>
       )}
 
-      {/* Занятость столов и инфо по бэтчам */}
+      {/* Occupancy info */}
       <div className="mb-6 bg-dark-800 rounded-xl border border-dark-700 p-5">
-        <h2 className="text-lg font-semibold text-white mb-3">Занятость вегетации</h2>
+        <h2 className="text-lg font-semibold text-white mb-3">{t('vegetation.occupancyTitle')}</h2>
         <p className="text-dark-400 text-sm mb-2">
-          Всего столов: {TABLES_TOTAL}, на каждом до {PLANTS_PER_TABLE} кустов (вместимость {VEG_CAPACITY} кустов).
+          {t('vegetation.occupancyDesc', { tables: TABLES_TOTAL, perTable: PLANTS_PER_TABLE, capacity: VEG_CAPACITY })}
         </p>
         {(() => {
           const totalPlants = batches.reduce((s, b) => s + getBatchGoodCount(b), 0);
@@ -520,14 +586,14 @@ const Vegetation = () => {
           return (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-4 text-sm">
-                <span className="text-dark-300">Бэтчей в вегетации: <strong className="text-white">{batches.length}</strong></span>
-                <span className="text-dark-300">Кустов (хороших): <strong className="text-white">{totalPlants}</strong></span>
-                <span className="text-dark-300">Столов занято: <strong className="text-primary-400">{tablesUsed}</strong> из {TABLES_TOTAL}</span>
+                <span className="text-dark-300">{t('vegetation.batchesInVeg')}: <strong className="text-white">{batches.length}</strong></span>
+                <span className="text-dark-300">{t('vegetation.goodPlants')}: <strong className="text-white">{totalPlants}</strong></span>
+                <span className="text-dark-300">{t('vegetation.tablesUsed')}: <strong className="text-primary-400">{tablesUsed}</strong> {t('vegetation.ofTables', { total: TABLES_TOTAL })}</span>
               </div>
               <div>
                 <div className="flex justify-between text-xs text-dark-400 mb-1">
-                  <span>Столы</span>
-                  <span>{tablesUsed} / {TABLES_TOTAL} · {totalPlants} кустов</span>
+                  <span>{t('vegetation.tables')}</span>
+                  <span>{tablesUsed} / {TABLES_TOTAL} · {totalPlants} {t('vegetation.plantsWord')}</span>
                 </div>
                 <div className="h-3 bg-dark-700 rounded-full overflow-hidden">
                   <div
@@ -556,19 +622,19 @@ const Vegetation = () => {
             <thead className="bg-dark-900">
               <tr>
                 <th className="px-1 py-2.5" />
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Название</th>
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Кол-во</th>
+                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">{t('vegetation.nameCol')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">{t('vegetation.qtyCol')}</th>
                 <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">%</th>
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Свет</th>
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">В вегу с</th>
-                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">Прогресс</th>
+                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">{t('vegetation.lightCol')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">{t('vegetation.inVegSince')}</th>
+                <th className="px-3 py-2.5 text-left font-medium text-dark-400 text-xs uppercase tracking-wide">{t('common.progress')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dark-700">
               {batches.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="px-3 py-8 text-center text-dark-500 text-sm">
-                    Нет бэтчей на вегетации. Добавьте бэтч из нарезанных клонов.
+                    {t('vegetation.noBatchesDesc')}
                   </td>
                 </tr>
               ) : (
@@ -611,12 +677,12 @@ const Vegetation = () => {
                             const changes = getBatchLightChanges(b);
                             if (!latest) return '—';
                             if (changes.length === 1) return <>{formatDate(latest.date)}{latest.powerPercent != null && ` · ${latest.powerPercent}%`}</>;
-                            return <span title={changes.map((c) => `${formatDate(c.date)} ${c.powerPercent != null ? c.powerPercent + '%' : ''}`).join(', ')}>{changes.length} смен · {formatDate(latest.date)}{latest.powerPercent != null && ` ${latest.powerPercent}%`}</span>;
+                            return <span title={changes.map((c) => `${formatDate(c.date)} ${c.powerPercent != null ? c.powerPercent + '%' : ''}`).join(', ')}>{changes.length} {t('vegetation.lightChangesShort')} · {formatDate(latest.date)}{latest.powerPercent != null && ` ${latest.powerPercent}%`}</span>;
                           })()}
                         </td>
                         <td className="px-3 py-2 align-top">
                           <div className="text-dark-300 text-xs whitespace-nowrap">{formatDate(b.transplantedToVegAt)}</div>
-                          <div className="text-dark-500 text-xs mt-0.5">ост. {getBatchRemainder(b)}</div>
+                          <div className="text-dark-500 text-xs mt-0.5">{t('vegetation.remainderShort')} {getBatchRemainder(b)}</div>
                         </td>
                         <td className="px-3 py-2 align-top">
                           <div className="flex items-center gap-2">
@@ -633,7 +699,7 @@ const Vegetation = () => {
                                 onClick={(e) => { e.stopPropagation(); openSendToFlower(b); }}
                                 className="px-2 py-1 bg-primary-600/80 text-white rounded text-xs hover:bg-primary-500 shrink-0"
                               >
-                                В цвет
+                                {t('vegetation.toFlower')}
                               </button>
                             )}
                           </div>
@@ -644,16 +710,16 @@ const Vegetation = () => {
                           <td colSpan={7} className="px-4 py-3 border-b border-dark-600">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-x-6 gap-y-3 text-sm">
                               <div className="col-span-2 md:col-span-4">
-                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-2">Сорта и потери</div>
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-2">{t('vegetation.strainsAndLosses')}</div>
                                 <div className="overflow-x-auto">
                                   <table className="w-full text-xs">
                                     <thead>
                                       <tr className="text-dark-500">
-                                        <th className="text-left font-medium py-1 pr-3">Сорт</th>
-                                        <th className="text-center font-medium py-1 px-2">Всего</th>
-                                        <th className="text-center font-medium py-1 px-2">💀 Умерло</th>
-                                        <th className="text-center font-medium py-1 px-2">🌱 Не выросло</th>
-                                        <th className="text-center font-medium py-1 px-2">Доступно</th>
+                                        <th className="text-left font-medium py-1 pr-3">{t('common.strain')}</th>
+                                        <th className="text-center font-medium py-1 px-2">{t('common.total')}</th>
+                                        <th className="text-center font-medium py-1 px-2">{t('vegetation.diedEmoji')}</th>
+                                        <th className="text-center font-medium py-1 px-2">{t('vegetation.notGrownEmoji')}</th>
+                                        <th className="text-center font-medium py-1 px-2">{t('vegetation.available')}</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -673,7 +739,7 @@ const Vegetation = () => {
                                       })}
                                       {getStrainsFromBatch(b).length > 1 && (
                                         <tr className="border-t border-dark-600 font-medium">
-                                          <td className="py-1.5 pr-3 text-dark-400">Итого</td>
+                                          <td className="py-1.5 pr-3 text-dark-400">{t('common.total')}</td>
                                           <td className="py-1.5 px-2 text-center text-white">{getBatchTotal(b)}</td>
                                           <td className="py-1.5 px-2 text-center text-red-400">{b.diedCount || '—'}</td>
                                           <td className="py-1.5 px-2 text-center text-amber-400">{b.notGrownCount || '—'}</td>
@@ -685,13 +751,13 @@ const Vegetation = () => {
                                 </div>
                               </div>
                               <div>
-                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Даты</div>
-                                <div className="text-dark-300 text-xs">Нарезка: <span className="text-white">{formatDate(b.cutDate)}</span></div>
-                                <div className="text-dark-300 text-xs mt-1">В вегу: <span className="text-white">{formatDate(b.transplantedToVegAt)}</span></div>
-                                <div className="text-dark-300 text-xs mt-1">Цель: <span className="text-white">{b.vegDaysTarget || 21} дн.</span></div>
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">{t('vegetation.dates')}</div>
+                                <div className="text-dark-300 text-xs">{t('vegetation.cuttingLabel')}: <span className="text-white">{formatDate(b.cutDate)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">{t('vegetation.inVegLabel')}: <span className="text-white">{formatDate(b.transplantedToVegAt)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">{t('vegetation.targetLabel')}: <span className="text-white">{b.vegDaysTarget || 21} {t('common.days')}</span></div>
                               </div>
                               <div>
-                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Смены света</div>
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">{t('vegetation.lightChanges')}</div>
                                 {getBatchLightChanges(b).length === 0 ? (
                                   <span className="text-dark-500 text-xs">—</span>
                                 ) : (
@@ -705,18 +771,18 @@ const Vegetation = () => {
                                 )}
                               </div>
                               <div>
-                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Количество</div>
-                                <div className="text-dark-300 text-xs">Всего: <span className="text-white">{getBatchInitialTotal(b)}</span></div>
-                                <div className="text-dark-300 text-xs mt-1">Хороших: <span className="text-primary-400">{getBatchGoodCount(b)}</span></div>
-                                <div className="text-dark-300 text-xs mt-1">В цвет: <span className="text-white">{b.sentToFlowerCount || 0}</span></div>
+                                <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">{t('vegetation.quantitySection')}</div>
+                                <div className="text-dark-300 text-xs">{t('common.total')}: <span className="text-white">{getBatchInitialTotal(b)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">{t('vegetation.good')}: <span className="text-primary-400">{getBatchGoodCount(b)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">{t('vegetation.toFlowerLabel')}: <span className="text-white">{b.sentToFlowerCount || 0}</span></div>
                                 {(b.disposedCount || 0) > 0 && (
-                                  <div className="text-dark-300 text-xs mt-1">Утилизировано: <span className="text-amber-400">{b.disposedCount}</span></div>
+                                  <div className="text-dark-300 text-xs mt-1">{t('vegetation.disposed')}: <span className="text-amber-400">{b.disposedCount}</span></div>
                                 )}
-                                <div className="text-dark-300 text-xs mt-1">Остаток в бэтче: <span className="text-white font-medium">{getBatchRemainder(b)}</span></div>
+                                <div className="text-dark-300 text-xs mt-1">{t('vegetation.remainderInBatch')}: <span className="text-white font-medium">{getBatchRemainder(b)}</span></div>
                               </div>
                               {b.notes && (
                                 <div className="col-span-2 md:col-span-4">
-                                  <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">Заметки</div>
+                                  <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">{t('common.notes')}</div>
                                   <p className="text-dark-300 text-xs whitespace-pre-wrap bg-dark-700/30 rounded-lg p-2.5">{b.notes}</p>
                                 </div>
                               )}
@@ -728,23 +794,23 @@ const Vegetation = () => {
                                   onClick={(e) => { e.stopPropagation(); openEditBatch(b); }}
                                   className="px-3 py-1.5 text-primary-400 hover:bg-dark-700 rounded text-xs"
                                 >
-                                  Изменить
+                                  {t('common.edit')}
                                 </button>
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); openSendToFlower(b); }}
                                   className="px-3 py-1.5 bg-primary-600/80 text-white rounded text-xs hover:bg-primary-500"
                                 >
-                                  В цвет
+                                  {t('vegetation.toFlower')}
                                 </button>
                                 {getBatchRemainder(b) > 0 && (
                                   <button
                                     type="button"
                                     onClick={(e) => { e.stopPropagation(); handleDisposeRemaining(b); }}
                                     className="px-3 py-1.5 text-amber-400 hover:bg-amber-900/30 rounded text-xs"
-                                    title="Оставшиеся кусты никуда не поедут, будут утилизированы"
+                                    title={t('vegetation.disposeRemainingTitle')}
                                   >
-                                    Удалить оставшиеся (утилизация)
+                                    {t('vegetation.disposeRemainingBtn')}
                                   </button>
                                 )}
                                 <button
@@ -752,7 +818,7 @@ const Vegetation = () => {
                                   onClick={(e) => { e.stopPropagation(); handleDelete(b._id); }}
                                   className="px-3 py-1.5 text-red-400 hover:bg-red-900/30 rounded text-xs ml-auto"
                                 >
-                                  Удалить
+                                  {t('common.delete')}
                                 </button>
                               </div>
                             )}
@@ -768,76 +834,74 @@ const Vegetation = () => {
         </div>
       </div>
 
-      {/* Списанные кусты (корзина) — лог удалённых бэтчей */}
-      <div className="mt-10 bg-dark-800 rounded-xl border border-dark-700 p-5">
-        <h2 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
-          <span className="text-amber-400">Списанные кусты (корзина)</span>
-          {deletedBatches.length > 0 && (
-            <span className="text-dark-400 text-sm font-normal">— {deletedBatches.length} бэтч(ей), можно восстановить</span>
-          )}
-        </h2>
-        {deletedBatches.length === 0 ? (
-          <p className="text-dark-500 text-sm">Нет списанных бэтчей. Сюда попадают бэтчи после «Удалить оставшиеся (утилизация)».</p>
-        ) : (
-          <div className="space-y-2">
-            {deletedBatches.map((b) => (
-              <div
-                key={b._id}
-                className="flex flex-wrap items-center justify-between gap-3 py-2 px-3 bg-dark-700/50 rounded-lg border border-dark-600"
-              >
-                <div className="flex flex-wrap items-center gap-3 text-sm">
-                  <span className="text-white font-medium">{b.name || 'Бэтч без названия'}</span>
-                  <span className="text-dark-400">
-                    {formatStrainsShort(getStrainsFromBatch(b))} · всего {getBatchInitialTotal(b) || b.initialQuantity || getBatchTotal(b)}
-                  </span>
-                  {(b.disposedCount > 0 || b.sentToFlowerCount > 0) && (
-                    <span className="text-dark-500 text-xs">
-                      в цвет: {b.sentToFlowerCount || 0}
-                      {b.disposedCount > 0 && ` · утилизировано: ${b.disposedCount}`}
-                    </span>
-                  )}
-                  <span className="text-dark-500 text-xs">удалён {formatDate(b.deletedAt)}</span>
-                </div>
-                {canCreateVeg && (
-                  <button
-                    type="button"
-                    onClick={() => handleRestoreBatch(b._id)}
-                    disabled={saving}
-                    className="px-3 py-1.5 text-primary-400 hover:bg-primary-900/30 rounded text-xs disabled:opacity-50"
-                  >
-                    Восстановить
-                  </button>
-                )}
-              </div>
-            ))}
+      {/* Предыдущие батчи (завершённые, отправленные на цвет) */}
+      {(() => {
+        const completedBatches = deletedBatches.filter((b) => b.sentToFlowerCount > 0);
+        if (completedBatches.length === 0) return null;
+        const fmtShort = (d) => d ? new Date(d).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit' }) : '';
+        return (
+          <div className="mt-8">
+            <h3 className="text-xs font-medium text-dark-500 uppercase tracking-wide mb-3">{t('vegetation.previousBatches')}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+              {completedBatches.map((b) => {
+                const initial = getBatchInitialTotal(b) || b.initialQuantity || getBatchTotal(b);
+                const sent = b.sentToFlowerCount || 0;
+                const disposed = (b.disposedCount || 0) + (b.diedCount || 0);
+                const vegStart = b.transplantedToVegAt ? new Date(b.transplantedToVegAt) : null;
+                const vegEnd = b.transplantedToFlowerAt ? new Date(b.transplantedToFlowerAt) : (b.deletedAt ? new Date(b.deletedAt) : null);
+                const vegDays = vegStart && vegEnd ? Math.max(0, Math.floor((vegEnd - vegStart) / (1000 * 60 * 60 * 24))) : null;
+                return (
+                  <div key={b._id} className="bg-dark-800/50 border border-dark-700/40 rounded-lg px-3.5 py-2.5">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-dark-300 text-sm font-medium truncate">{b.name || t('vegetation.unnamedBatch')}</span>
+                      {vegDays != null && <span className="text-dark-500 text-xs shrink-0">{vegDays} {t('vegetation.daysShort')}</span>}
+                    </div>
+                    <div className="text-dark-500 text-xs mt-1">
+                      {fmtShort(b.transplantedToVegAt)} → {fmtShort(vegEnd)}
+                    </div>
+                    <div className="flex items-center gap-3 mt-1.5 text-xs">
+                      <span className="text-dark-500">{initial} {t('vegetation.initialLabel').toLowerCase()}</span>
+                      <span className="text-dark-600">→</span>
+                      <span className="text-green-400/80">{sent} {t('vegetation.toFlowerLabel').toLowerCase()}</span>
+                      {disposed > 0 && (
+                        <>
+                          <span className="text-dark-600">·</span>
+                          <span className="text-red-400/60">{disposed} {t('vegetation.disposedLoss').toLowerCase()}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        )}
-      </div>
+        );
+      })()}
 
-      {/* Модалка: добавить бэтч */}
+      {/* Modal: add batch */}
       {addModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setAddModal(false)}>
           <div
             className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-md p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-2">Добавить бэтч в вегетацию</h3>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('vegetation.addBatchTitle')}</h3>
             <p className="text-dark-400 text-sm mb-4 p-3 bg-dark-700/50 border border-dark-600 rounded-lg">
-              Бэтч здесь создаётся только если растите <strong className="text-dark-300">с семечек</strong> или <strong className="text-dark-300">привозные кусты</strong>. Если клоны из своей нарезки — добавляйте нарезку в разделе <strong className="text-primary-400">Клоны</strong>, затем бэтч появится в вегетации.
+              {t('vegetation.addBatchNote')}
             </p>
             <form onSubmit={handleAddSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Название бэтча</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.batchName')}</label>
                 <input
                   type="text"
                   value={form.name}
                   onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Например: Комната 2 — Горилла"
+                  placeholder={t('vegetation.batchNamePlaceholder')}
                   className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('vegetation.strainsAndQty')}</label>
                 <div className="space-y-2">
                   {(form.strains || []).map((s, idx) => (
                     <div key={idx} className="flex items-center gap-2">
@@ -851,7 +915,7 @@ const Vegetation = () => {
                         min="0"
                         value={s.quantity}
                         onChange={(e) => updateFormStrainRow(idx, 'quantity', e.target.value)}
-                        placeholder="Кол-во"
+                        placeholder={t('vegetation.qty')}
                         className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                       />
                       {(form.strains || []).length > 1 && (
@@ -859,12 +923,12 @@ const Vegetation = () => {
                       )}
                     </div>
                   ))}
-                  <button type="button" onClick={addFormStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                  <button type="button" onClick={addFormStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">{t('vegetation.addStrainPlus')}</button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                  <label className="block text-xs text-dark-400 mb-1">{t('vegetation.cutDateLabel')}</label>
                   <input
                     type="date"
                     value={form.cutDate}
@@ -873,7 +937,7 @@ const Vegetation = () => {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1">В вегу с</label>
+                  <label className="block text-xs text-dark-400 mb-1">{t('vegetation.inVegSince')}</label>
                   <input
                     type="date"
                     value={form.transplantedToVegAt}
@@ -883,7 +947,7 @@ const Vegetation = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Цель вегетации (дней)</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.vegTargetDays')}</label>
                 <input
                   type="number"
                   min="1"
@@ -893,22 +957,22 @@ const Vegetation = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Из нарезки (опционально)</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.fromCuttingOptional')}</label>
                 <select
                   value={form.sourceCloneCut}
                   onChange={(e) => setForm((f) => ({ ...f, sourceCloneCut: e.target.value }))}
                   className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                 >
-                  <option value="">— Не привязано</option>
+                  <option value="">{t('vegetation.notLinked')}</option>
                   {cloneCuts.filter((c) => c.isDone).map((c) => (
                     <option key={c._id} value={c._id}>
-                      {c.room?.name || 'Комната'} · {formatDate(c.cutDate)} · {formatStrainsShort(Array.isArray(c.strains) && c.strains.length ? c.strains : (c.strain ? [{ strain: c.strain, quantity: c.quantity }] : []))} ({c.quantity || 0})
+                      {localizeRoomName(c.room?.name, t) || t('vegetation.roomDefault')} · {formatDate(c.cutDate)} · {formatStrainsShort(Array.isArray(c.strains) && c.strains.length ? c.strains : (c.strain ? [{ strain: c.strain, quantity: c.quantity }] : []))} ({c.quantity || 0})
                     </option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('common.notes')}</label>
                 <textarea
                   value={form.notes}
                   onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
@@ -918,10 +982,10 @@ const Vegetation = () => {
               </div>
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setAddModal(false)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">
-                  Отмена
+                  {t('common.cancel')}
                 </button>
                 <button type="submit" disabled={saving} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">
-                  {saving ? 'Сохранение...' : 'Добавить'}
+                  {saving ? t('common.saving') : t('vegetation.addBtn')}
                 </button>
               </div>
             </form>
@@ -929,17 +993,17 @@ const Vegetation = () => {
         </div>
       )}
 
-      {/* Модалка: редактировать бэтч */}
+      {/* Modal: edit batch */}
       {editBatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={closeEditBatch}>
           <div
             className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-4">Редактировать бэтч</h3>
+            <h3 className="text-lg font-semibold text-white mb-4">{t('vegetation.editBatchTitle')}</h3>
             <form onSubmit={handleEditSave} className="space-y-4">
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Название</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.nameCol')}</label>
                 <input
                   type="text"
                   value={editForm.name}
@@ -948,34 +1012,34 @@ const Vegetation = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('vegetation.strainsAndQty')}</label>
                 <div className="space-y-2">
                   {(editForm.strains || []).map((s, idx) => (
                     <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
                       <StrainSelect value={s.strain} onChange={(val) => updateEditStrainRow(idx, 'strain', val)} className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm" />
-                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateEditStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateEditStrainRow(idx, 'quantity', e.target.value)} placeholder={t('vegetation.qty')} className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                       {(editForm.strains || []).length > 1 && <button type="button" onClick={() => removeEditStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>}
                     </div>
                   ))}
-                  <button type="button" onClick={addEditStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                  <button type="button" onClick={addEditStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">{t('vegetation.addStrainPlus')}</button>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                  <label className="block text-xs text-dark-400 mb-1">{t('vegetation.cutDateLabel')}</label>
                   <input type="date" value={editForm.cutDate} onChange={(e) => setEditForm((f) => ({ ...f, cutDate: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1">В вегу с</label>
+                  <label className="block text-xs text-dark-400 mb-1">{t('vegetation.inVegSince')}</label>
                   <input type="date" value={editForm.transplantedToVegAt} onChange={(e) => setEditForm((f) => ({ ...f, transplantedToVegAt: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Цель вегетации (дней)</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.vegTargetDays')}</label>
                 <input type="number" min="1" value={editForm.vegDaysTarget} onChange={(e) => setEditForm((f) => ({ ...f, vegDaysTarget: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">💀 Умерло (по сортам) — нельзя отправить в цвет</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('vegetation.diedByStrain')}</label>
                 <div className="space-y-1.5">
                   {(editForm.diedStrains || []).map((s, idx) => (
                     <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
@@ -986,7 +1050,7 @@ const Vegetation = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">🌱 Не выросло (по сортам) — считаются в количестве, можно отправить</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('vegetation.notGrownByStrain')}</label>
                 <div className="space-y-1.5">
                   {(editForm.notGrownStrains || []).map((s, idx) => (
                     <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
@@ -997,7 +1061,7 @@ const Vegetation = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">Смены света (дата и % мощности)</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('vegetation.lightChangesDatePower')}</label>
                 <div className="space-y-2">
                   {(editForm.lightChanges || []).map((c, idx) => (
                     <div key={c._key != null ? c._key : idx} className="flex items-center gap-2">
@@ -1006,46 +1070,46 @@ const Vegetation = () => {
                       {(editForm.lightChanges || []).length > 1 && <button type="button" onClick={() => removeEditLightRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>}
                     </div>
                   ))}
-                  <button type="button" onClick={addEditLightRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить смену света</button>
+                  <button type="button" onClick={addEditLightRow} className="text-primary-400 hover:text-primary-300 text-sm">{t('vegetation.addLightChange')}</button>
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Уже отправлено в цвет (шт.)</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.alreadySentToFlower')}</label>
                 <input type="number" min="0" value={editForm.sentToFlowerCount} onChange={(e) => setEditForm((f) => ({ ...f, sentToFlowerCount: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
-                <p className="text-xs text-dark-500 mt-1">Остаток = хорошие − отправлено</p>
+                <p className="text-xs text-dark-500 mt-1">{t('vegetation.remainderFormula')}</p>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Из нарезки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.fromCutting')}</label>
                 <select value={editForm.sourceCloneCut} onChange={(e) => setEditForm((f) => ({ ...f, sourceCloneCut: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm">
-                  <option value="">— Не привязано</option>
+                  <option value="">{t('vegetation.notLinked')}</option>
                   {cloneCuts.filter((c) => c.isDone).map((c) => (
-                    <option key={c._id} value={c._id}>{c.room?.name || 'Комната'} · {formatDate(c.cutDate)}</option>
+                    <option key={c._id} value={c._id}>{localizeRoomName(c.room?.name, t) || t('vegetation.roomDefault')} · {formatDate(c.cutDate)}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('common.notes')}</label>
                 <textarea value={editForm.notes} onChange={(e) => setEditForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none" />
               </div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={closeEditBatch} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
-                <button type="submit" disabled={saving} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">{saving ? 'Сохранение...' : 'Сохранить'}</button>
+                <button type="button" onClick={closeEditBatch} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">{t('common.cancel')}</button>
+                <button type="submit" disabled={saving} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">{saving ? t('common.saving') : t('common.save')}</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* Модалка: отправить в цветение */}
+      {/* Modal: send to flower */}
       {sendToFlowerModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setSendToFlowerModal(null)}>
           <div
             className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-1">Отправить в цветение</h3>
+            <h3 className="text-lg font-semibold text-white mb-1">{t('vegetation.sendToFlowerTitle')}</h3>
             <p className="text-dark-400 text-sm mb-4">
-              Хороших в бэтче: {getBatchGoodCount(sendToFlowerModal)} шт. После отправки в бэтче останется меньше на выбранное количество.
+              {t('vegetation.sendToFlowerDesc', { count: getBatchGoodCount(sendToFlowerModal) })}
             </p>
             <form onSubmit={handleSendToFlower} className="space-y-4">
               {error && (
@@ -1055,29 +1119,29 @@ const Vegetation = () => {
               )}
               {sendStrains.length > 0 ? (
                 <div>
-                  <label className="block text-xs text-dark-400 mb-2">Сколько какого сорта отправляете в цвет (в комнату будет видно сорт и кол-во)</label>
+                  <label className="block text-xs text-dark-400 mb-2">{t('vegetation.howManyPerStrain')}</label>
                   <div className="space-y-2">
                     {sendStrains.map((s, idx) => (
                       <div key={idx} className="flex items-center gap-2">
                         <span className="text-white text-sm w-32 truncate" title={s.strain}>{s.strain || '—'}</span>
-                        <span className="text-dark-500 text-xs">в бэтче: {s.total}</span>
+                        <span className="text-dark-500 text-xs">{t('vegetation.inBatch')}: {s.total}</span>
                         <input
                           type="number"
                           min="0"
                           max={s.total}
                           value={s.sendQty}
                           onChange={(e) => setSendStrains((prev) => prev.map((x, i) => i === idx ? { ...x, sendQty: e.target.value } : x))}
-                          placeholder="в цвет"
+                          placeholder={t('vegetation.toFlowerPlaceholder')}
                           className="flex-1 min-w-0 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                         />
                       </div>
                     ))}
                   </div>
-                  <p className="text-xs text-dark-500 mt-1">Сумма не больше {getBatchGoodCount(sendToFlowerModal)}</p>
+                  <p className="text-xs text-dark-500 mt-1">{t('vegetation.sumNotMore', { max: getBatchGoodCount(sendToFlowerModal) })}</p>
                 </div>
               ) : (
                 <div>
-                  <label className="block text-xs text-dark-400 mb-1">Сколько отправляете в цвет</label>
+                  <label className="block text-xs text-dark-400 mb-1">{t('vegetation.howManyToFlower')}</label>
                   <input
                     type="number"
                     min="0"
@@ -1086,32 +1150,32 @@ const Vegetation = () => {
                     onChange={(e) => setSendCount(e.target.value)}
                     className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                   />
-                  <p className="text-xs text-dark-500 mt-1">Макс. хороших: {getBatchGoodCount(sendToFlowerModal)}</p>
+                  <p className="text-xs text-dark-500 mt-1">{t('vegetation.maxGood')}: {getBatchGoodCount(sendToFlowerModal)}</p>
                 </div>
               )}
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Комната цветения</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.flowerRoom')}</label>
                 <select
                   value={sendRoomId}
                   onChange={(e) => setSendRoomId(e.target.value)}
                   required
                   className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                 >
-                  <option value="">— Выберите комнату</option>
+                  <option value="">{t('vegetation.selectRoom')}</option>
                   {rooms.map((r) => (
                     <option key={r._id} value={r._id} disabled={r.isActive}>
-                      {r.name} {r.isActive ? '(активна — сначала завершите цикл)' : '(свободна)'}
+                      {localizeRoomName(r.name, t)} {r.isActive ? t('vegetation.roomActiveLabel') : t('vegetation.roomFreeLabel')}
                     </option>
                   ))}
                 </select>
                 {sendRoomId && rooms.find((r) => r._id === sendRoomId)?.isActive && (
                   <p className="mt-2 text-amber-400 text-sm">
-                    В эту комнату нельзя добавить: в ней уже идёт цикл. Завершите цикл (соберите урожай), затем можно добавить новые клоны.
+                    {t('vegetation.roomActiveWarning')}
                   </p>
                 )}
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Дата пересадки в цвет</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('vegetation.transplantToFlowerDate')}</label>
                 <input
                   type="date"
                   value={sendDate}
@@ -1121,14 +1185,14 @@ const Vegetation = () => {
               </div>
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setSendToFlowerModal(null)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">
-                  Отмена
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="submit"
                   disabled={saving || !sendRoomId || (!!sendRoomId && !!rooms.find((r) => r._id === sendRoomId)?.isActive)}
                   className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50"
                 >
-                  {saving ? 'Отправка...' : 'Отправить в цвет'}
+                  {saving ? t('vegetation.sending') : t('vegetation.sendToFlowerBtn')}
                 </button>
               </div>
             </form>

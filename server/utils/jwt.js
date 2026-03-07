@@ -1,26 +1,27 @@
 import jwt from 'jsonwebtoken';
 
-// Fallback секреты (ОБЯЗАТЕЛЬНО замени в Railway Variables на свои!)
-const JWT_SECRET = process.env.JWT_SECRET || 'farm-portal-jwt-secret-change-me';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'farm-portal-refresh-secret-change-me';
-
-if (!process.env.JWT_SECRET) {
-  console.warn('WARNING: JWT_SECRET not set, using fallback. Set it in Railway Variables!');
+// JWT секреты — ОБЯЗАТЕЛЬНЫ, сервер не стартует без них
+if (!process.env.JWT_SECRET || !process.env.JWT_REFRESH_SECRET) {
+  console.error('FATAL: JWT_SECRET and JWT_REFRESH_SECRET must be set in environment variables!');
+  process.exit(1);
 }
 
-export const generateAccessToken = (userId) => {
+const JWT_SECRET = process.env.JWT_SECRET;
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+
+export const generateAccessToken = (userId, tokenVersion = 0) => {
   return jwt.sign(
-    { userId },
+    { userId, v: tokenVersion },
     JWT_SECRET,
-    { expiresIn: '7d' }       // 7 дней — приватное приложение, минимизируем refresh-вызовы
+    { expiresIn: '24h' }      // 24 часа — баланс между безопасностью и удобством
   );
 };
 
-export const generateRefreshToken = (userId) => {
+export const generateRefreshToken = (userId, tokenVersion = 0) => {
   return jwt.sign(
-    { userId },
+    { userId, v: tokenVersion },
     JWT_REFRESH_SECRET,
-    { expiresIn: '180d' }     // 180 дней — долгосрочная сессия, не ротируется при refresh
+    { expiresIn: '30d' }      // 30 дней — разумный срок для приватного приложения
   );
 };
 

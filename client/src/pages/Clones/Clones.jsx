@@ -1,17 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
 import { vegBatchService } from '../../services/vegBatchService';
 import StrainSelect from '../../components/StrainSelect';
+import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const WEEKS_BEFORE = 4;
 const DAYS_OFFSET = WEEKS_BEFORE * 7;
-
-const formatDate = (date) => {
-  if (!date) return '—';
-  return new Date(date).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
-};
 
 const getStrainsFromCut = (cut) => {
   if (!cut) return [];
@@ -52,9 +49,15 @@ const getCutDateForRoom = (room) => {
 };
 
 const Clones = () => {
+  const { t, i18n } = useTranslation();
   const { hasPermission } = useAuth();
   const canCreateClones = hasPermission && hasPermission('clones:create');
   const canCreateVeg = hasPermission && hasPermission('vegetation:create');
+
+  const formatDate = (date) => {
+    if (!date) return '—';
+    return new Date(date).toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+  };
 
   const [rooms, setRooms] = useState([]);
   const [cloneCuts, setCloneCuts] = useState([]);
@@ -135,8 +138,8 @@ const Clones = () => {
         const needBackendRestart = is404 || is501 || isNetwork;
         setError(
           needBackendRestart
-            ? 'Не удалось загрузить данные нарезки. Убедитесь, что бэкенд запущен и перезапущен после обновления.'
-            : msg || 'Ошибка загрузки данных нарезки'
+            ? t('clones.loadErrorBackend')
+            : msg || t('clones.loadErrorCuts')
         );
       }
       try {
@@ -158,7 +161,7 @@ const Clones = () => {
       setVegBatches(allBatches);
       setArchivedCuts(Array.isArray(deletedCuts) ? deletedCuts : []);
     } catch (err) {
-      setError(err.response?.data?.message || err.message || 'Ошибка загрузки комнат');
+      setError(err.response?.data?.message || err.message || t('clones.loadErrorRooms'));
       console.error('Clones load error:', err);
       setRooms([]);
       setCloneCuts([]);
@@ -238,7 +241,7 @@ const Clones = () => {
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
     if (editForm.isDone && (strains.length === 0 || strains.every((s) => s.quantity === 0))) {
-      setError('При отметке «Нарезано» укажите хотя бы один сорт и количество нарезанного.');
+      setError(t('clones.errorMarkCutNeedStrain'));
       return;
     }
     try {
@@ -257,7 +260,7 @@ const Clones = () => {
       closeEdit();
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('clones.saveError'));
       console.error(err);
     } finally {
       setSavingId(null);
@@ -268,7 +271,7 @@ const Clones = () => {
     setSendToVegModal(row);
     const list = (row.strains || []).map((s) => ({ strain: s.strain || '', total: s.quantity || 0, sendQty: String(s.quantity || 0) }));
     setVegForm({
-      name: `${row.room.name} · ${row.strain || 'клоны'}`.trim(),
+      name: `${localizeRoomName(row.room.name, t)} · ${row.strain || t('clones.clones')}`.trim(),
       strains: list.length ? list : [{ strain: '', total: 0, sendQty: '' }],
       transplantedToVegAt: new Date().toISOString().slice(0, 10),
       vegDaysTarget: '21'
@@ -278,10 +281,10 @@ const Clones = () => {
   const openSendToVegFromOrder = (cut) => {
     const strains = getStrainsFromCut(cut);
     const row = {
-      room: { name: 'Бэтч на заказ', _id: null },
+      room: { name: t('clones.orderBatch'), _id: null },
       cutDate: cut.cutDate,
       cutId: cut._id,
-      strain: strains.map((s) => s.strain).filter(Boolean).join(', ') || 'клоны',
+      strain: strains.map((s) => s.strain).filter(Boolean).join(', ') || t('clones.clones'),
       strains
     };
     openSendToVeg(row);
@@ -303,7 +306,7 @@ const Clones = () => {
       setEditingBatchName('');
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения названия');
+      setError(err.response?.data?.message || t('clones.saveNameError'));
     }
   };
 
@@ -314,7 +317,7 @@ const Clones = () => {
       .map((s) => ({ strain: s.strain || '', quantity: Number(s.sendQty) || 0 }))
       .filter((s) => s.quantity > 0);
     if (strains.length === 0) {
-      setError('Укажите количество хотя бы по одному сорту');
+      setError(t('clones.errorSpecifyQtyForStrain'));
       return;
     }
     try {
@@ -331,7 +334,7 @@ const Clones = () => {
       setSendToVegModal(null);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка отправки в вегетацию');
+      setError(err.response?.data?.message || t('clones.sendToVegError'));
       console.error(err);
     } finally {
       setSavingId(null);
@@ -379,7 +382,7 @@ const Clones = () => {
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
     if (strains.length === 0) {
-      setError('Укажите хотя бы один сорт и количество');
+      setError(t('clones.errorSpecifyStrainAndQty'));
       return;
     }
     setSavingCreateBatch(true);
@@ -404,7 +407,7 @@ const Clones = () => {
       setCreateBatchModalOpen(false);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка создания бэтча');
+      setError(err.response?.data?.message || t('clones.createBatchError'));
     } finally {
       setSavingCreateBatch(false);
     }
@@ -431,7 +434,7 @@ const Clones = () => {
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
     if (strains.length === 0) {
-      setError('Укажите хотя бы один сорт и количество');
+      setError(t('clones.errorSpecifyStrainAndQty'));
       return;
     }
     try {
@@ -444,7 +447,7 @@ const Clones = () => {
       setAddOrderModal(false);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка создания бэтча');
+      setError(err.response?.data?.message || t('clones.createBatchError'));
     } finally {
       setSavingOrderId(null);
     }
@@ -486,7 +489,7 @@ const Clones = () => {
       .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Number(s.quantity) || 0 }))
       .filter((s) => s.strain !== '' || s.quantity > 0);
     if (orderEditForm.isDone && (strains.length === 0 || strains.every((s) => s.quantity === 0))) {
-      setError('При отметке «Нарезано» укажите хотя бы один сорт и количество нарезанного.');
+      setError(t('clones.errorMarkCutNeedStrain'));
       return;
     }
     try {
@@ -500,7 +503,7 @@ const Clones = () => {
       setOrderEditModal(null);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка сохранения');
+      setError(err.response?.data?.message || t('clones.saveError'));
     } finally {
       setSavingOrderId(null);
     }
@@ -524,21 +527,21 @@ const Clones = () => {
       });
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('common.error'));
     } finally {
       setSavingOrderId(null);
     }
   };
 
   const deleteOrderCut = async (cut) => {
-    if (!confirm('Удалить этот бэтч на заказ?')) return;
+    if (!confirm(t('clones.deleteOrderConfirm'))) return;
     try {
       setSavingOrderId(cut._id);
       await cloneCutService.delete(cut._id);
       setOrderEditModal(null);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка удаления');
+      setError(err.response?.data?.message || t('clones.deleteError'));
     } finally {
       setSavingOrderId(null);
     }
@@ -546,13 +549,13 @@ const Clones = () => {
 
   const handleDispose = async (cutId, quantity, roomId) => {
     if (!cutId) return;
-    if (!confirm(`Списать оставшиеся ${quantity} клонов?`)) return;
+    if (!confirm(t('clones.disposeConfirm', { count: quantity }))) return;
     try {
       setSavingId(roomId || cutId);
       await cloneCutService.disposeRemaining(cutId);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка списания');
+      setError(err.response?.data?.message || t('clones.disposeError'));
     } finally {
       setSavingId(null);
     }
@@ -564,7 +567,7 @@ const Clones = () => {
       await cloneCutService.restore(cut._id);
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка восстановления');
+      setError(err.response?.data?.message || t('clones.restoreError'));
     } finally {
       setRestoringId(null);
     }
@@ -593,7 +596,7 @@ const Clones = () => {
       }
       await load();
     } catch (err) {
-      setError(err.response?.data?.message || 'Ошибка');
+      setError(err.response?.data?.message || t('common.error'));
       console.error(err);
     } finally {
       setSavingId(null);
@@ -612,9 +615,9 @@ const Clones = () => {
     <div>
       <div className="mb-8 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-white">План нарезки клонов</h1>
+          <h1 className="text-2xl font-bold text-white">{t('clones.planTitle')}</h1>
           <p className="text-dark-400 mt-1">
-            Клоны режутся за {WEEKS_BEFORE} недели до даты цветения. Укажите сорт и количество, отметьте, если уже нарезаны.
+            {t('clones.planSubtitle', { weeks: WEEKS_BEFORE })}
           </p>
         </div>
         {canCreateClones && (
@@ -623,7 +626,7 @@ const Clones = () => {
             onClick={openCreateBatchModal}
             className="px-5 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 font-medium shadow-lg"
           >
-            Создать бэтч
+            {t('clones.createBatch')}
           </button>
         )}
       </div>
@@ -636,7 +639,7 @@ const Clones = () => {
             onClick={() => { setError(''); load(); }}
             className="px-3 py-1.5 bg-red-800/50 hover:bg-red-700/50 rounded-lg text-sm font-medium"
           >
-            Повторить
+            {t('common.retry')}
           </button>
         </div>
       )}
@@ -646,19 +649,19 @@ const Clones = () => {
           <table className="w-full text-sm">
             <thead className="bg-dark-900">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Комната</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Дата нарезки</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Клон / сорт</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Кол-во</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Статус</th>
-                <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">Действия</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.room')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.cutDate')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.cloneStrain')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.quantity')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.statusCol')}</th>
+                <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.actionsCol')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-dark-700">
               {rows.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-4 py-8 text-center text-dark-500">
-                    Нет комнат с запланированной датой цветения или активным циклом. Задайте планируемый цикл в обзоре фермы.
+                    {t('clones.noRoomsWithDate')}
                   </td>
                 </tr>
               ) : (
@@ -667,7 +670,7 @@ const Clones = () => {
                     key={row.room._id}
                     className={`hover:bg-dark-700/50 ${row.isDone ? 'bg-green-900/10' : 'bg-red-900/5'}`}
                   >
-                    <td className="px-4 py-3 font-medium text-white">{row.room.name}</td>
+                    <td className="px-4 py-3 font-medium text-white">{localizeRoomName(row.room.name, t)}</td>
                     <td className="px-4 py-3 text-dark-300">{formatDate(row.cutDate)}</td>
                     <td className="px-4 py-3 text-dark-300">{formatStrainsShort(row.strains)}</td>
                     <td className="px-4 py-3 text-dark-300">{row.quantity > 0 ? row.quantity : '—'}</td>
@@ -681,7 +684,7 @@ const Clones = () => {
                               : 'bg-red-900/50 text-red-400'
                         }`}
                       >
-                        {row.hasTransplanted ? 'Пересажено' : row.isDone ? 'Нарезано' : 'Не нарезано'}
+                        {row.hasTransplanted ? t('clones.transplanted') : row.isDone ? t('clones.cut') : t('clones.notCut')}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-right">
@@ -694,7 +697,7 @@ const Clones = () => {
                                 disabled={savingId === row.room._id}
                                 className="px-2 py-1 bg-green-700/50 text-green-400 hover:bg-green-700/70 rounded text-xs font-medium"
                               >
-                                В вегетацию
+                                {t('clones.toVegetation')}
                               </button>
                               <button
                                 type="button"
@@ -706,14 +709,14 @@ const Clones = () => {
                                     : 'bg-green-900/30 text-green-400 hover:bg-green-900/50'
                                 }`}
                               >
-                                {row.isDone ? 'Снять отметку' : 'Отметить нарезано'}
+                                {row.isDone ? t('clones.unmarkCut') : t('clones.markCut')}
                               </button>
                               <button
                                 type="button"
                                 onClick={() => openEdit(row)}
                                 className="px-2 py-1 text-primary-400 hover:bg-dark-700 rounded text-xs"
                               >
-                                Заполнить / изменить
+                                {t('clones.fillOrEdit')}
                               </button>
                               {row.cutId && row.quantity > 0 && (
                                 <button
@@ -722,12 +725,12 @@ const Clones = () => {
                                   disabled={savingId === row.room._id}
                                   className="px-2 py-1 bg-orange-900/30 text-orange-400 hover:bg-orange-900/50 rounded text-xs font-medium"
                                 >
-                                  Списать остатки
+                                  {t('clones.disposeRemaining')}
                                 </button>
                               )}
                             </>
                           ) : (
-                            <span className="text-dark-500 text-xs">Только просмотр</span>
+                            <span className="text-dark-500 text-xs">{t('clones.viewOnly')}</span>
                           )}
                         </div>
                     </td>
@@ -741,9 +744,9 @@ const Clones = () => {
 
       {/* Бэтчи на заказ (вне комнаты) */}
       <div className="mt-8 bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
-        <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">Бэтчи на заказ (вне комнаты)</h2>
+        <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">{t('clones.orderBatchesTitle')}</h2>
         <p className="text-dark-400 text-sm px-4 py-2">
-          Клоны, которые режут на заказ — не идут в вегетацию и цветение. Только учёт нарезки.
+          {t('clones.orderBatchesDesc')}
         </p>
         {canCreateClones && (
           <div className="px-4 pb-3">
@@ -752,7 +755,7 @@ const Clones = () => {
               onClick={openAddOrderModal}
               className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 transition font-medium"
             >
-              Добавить бэтч на заказ
+              {t('clones.addOrderBatch')}
             </button>
           </div>
         )}
@@ -760,12 +763,12 @@ const Clones = () => {
           <table className="w-full text-sm">
             <thead className="bg-dark-900">
               <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Дата нарезки</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Сорт / кол-во</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Заметки</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Статус</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.cutDate')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.strainQty')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('common.notes')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.statusCol')}</th>
                 {canCreateClones && (
-                  <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">Действия</th>
+                  <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.actionsCol')}</th>
                 )}
               </tr>
             </thead>
@@ -773,7 +776,7 @@ const Clones = () => {
               {orderCuts.length === 0 ? (
                 <tr>
                   <td colSpan={canCreateClones ? 5 : 4} className="px-4 py-6 text-center text-dark-500">
-                    Нет бэтчей на заказ. Добавьте, если клоны режутся кому-то на заказ и не пойдут в вегу/цвет.
+                    {t('clones.noOrderBatches')}
                   </td>
                 </tr>
               ) : (
@@ -787,7 +790,7 @@ const Clones = () => {
                       <td className="px-4 py-3 text-dark-500 text-xs max-w-[200px] truncate" title={cut.notes}>{cut.notes || '—'}</td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${cut.isDone ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
-                          {cut.isDone ? 'Нарезано' : 'Не нарезано'}
+                          {cut.isDone ? t('clones.cut') : t('clones.notCut')}
                         </span>
                       </td>
                       {canCreateClones && (
@@ -800,16 +803,16 @@ const Clones = () => {
                                 disabled={savingId === cut._id}
                                 className="px-2 py-1 bg-green-700/50 text-green-400 hover:bg-green-700/70 rounded text-xs font-medium"
                               >
-                                В вегетацию
+                                {t('clones.toVegetation')}
                               </button>
                             )}
-                            <button type="button" onClick={() => openEditOrder(cut)} className="px-2 py-1 text-primary-400 hover:bg-dark-700 rounded text-xs">Изменить</button>
+                            <button type="button" onClick={() => openEditOrder(cut)} className="px-2 py-1 text-primary-400 hover:bg-dark-700 rounded text-xs">{t('common.edit')}</button>
                             <button type="button" onClick={() => toggleOrderDone(cut)} disabled={savingOrderId === cut._id} className={`px-2 py-1 rounded text-xs ${cut.isDone ? 'bg-red-900/30 text-red-400' : 'bg-green-900/30 text-green-400'}`}>
-                              {cut.isDone ? 'Снять отметку' : 'Отметить нарезано'}
+                              {cut.isDone ? t('clones.unmarkCut') : t('clones.markCut')}
                             </button>
-                            <button type="button" onClick={() => deleteOrderCut(cut)} disabled={savingOrderId === cut._id} className="px-2 py-1 text-red-400 hover:bg-red-900/30 rounded text-xs">Удалить</button>
+                            <button type="button" onClick={() => deleteOrderCut(cut)} disabled={savingOrderId === cut._id} className="px-2 py-1 text-red-400 hover:bg-red-900/30 rounded text-xs">{t('common.delete')}</button>
                             {quantity > 0 && (
-                              <button type="button" onClick={() => handleDispose(cut._id, quantity, null)} disabled={savingOrderId === cut._id} className="px-2 py-1 bg-orange-900/30 text-orange-400 hover:bg-orange-900/50 rounded text-xs font-medium">Списать</button>
+                              <button type="button" onClick={() => handleDispose(cut._id, quantity, null)} disabled={savingOrderId === cut._id} className="px-2 py-1 bg-orange-900/30 text-orange-400 hover:bg-orange-900/50 rounded text-xs font-medium">{t('clones.dispose')}</button>
                             )}
                           </div>
                         </td>
@@ -831,9 +834,9 @@ const Clones = () => {
             className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-1">Нарезка клонов · {editRow.room.name}</h3>
+            <h3 className="text-lg font-semibold text-white mb-1">{t('clones.cloneCutting')} · {localizeRoomName(editRow.room.name, t)}</h3>
             <div className="flex items-center gap-2 mb-4">
-              <span className="text-dark-400 text-sm">Дата нарезки:</span>
+              <span className="text-dark-400 text-sm">{t('clones.cutDate')}:</span>
               <input
                 type="date"
                 value={editForm.cutDate || ''}
@@ -843,12 +846,12 @@ const Clones = () => {
             </div>
             {editForm.isDone && !rowHasStrainData(editRow) && (
               <p className="text-amber-400 text-sm mb-3 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
-                Укажите, сколько какого сорта нарезано (хотя бы один сорт и количество), затем нажмите «Сохранить».
+                {t('clones.specifyStrainAndQtyThenSave')}
               </p>
             )}
             <div className="space-y-4">
               <div>
-                <label className="block text-xs text-dark-400 mb-2">Сорта и количество (сейчас строк: {(modalStrains || []).length})</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('clones.strainsAndQty', { count: (modalStrains || []).length })}</label>
                 <div className="space-y-2">
                   {(modalStrains || []).map((s, idx) => (
                     <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
@@ -863,7 +866,7 @@ const Clones = () => {
                         min="0"
                         value={s.quantity}
                         onChange={(e) => updateEditStrainRow(idx, 'quantity', e.target.value)}
-                        placeholder="Кол-во"
+                        placeholder={t('clones.qty')}
                         className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                       />
                       {(modalStrains || []).length > 1 && (
@@ -871,7 +874,7 @@ const Clones = () => {
                           type="button"
                           onClick={() => removeEditStrainRow(idx)}
                           className="p-2 text-red-400 hover:text-red-300 hover:bg-red-900/30 rounded-lg shrink-0"
-                          title="Удалить строку"
+                          title={t('clones.deleteRow')}
                         >
                           ×
                         </button>
@@ -884,7 +887,7 @@ const Clones = () => {
                     className="flex items-center justify-center gap-2 w-full py-3 bg-primary-600/30 border-2 border-primary-500 text-primary-300 hover:bg-primary-600/50 hover:text-white rounded-lg text-sm font-semibold"
                   >
                     <span className="text-2xl leading-none">+</span>
-                    <span>Добавить сорт (ещё одна строка)</span>
+                    <span>{t('clones.addStrainRow')}</span>
                   </button>
                 </div>
               </div>
@@ -895,11 +898,11 @@ const Clones = () => {
                   onChange={(e) => setEditForm((f) => ({ ...f, isDone: e.target.checked }))}
                   className="rounded"
                 />
-                <span>Нарезано</span>
+                <span>{t('clones.cut')}</span>
               </label>
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={closeEdit} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">
-                  Отмена
+                  {t('common.cancel')}
                 </button>
                 <button
                   type="button"
@@ -907,7 +910,7 @@ const Clones = () => {
                   disabled={savingId === editRow.room._id}
                   className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 font-medium"
                 >
-                  {savingId === editRow.room._id ? 'Сохранение...' : 'Сохранить'}
+                  {savingId === editRow.room._id ? t('common.saving') : t('common.save')}
                 </button>
               </div>
             </div>
@@ -922,35 +925,35 @@ const Clones = () => {
             className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-md p-6"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-semibold text-white mb-1">Отправить в вегетацию</h3>
+            <h3 className="text-lg font-semibold text-white mb-1">{t('clones.sendToVegTitle')}</h3>
             <p className="text-dark-400 text-sm mb-4">
-              {sendToVegModal.room.name} · укажите, сколько какого сорта отправляете в вег
+              {t('clones.sendToVegDesc', { room: localizeRoomName(sendToVegModal.room.name, t) })}
             </p>
             <form onSubmit={handleSendToVeg} className="space-y-4">
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Название бэтча</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('clones.batchName')}</label>
                 <input
                   type="text"
                   value={vegForm.name}
                   onChange={(e) => setVegForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Например: Комната 2 — Горилла"
+                  placeholder={t('clones.batchNamePlaceholder')}
                   className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                 />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">Количество по сортам (отправляемое в вег)</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('clones.qtyByStrains')}</label>
                 <div className="space-y-2">
                   {(vegForm.strains || []).map((s, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <span className="text-white text-sm w-28 truncate" title={s.strain}>{s.strain || '—'}</span>
-                      <span className="text-dark-500 text-xs">всего: {s.total}</span>
+                      <span className="text-dark-500 text-xs">{t('clones.totalLabel')}: {s.total}</span>
                       <input
                         type="number"
                         min="0"
                         max={s.total}
                         value={s.sendQty}
                         onChange={(e) => updateVegFormStrain(idx, 'sendQty', e.target.value)}
-                        placeholder="в вег"
+                        placeholder={t('clones.toVeg')}
                         className="flex-1 min-w-0 px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm"
                       />
                     </div>
@@ -958,7 +961,7 @@ const Clones = () => {
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Дата пересадки в вегетацию</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('clones.transplantDate')}</label>
                 <input
                   type="date"
                   value={vegForm.transplantedToVegAt}
@@ -967,7 +970,7 @@ const Clones = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Цель вегетации (дней)</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('clones.vegTargetDays')}</label>
                 <input
                   type="number"
                   min="1"
@@ -978,10 +981,10 @@ const Clones = () => {
               </div>
               <div className="flex gap-2 pt-2">
                 <button type="button" onClick={() => setSendToVegModal(null)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">
-                  Отмена
+                  {t('common.cancel')}
                 </button>
                 <button type="submit" disabled={savingId === (sendToVegModal.cutId || sendToVegModal.room?._id)} className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-500 disabled:opacity-50 font-medium">
-                  {savingId === (sendToVegModal.cutId || sendToVegModal.room?._id) ? 'Сохранение...' : 'Создать бэтч в вегетации'}
+                  {savingId === (sendToVegModal.cutId || sendToVegModal.room?._id) ? t('common.saving') : t('clones.createVegBatch')}
                 </button>
               </div>
             </form>
@@ -993,11 +996,11 @@ const Clones = () => {
       {createBatchModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setCreateBatchModalOpen(false)}>
           <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-white mb-2">Создать бэтч клонов</h3>
-            <p className="text-dark-400 text-sm mb-4">Укажите комнату (или «Без комнаты» для бэтча на заказ), дату нарезки, сорта и количество.</p>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('clones.createCloneBatch')}</h3>
+            <p className="text-dark-400 text-sm mb-4">{t('clones.createBatchDesc')}</p>
             <form onSubmit={handleCreateBatchSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Комната</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('clones.room')}</label>
                 <select
                   value={createBatchForm.roomId}
                   onChange={(e) => {
@@ -1010,19 +1013,19 @@ const Clones = () => {
                   }}
                   className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                 >
-                  <option value="">— Без комнаты (на заказ) —</option>
+                  <option value="">{t('clones.noRoomOrder')}</option>
                   {(rooms || []).map((room) => {
                     const suggestedDate = getCutDateForRoom(room);
                     return (
                       <option key={room._id} value={room._id}>
-                        {room.name}{suggestedDate ? ` · нарезка ${formatDate(suggestedDate)}` : ''}
+                        {localizeRoomName(room.name, t)}{suggestedDate ? ` · ${t('clones.cutLabel')} ${formatDate(suggestedDate)}` : ''}
                       </option>
                     );
                   })}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('clones.cutDate')}</label>
                 <input
                   type="date"
                   value={createBatchForm.cutDate}
@@ -1032,7 +1035,7 @@ const Clones = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('clones.strainsAndQtyLabel')}</label>
                 <div className="space-y-2">
                   {(createBatchForm.strains || []).map((s, idx) => (
                     <div key={idx} className="flex items-center gap-2">
@@ -1046,7 +1049,7 @@ const Clones = () => {
                         min="0"
                         value={s.quantity}
                         onChange={(e) => updateCreateBatchStrainRow(idx, 'quantity', e.target.value)}
-                        placeholder="Кол-во"
+                        placeholder={t('clones.qty')}
                         className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm"
                       />
                       {(createBatchForm.strains || []).length > 1 && (
@@ -1054,11 +1057,11 @@ const Clones = () => {
                       )}
                     </div>
                   ))}
-                  <button type="button" onClick={addCreateBatchStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                  <button type="button" onClick={addCreateBatchStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">{t('clones.addStrainPlus')}</button>
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('common.notes')}</label>
                 <textarea
                   value={createBatchForm.notes}
                   onChange={(e) => setCreateBatchForm((f) => ({ ...f, notes: e.target.value }))}
@@ -1073,12 +1076,12 @@ const Clones = () => {
                   onChange={(e) => setCreateBatchForm((f) => ({ ...f, isDone: e.target.checked }))}
                   className="rounded"
                 />
-                <span>Уже нарезано</span>
+                <span>{t('clones.alreadyCut')}</span>
               </label>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setCreateBatchModalOpen(false)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
+                <button type="button" onClick={() => setCreateBatchModalOpen(false)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">{t('common.cancel')}</button>
                 <button type="submit" disabled={savingCreateBatch} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50 font-medium">
-                  {savingCreateBatch ? 'Создание...' : 'Создать бэтч'}
+                  {savingCreateBatch ? t('clones.creating') : t('clones.createBatch')}
                 </button>
               </div>
             </form>
@@ -1090,11 +1093,11 @@ const Clones = () => {
       {addOrderModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setAddOrderModal(false)}>
           <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-white mb-2">Добавить бэтч на заказ</h3>
-            <p className="text-dark-400 text-sm mb-4">Клоны режутся кому-то на заказ — не идут в вегетацию и цветение.</p>
+            <h3 className="text-lg font-semibold text-white mb-2">{t('clones.addOrderBatchTitle')}</h3>
+            <p className="text-dark-400 text-sm mb-4">{t('clones.addOrderBatchDesc')}</p>
             <form onSubmit={handleAddOrderSubmit} className="space-y-4">
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('clones.cutDate')}</label>
                 <input
                   type="date"
                   value={orderForm.cutDate}
@@ -1103,27 +1106,27 @@ const Clones = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('clones.strainsAndQtyLabel')}</label>
                 <div className="space-y-2">
                   {(orderForm.strains || []).map((s, idx) => (
                     <div key={idx} className="flex items-center gap-2">
                       <StrainSelect value={s.strain} onChange={(val) => updateOrderFormStrainRow(idx, 'strain', val)} className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm" />
-                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateOrderFormStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateOrderFormStrainRow(idx, 'quantity', e.target.value)} placeholder={t('clones.qty')} className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                       {(orderForm.strains || []).length > 1 && (
                         <button type="button" onClick={() => removeOrderFormStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>
                       )}
                     </div>
                   ))}
-                  <button type="button" onClick={addOrderFormStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                  <button type="button" onClick={addOrderFormStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">{t('clones.addStrainPlus')}</button>
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('common.notes')}</label>
                 <textarea value={orderForm.notes} onChange={(e) => setOrderForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none" />
               </div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setAddOrderModal(false)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
-                <button type="submit" disabled={!!savingOrderId} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">{savingOrderId ? 'Сохранение...' : 'Добавить'}</button>
+                <button type="button" onClick={() => setAddOrderModal(false)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">{t('common.cancel')}</button>
+                <button type="submit" disabled={!!savingOrderId} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">{savingOrderId ? t('common.saving') : t('clones.addBtn')}</button>
               </div>
             </form>
           </div>
@@ -1134,43 +1137,43 @@ const Clones = () => {
       {orderEditModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={() => setOrderEditModal(null)}>
           <div className="bg-dark-800 rounded-xl border border-dark-600 shadow-xl w-full max-w-lg p-6" onClick={(e) => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-white mb-4">Редактировать бэтч на заказ</h3>
+            <h3 className="text-lg font-semibold text-white mb-4">{t('clones.editOrderBatch')}</h3>
             {orderEditForm.isDone && !(orderModalStrains || []).some((s) => Number(s.quantity) > 0) && (
               <p className="text-amber-400 text-sm mb-3 bg-amber-900/20 border border-amber-700/50 rounded-lg px-3 py-2">
-                Укажите, сколько какого сорта нарезано (хотя бы один сорт и количество), затем нажмите «Сохранить».
+                {t('clones.specifyStrainAndQtyThenSave')}
               </p>
             )}
             <div className="space-y-4">
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Дата нарезки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('clones.cutDate')}</label>
                 <input type="date" value={orderEditForm.cutDate} onChange={(e) => setOrderEditForm((f) => ({ ...f, cutDate: e.target.value }))} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-2">Сорта и количество</label>
+                <label className="block text-xs text-dark-400 mb-2">{t('clones.strainsAndQtyLabel')}</label>
                 <div className="space-y-2">
                   {(orderModalStrains || []).map((s, idx) => (
                     <div key={s._key != null ? s._key : idx} className="flex items-center gap-2">
                       <StrainSelect value={s.strain} onChange={(val) => updateOrderEditStrainRow(idx, 'strain', val)} className="flex-1 min-w-0 px-3 py-2 rounded-lg text-sm" />
-                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateOrderEditStrainRow(idx, 'quantity', e.target.value)} placeholder="Кол-во" className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
+                      <input type="number" min="0" value={s.quantity} onChange={(e) => updateOrderEditStrainRow(idx, 'quantity', e.target.value)} placeholder={t('clones.qty')} className="w-20 px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm" />
                       {(orderModalStrains || []).length > 1 && (
                         <button type="button" onClick={() => removeOrderEditStrainRow(idx)} className="p-2 text-red-400 hover:text-red-300">×</button>
                       )}
                     </div>
                   ))}
-                  <button type="button" onClick={addOrderEditStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">+ Добавить сорт</button>
+                  <button type="button" onClick={addOrderEditStrainRow} className="text-primary-400 hover:text-primary-300 text-sm">{t('clones.addStrainPlus')}</button>
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-dark-400 mb-1">Заметки</label>
+                <label className="block text-xs text-dark-400 mb-1">{t('common.notes')}</label>
                 <textarea value={orderEditForm.notes} onChange={(e) => setOrderEditForm((f) => ({ ...f, notes: e.target.value }))} rows={2} className="w-full px-3 py-2 bg-dark-700 border border-dark-600 rounded-lg text-white text-sm resize-none" />
               </div>
               <label className="flex items-center gap-2 text-dark-300 cursor-pointer">
                 <input type="checkbox" checked={orderEditForm.isDone} onChange={(e) => setOrderEditForm((f) => ({ ...f, isDone: e.target.checked }))} className="rounded" />
-                <span>Нарезано</span>
+                <span>{t('clones.cut')}</span>
               </label>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setOrderEditModal(null)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">Отмена</button>
-                <button type="button" onClick={handleSaveOrderEdit} disabled={!!savingOrderId} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">Сохранить</button>
+                <button type="button" onClick={() => setOrderEditModal(null)} className="px-4 py-2 text-dark-400 hover:bg-dark-700 rounded-lg">{t('common.cancel')}</button>
+                <button type="button" onClick={handleSaveOrderEdit} disabled={!!savingOrderId} className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-500 disabled:opacity-50">{t('common.save')}</button>
               </div>
             </div>
           </div>
@@ -1179,22 +1182,22 @@ const Clones = () => {
 
       {logBatches.length > 0 && (
         <div className="mt-8 bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
-          <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">Лог бэтчей: нарезка → вегетация</h2>
-          <p className="text-dark-400 text-sm px-4 py-2">Когда какой бэтч был нарезан и пересажен в вег. Название можно редактировать.</p>
+          <h2 className="text-lg font-semibold text-white px-4 py-3 border-b border-dark-700">{t('clones.batchLogTitle')}</h2>
+          <p className="text-dark-400 text-sm px-4 py-2">{t('clones.batchLogDesc')}</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-dark-900">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Название бэтча</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Источник</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Нарезка</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Пересажен в вег</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">Кол-во</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.batchNameCol')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.sourceCol')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.cuttingCol')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.transplantedToVegCol')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.quantity')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-dark-700">
                 {logBatches.map((b) => {
-                  const sourceRoom = b.sourceCloneCut?.room?.name || b.sourceCloneCut?.room?.roomNumber || '—';
+                  const sourceRoom = localizeRoomName(b.sourceCloneCut?.room?.name, t) || b.sourceCloneCut?.room?.roomNumber || '—';
                   const isEditing = editingBatchNameId === b._id;
                   return (
                     <tr key={b._id} className="hover:bg-dark-700/50">
@@ -1215,10 +1218,10 @@ const Clones = () => {
                             onClick={() => { setEditingBatchNameId(b._id); setEditingBatchName(b.name || ''); }}
                             className="text-left text-white hover:bg-dark-700 rounded px-1 py-0.5 -mx-1"
                           >
-                            {b.name || '— Без названия'}
+                            {b.name || t('clones.noName')}
                           </button>
                         ) : (
-                          <span className="text-white">{b.name || '— Без названия'}</span>
+                          <span className="text-white">{b.name || t('clones.noName')}</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-dark-300">{sourceRoom}</td>
@@ -1236,18 +1239,18 @@ const Clones = () => {
 
       {archivedCuts.length > 0 && (
         <div className="mt-8 bg-dark-800 rounded-xl border border-dark-700 overflow-hidden opacity-70">
-          <h2 className="text-lg font-semibold text-dark-300 px-4 py-3 border-b border-dark-700">Архив нарезок</h2>
-          <p className="text-dark-500 text-sm px-4 py-2">Бэтчи клонов, полностью отправленные в вегетацию или удалённые. Можно восстановить.</p>
+          <h2 className="text-lg font-semibold text-dark-300 px-4 py-3 border-b border-dark-700">{t('clones.archiveTitle')}</h2>
+          <p className="text-dark-500 text-sm px-4 py-2">{t('clones.archiveDesc')}</p>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-dark-900">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">Комната</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">Дата нарезки</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">Сорт / кол-во</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">Удалено</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">{t('clones.room')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">{t('clones.cutDate')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">{t('clones.strainQty')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-dark-500 uppercase tracking-wider">{t('clones.deletedCol')}</th>
                   {canCreateClones && (
-                    <th className="px-4 py-3 text-right text-xs font-semibold text-dark-500 uppercase tracking-wider">Действия</th>
+                    <th className="px-4 py-3 text-right text-xs font-semibold text-dark-500 uppercase tracking-wider">{t('clones.actionsCol')}</th>
                   )}
                 </tr>
               </thead>
@@ -1260,7 +1263,7 @@ const Clones = () => {
                     .filter((b) => String(b.sourceCloneCut?._id || b.sourceCloneCut || '') === String(cut._id))
                     .reduce((s, b) => s + (b.initialQuantity || b.quantity || 0), 0);
                   const totalQty = currentQty + sentToVeg;
-                  const roomName = cut.room?.name || cut.room?.roomNumber || (cut.room ? '—' : 'На заказ');
+                  const roomName = localizeRoomName(cut.room?.name, t) || cut.room?.roomNumber || (cut.room ? '—' : t('clones.onOrder'));
                   return (
                     <tr key={cut._id} className="hover:bg-dark-700/30">
                       <td className="px-4 py-3 text-dark-400">{roomName}</td>
@@ -1268,7 +1271,7 @@ const Clones = () => {
                       <td className="px-4 py-3 text-dark-400">
                         {totalQty > 0 ? totalQty : currentQty > 0 ? currentQty : '—'}
                         {sentToVeg > 0 && currentQty > 0 && (
-                          <span className="text-dark-500 text-xs ml-1">(ост. {currentQty})</span>
+                          <span className="text-dark-500 text-xs ml-1">({t('clones.remaining')} {currentQty})</span>
                         )}
                       </td>
                       <td className="px-4 py-3 text-dark-500 text-xs">{formatDate(cut.deletedAt)}</td>
@@ -1280,7 +1283,7 @@ const Clones = () => {
                             disabled={restoringId === cut._id}
                             className="px-2 py-1 bg-primary-600/30 text-primary-400 hover:bg-primary-600/50 rounded text-xs font-medium disabled:opacity-50"
                           >
-                            {restoringId === cut._id ? 'Восстановление...' : 'Восстановить'}
+                            {restoringId === cut._id ? t('clones.restoring') : t('clones.restore')}
                           </button>
                         </td>
                       )}

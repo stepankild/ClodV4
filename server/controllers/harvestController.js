@@ -9,6 +9,7 @@ import CloneCut from '../models/CloneCut.js';
 import User from '../models/User.js';
 import { createAuditLog } from '../utils/auditLog.js';
 import { getScaleState } from '../socket/index.js';
+import { t } from '../utils/i18n.js';
 
 const VALID_CREW_ROLES = ['cutting', 'room', 'carrying', 'weighing', 'hooks', 'hanging', 'observer'];
 
@@ -26,7 +27,7 @@ export const getScaleReading = async (req, res) => {
     });
   } catch (error) {
     console.error('Scale reading error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -36,10 +37,10 @@ export const getSessionByRoom = async (req, res) => {
   try {
     const { roomId } = req.query;
     if (!roomId) {
-      return res.status(400).json({ message: 'Укажите roomId' });
+      return res.status(400).json({ message: t('harvest.specifyRoomId', req.lang) });
     }
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
-      return res.status(400).json({ message: 'Некорректный ID комнаты' });
+      return res.status(400).json({ message: t('harvest.invalidRoomId', req.lang) });
     }
     const session = await HarvestSession.findOne({
       room: roomId,
@@ -55,7 +56,7 @@ export const getSessionByRoom = async (req, res) => {
     res.json(session);
   } catch (error) {
     console.error('Get harvest session error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -65,18 +66,18 @@ export const createSession = async (req, res) => {
   try {
     const { roomId } = req.body;
     if (!roomId) {
-      return res.status(400).json({ message: 'Укажите roomId' });
+      return res.status(400).json({ message: t('harvest.specifyRoomId', req.lang) });
     }
     if (!mongoose.Types.ObjectId.isValid(roomId)) {
-      return res.status(400).json({ message: 'Некорректный ID комнаты' });
+      return res.status(400).json({ message: t('harvest.invalidRoomId', req.lang) });
     }
 
     const room = await FlowerRoom.findById(roomId);
     if (!room) {
-      return res.status(404).json({ message: 'Комната не найдена' });
+      return res.status(404).json({ message: t('harvest.roomNotFound', req.lang) });
     }
     if (!room.isActive) {
-      return res.status(400).json({ message: 'Комната не активна. Запустите цикл или выберите другую комнату.' });
+      return res.status(400).json({ message: t('harvest.roomNotActive', req.lang) });
     }
 
     const existing = await HarvestSession.findOne({
@@ -102,10 +103,7 @@ export const createSession = async (req, res) => {
     res.status(201).json(session);
   } catch (error) {
     console.error('Create harvest session error:', error);
-    res.status(500).json({
-      message: error.message || 'Ошибка сервера',
-      ...(error.name === 'ValidationError' && { details: error.errors })
-    });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -117,29 +115,29 @@ export const addPlant = async (req, res) => {
     const { plantNumber, wetWeight, overrideWorkerId } = req.body;
 
     if (plantNumber == null || wetWeight == null) {
-      return res.status(400).json({ message: 'Укажите номер куста и вес (plantNumber, wetWeight)' });
+      return res.status(400).json({ message: t('harvest.specifyPlantAndWeight', req.lang) });
     }
 
     const session = await HarvestSession.findById(sessionId);
     if (!session) {
-      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+      return res.status(404).json({ message: t('harvest.sessionNotFound', req.lang) });
     }
     if (session.status !== 'in_progress') {
-      return res.status(400).json({ message: 'Сессия уже завершена' });
+      return res.status(400).json({ message: t('harvest.sessionCompleted', req.lang) });
     }
 
     const num = Number(plantNumber);
     const weight = Number(wetWeight);
     if (isNaN(num) || num < 1) {
-      return res.status(400).json({ message: 'Номер куста должен быть числом от 1' });
+      return res.status(400).json({ message: t('harvest.invalidPlantNumber', req.lang) });
     }
     if (isNaN(weight) || weight < 0) {
-      return res.status(400).json({ message: 'Вес должен быть неотрицательным числом' });
+      return res.status(400).json({ message: t('harvest.invalidWeight', req.lang) });
     }
 
     const duplicate = session.plants.some(p => p.plantNumber === num);
     if (duplicate) {
-      return res.status(400).json({ message: `Куст №${num} уже записан` });
+      return res.status(400).json({ message: t('harvest.plantDuplicate', req.lang, { num }) });
     }
 
     // Авто-определение сорта по номеру куста из диапазонов flowerStrains
@@ -180,7 +178,7 @@ export const addPlant = async (req, res) => {
     res.status(201).json({ session, added });
   } catch (error) {
     console.error('Add plant error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -191,23 +189,23 @@ export const removePlant = async (req, res) => {
     const { sessionId, plantNumber } = req.params;
     const session = await HarvestSession.findById(sessionId);
     if (!session) {
-      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+      return res.status(404).json({ message: t('harvest.sessionNotFound', req.lang) });
     }
     if (session.status !== 'in_progress') {
-      return res.status(400).json({ message: 'Сессия уже завершена' });
+      return res.status(400).json({ message: t('harvest.sessionCompleted', req.lang) });
     }
 
     const num = Number(plantNumber);
     const idx = session.plants.findIndex(p => p.plantNumber === num);
     if (idx === -1) {
-      return res.status(404).json({ message: `Куст №${num} не найден в сессии` });
+      return res.status(404).json({ message: t('harvest.plantNotFound', req.lang, { num }) });
     }
 
     // Проверка: можно удалить только в течение 30 сек после записи (защита от злоупотреблений)
     const plant = session.plants[idx];
     const secondsSinceRecord = (Date.now() - new Date(plant.recordedAt).getTime()) / 1000;
     if (secondsSinceRecord > 30) {
-      return res.status(400).json({ message: 'Время для отмены истекло (макс. 30 сек)' });
+      return res.status(400).json({ message: t('harvest.undoExpired', req.lang) });
     }
 
     session.plants.splice(idx, 1);
@@ -219,7 +217,7 @@ export const removePlant = async (req, res) => {
     res.json(session);
   } catch (error) {
     console.error('Remove plant error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -232,12 +230,12 @@ export const setPlantErrorNote = async (req, res) => {
 
     const session = await HarvestSession.findById(sessionId);
     if (!session) {
-      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+      return res.status(404).json({ message: t('harvest.sessionNotFound', req.lang) });
     }
     const num = Number(plantNumber);
     const plant = session.plants.find(p => p.plantNumber === num);
     if (!plant) {
-      return res.status(404).json({ message: 'Запись куста не найдена' });
+      return res.status(404).json({ message: t('harvest.plantRecordNotFound', req.lang) });
     }
     plant.errorNote = typeof errorNote === 'string' ? errorNote.trim() : '';
     await session.save();
@@ -245,7 +243,7 @@ export const setPlantErrorNote = async (req, res) => {
     res.json(session);
   } catch (error) {
     console.error('Set plant error note:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -261,10 +259,10 @@ export const completeSession = async (req, res) => {
 
     const session = await HarvestSession.findById(sessionId);
     if (!session) {
-      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+      return res.status(404).json({ message: t('harvest.sessionNotFound', req.lang) });
     }
     if (session.status !== 'in_progress') {
-      return res.status(400).json({ message: 'Сессия уже завершена' });
+      return res.status(400).json({ message: t('harvest.sessionCompleted', req.lang) });
     }
 
     const completedAt = new Date();
@@ -381,29 +379,6 @@ export const completeSession = async (req, res) => {
 
     const room = await FlowerRoom.findById(session.room);
 
-    // Тестовая комната — сбросить без архивации
-    if (room && room.isActive && room.isTestRoom) {
-      // Soft-delete задач текущего цикла
-      const deleteTaskQuery = { room: room._id, deletedAt: null };
-      if (room.currentCycleId) deleteTaskQuery.cycleId = room.currentCycleId;
-      await RoomTask.updateMany(deleteTaskQuery, { $set: { deletedAt: new Date() } });
-
-      // Сброс комнаты БЕЗ архива, БЕЗ RoomLog, БЕЗ totalCycles++
-      room.cycleName = '';
-      room.strain = '';
-      room.plantsCount = 0;
-      room.startDate = null;
-      room.expectedHarvestDate = null;
-      room.notes = '';
-      room.isActive = false;
-      room.currentCycleId = null;
-      if (room.roomLayout) room.roomLayout.plantPositions = [];
-      if (room.flowerStrains) room.flowerStrains = [];
-      await room.save();
-
-      return res.json({ session, crewData, roomSquareMeters: room.squareMeters || null });
-    }
-
     if (room && room.isActive) {
       // Защита от дублей: если архив с этой комнатой и startDate уже создан — пропускаем
       const existingArchive = await CycleArchive.findOne({
@@ -427,6 +402,24 @@ export const completeSession = async (req, res) => {
       }
 
       const totalWet = (session.plants || []).reduce((sum, p) => sum + (p.wetWeight || 0), 0);
+
+      // Не создавать архив если ни одного куста не записано (пустой сбор)
+      if (!session.plants || session.plants.length === 0 || totalWet === 0) {
+        // Сброс комнаты без архива
+        room.cycleName = '';
+        room.strain = '';
+        room.plantsCount = 0;
+        room.startDate = null;
+        room.expectedHarvestDate = null;
+        room.notes = '';
+        room.isActive = false;
+        room.currentCycleId = null;
+        if (room.roomLayout) room.roomLayout.plantPositions = [];
+        if (room.flowerStrains) room.flowerStrains = [];
+        await room.save();
+        return res.json({ session, crewData, roomSquareMeters: room.squareMeters || null });
+      }
+
       // Берём только задачи текущего цикла (по cycleId), не прошлых
       const taskQuery = { room: room._id, completed: true };
       if (room.currentCycleId) {
@@ -557,7 +550,7 @@ export const completeSession = async (req, res) => {
           dryWeight: 0,
           trimWeight: 0,
           quality: 'medium',
-          notes: `Автоархив после сбора. Записей кустов: ${(session.plants || []).length}. Сухой вес можно добавить в архиве.`
+          notes: t('harvest.archiveNote', req.lang, { count: (session.plants || []).length })
         },
         metrics: {
           gramsPerPlant: 0,
@@ -634,7 +627,7 @@ export const completeSession = async (req, res) => {
     res.json({ session, crewData, roomSquareMeters: room?.squareMeters || null });
   } catch (error) {
     console.error('Complete session error:', error);
-    res.status(500).json({ message: error.message || 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -648,7 +641,7 @@ export const getWorkers = async (req, res) => {
     res.json(workers);
   } catch (error) {
     console.error('Get workers error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -660,15 +653,15 @@ export const joinSession = async (req, res) => {
     const { role } = req.body;
 
     if (!role || !VALID_CREW_ROLES.includes(role)) {
-      return res.status(400).json({ message: `Некорректная роль. Допустимые: ${VALID_CREW_ROLES.join(', ')}` });
+      return res.status(400).json({ message: t('harvest.invalidRole', req.lang, { roles: VALID_CREW_ROLES.join(', ') }) });
     }
 
     const session = await HarvestSession.findById(sessionId);
     if (!session) {
-      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+      return res.status(404).json({ message: t('harvest.sessionNotFound', req.lang) });
     }
     if (session.status !== 'in_progress') {
-      return res.status(400).json({ message: 'Сессия уже завершена' });
+      return res.status(400).json({ message: t('harvest.sessionCompleted', req.lang) });
     }
 
     const userId = req.user._id.toString();
@@ -684,7 +677,7 @@ export const joinSession = async (req, res) => {
         const weigherEntry = session.crew.find(c => c.role === 'weighing' && !c.leftAt && c.user._id.toString() !== userId);
         const weigherName = weigherEntry?.user?.name || 'Кто-то';
         return res.status(409).json({
-          message: `Роль «Взвешивание» уже занята: ${weigherName}`,
+          message: t('harvest.weighingTaken', req.lang, { name: weigherName }),
           currentWeigher: { userId: currentWeigher.user.toString(), name: weigherName }
         });
       }
@@ -719,7 +712,7 @@ export const joinSession = async (req, res) => {
     res.json({ crew: activeCrew });
   } catch (error) {
     console.error('Join session error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -731,15 +724,15 @@ export const forceJoinSession = async (req, res) => {
     const { role } = req.body;
 
     if (!role || !VALID_CREW_ROLES.includes(role)) {
-      return res.status(400).json({ message: `Некорректная роль` });
+      return res.status(400).json({ message: t('harvest.forceInvalidRole', req.lang) });
     }
 
     const session = await HarvestSession.findById(sessionId);
     if (!session) {
-      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+      return res.status(404).json({ message: t('harvest.sessionNotFound', req.lang) });
     }
     if (session.status !== 'in_progress') {
-      return res.status(400).json({ message: 'Сессия уже завершена' });
+      return res.status(400).json({ message: t('harvest.sessionCompleted', req.lang) });
     }
 
     const userId = req.user._id.toString();
@@ -780,7 +773,7 @@ export const forceJoinSession = async (req, res) => {
     res.json({ crew: activeCrew });
   } catch (error) {
     console.error('Force join session error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -792,7 +785,7 @@ export const leaveSession = async (req, res) => {
 
     const session = await HarvestSession.findById(sessionId);
     if (!session) {
-      return res.status(404).json({ message: 'Сессия сбора не найдена' });
+      return res.status(404).json({ message: t('harvest.sessionNotFound', req.lang) });
     }
 
     const userId = req.user._id.toString();
@@ -817,7 +810,7 @@ export const leaveSession = async (req, res) => {
     res.json({ crew: activeCrew });
   } catch (error) {
     console.error('Leave session error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
 
@@ -827,8 +820,13 @@ export const getSessions = async (req, res) => {
   try {
     const { roomId, status, limit = 20 } = req.query;
     const query = {};
-    if (roomId) query.room = roomId;
-    if (status) query.status = status;
+    if (roomId && typeof roomId === 'string' && mongoose.Types.ObjectId.isValid(roomId)) {
+      query.room = roomId;
+    }
+    if (status && typeof status === 'string') query.status = status;
+
+    // Only show sessions that have at least one plant recorded
+    query['plants.0'] = { $exists: true };
 
     const sessions = await HarvestSession.find(query)
       .sort({ startedAt: -1 })
@@ -837,6 +835,6 @@ export const getSessions = async (req, res) => {
     res.json(sessions);
   } catch (error) {
     console.error('Get sessions error:', error);
-    res.status(500).json({ message: 'Ошибка сервера' });
+    res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };
