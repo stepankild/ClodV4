@@ -20,7 +20,7 @@ router.use(protect);
 // Просмотр — доступно всем авторизованным
 router.get('/types', getTaskTypes);
 router.get('/room/:roomId', getRoomTasks);
-router.get('/deleted', getDeletedTasks);
+router.get('/deleted', checkPermission('tasks:delete'), getDeletedTasks);
 
 // Действия
 router.post('/', checkPermission('tasks:create'), createTask);

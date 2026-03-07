@@ -3,6 +3,7 @@ import FlowerRoom from '../models/FlowerRoom.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
+import { applyDefaultProtocol } from './treatmentController.js';
 
 const ACTIVE_ROOM_MESSAGE = 'В эту комнату нельзя добавить клоны: в ней уже идёт цикл цветения. Сначала завершите текущий цикл (соберите урожай), затем можно будет добавить новые клоны.';
 
@@ -173,6 +174,9 @@ export const createVegBatch = async (req, res) => {
       }
     }
 
+    // Auto-apply default veg treatment protocol
+    await applyDefaultProtocol('veg', 'VegBatch', doc._id, null);
+
     await doc.populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } });
     await createAuditLog(req, { action: 'veg_batch.create', entityType: 'VegBatch', entityId: doc._id, details: { name: doc.name, quantity: doc.quantity } });
     res.status(201).json(doc);
@@ -296,7 +300,7 @@ export const getDeletedVegBatches = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get deleted veg batches error:', error);
-    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
@@ -313,6 +317,6 @@ export const restoreVegBatch = async (req, res) => {
     res.json(doc);
   } catch (error) {
     console.error('Restore veg batch error:', error);
-    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: error.message || 'Ошибка сервера' });
   }
 };

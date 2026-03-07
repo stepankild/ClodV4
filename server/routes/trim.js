@@ -19,7 +19,7 @@ router.use(protect);
 
 router.get('/active', checkPermission('trim:view'), getActiveTrimArchives);
 router.get('/stats/daily', checkPermission('trim:view'), getTrimDailyStats);
-router.get('/deleted', checkPermission('trim:view'), getDeletedTrimLogs);
+router.get('/deleted', checkPermission('trim:edit'), getDeletedTrimLogs);
 router.post('/deleted/:id/restore', checkPermission('trim:edit'), restoreTrimLog);
 router.post('/log', checkPermission('trim:create'), addTrimLog);
 router.get('/logs/:archiveId', checkPermission('trim:view'), getTrimLogs);

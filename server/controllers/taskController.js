@@ -292,14 +292,14 @@ export const getDeletedTasks = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get deleted tasks error:', error);
-    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
 export const restoreTask = async (req, res) => {
   try {
     const task = await RoomTask.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!task) return res.status(404).json({ message: 'Р—Р°РґР°С‡Р° РЅРµ РЅР°Р№РґРµРЅР° РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅР°' });
+    if (!task) return res.status(404).json({ message: 'Задача не найдена или уже восстановлена' });
     task.deletedAt = null;
     await task.save();
     await task.populate('room', 'name roomNumber');
@@ -307,6 +307,6 @@ export const restoreTask = async (req, res) => {
     res.json(task);
   } catch (error) {
     console.error('Restore task error:', error);
-    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

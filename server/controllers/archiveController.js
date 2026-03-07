@@ -886,21 +886,21 @@ export const getDeletedArchives = async (req, res) => {
     res.json(list);
   } catch (error) {
     console.error('Get deleted archives error:', error);
-    res.status(500).json({ message: 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: 'Ошибка сервера' });
   }
 };
 
 export const restoreArchive = async (req, res) => {
   try {
     const doc = await CycleArchive.findOne({ _id: req.params.id, ...deletedOnly });
-    if (!doc) return res.status(404).json({ message: 'РђСЂС…РёРІ РЅРµ РЅР°Р№РґРµРЅ РёР»Рё СѓР¶Рµ РІРѕСЃСЃС‚Р°РЅРѕРІР»РµРЅ' });
+    if (!doc) return res.status(404).json({ message: 'Архив не найден или уже восстановлен' });
     doc.deletedAt = null;
     await doc.save();
     await createAuditLog(req, { action: 'archive.restore', entityType: 'CycleArchive', entityId: doc._id, details: { cycleName: doc.cycleName } });
     res.json(doc);
   } catch (error) {
     console.error('Restore archive error:', error);
-    res.status(500).json({ message: error.message || 'РћС€РёР±РєР° СЃРµСЂРІРµСЂР°' });
+    res.status(500).json({ message: error.message || 'Ошибка сервера' });
   }
 };
 

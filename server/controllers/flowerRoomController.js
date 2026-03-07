@@ -6,6 +6,8 @@ import PlannedCycle from '../models/PlannedCycle.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted } from '../utils/softDelete.js';
+import { applyDefaultProtocol } from './treatmentController.js';
+import RoomTreatmentSchedule from '../models/RoomTreatmentSchedule.js';
 
 // @desc    Get all flower rooms
 // @route   GET /api/rooms
@@ -304,6 +306,9 @@ export const startCycle = async (req, res) => {
       dayOfCycle: 1
     });
 
+    // Auto-apply default flower treatment protocol
+    await applyDefaultProtocol('flower', 'FlowerRoom', room._id, cycleId);
+
     await createAuditLog(req, { action: 'room.cycle_start', entityType: 'FlowerRoom', entityId: room._id, details: { roomName: room.name, strain, plantsCount, floweringDays } });
     res.json(room);
   } catch (error) {
@@ -358,6 +363,12 @@ export const harvestRoom = async (req, res) => {
     if (!room) {
       return res.status(404).json({ message: 'Комната не найдена' });
     }
+
+    // Deactivate treatment schedules
+    await RoomTreatmentSchedule.updateMany(
+      { targetType: 'FlowerRoom', targetId: room._id, isActive: true },
+      { $set: { isActive: false } }
+    );
 
     // Мягкое удаление задач комнаты
     await RoomTask.updateMany(

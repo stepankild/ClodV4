@@ -1,6 +1,6 @@
 import RoomTemplate from '../models/RoomTemplate.js';
 import { createAuditLog } from '../utils/auditLog.js';
-import { notDeleted } from '../utils/softDelete.js';
+import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 
 export const getTemplates = async (req, res) => {
   try {
@@ -69,6 +69,39 @@ export const deleteTemplate = async (req, res) => {
     res.json({ message: 'Шаблон удалён' });
   } catch (error) {
     console.error('Delete template error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const getDeletedTemplates = async (req, res) => {
+  try {
+    const templates = await RoomTemplate.find({ ...deletedOnly }).sort({ deletedAt: -1 });
+    res.json(templates);
+  } catch (error) {
+    console.error('Get deleted templates error:', error);
+    res.status(500).json({ message: 'Ошибка сервера' });
+  }
+};
+
+export const restoreTemplate = async (req, res) => {
+  try {
+    const template = await RoomTemplate.findOne({ _id: req.params.id, ...deletedOnly });
+    if (!template) {
+      return res.status(404).json({ message: 'Шаблон не найден или уже восстановлен' });
+    }
+    template.deletedAt = null;
+    await template.save();
+
+    await createAuditLog(req, {
+      action: 'roomTemplate.restore',
+      entityType: 'RoomTemplate',
+      entityId: template._id,
+      details: { name: template.name }
+    });
+
+    res.json(template);
+  } catch (error) {
+    console.error('Restore template error:', error);
     res.status(500).json({ message: 'Ошибка сервера' });
   }
 };

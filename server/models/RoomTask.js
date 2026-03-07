@@ -13,6 +13,7 @@ export const TASK_TYPES = {
   TRANSPLANT: 'transplant', // Пересадка
   PEST_CHECK: 'pest_check', // Проверка на вредителей
   PH_CHECK: 'ph_check',     // Проверка pH
+  TREATMENT: 'treatment',   // Обработка по протоколу
   CUSTOM: 'custom'          // Пользовательская задача
 };
 
@@ -28,6 +29,7 @@ export const TASK_LABELS = {
   transplant: 'Пересадка',
   pest_check: 'Проверка на вредителей',
   ph_check: 'Проверка pH',
+  treatment: 'Обработка',
   custom: 'Другое'
 };
 

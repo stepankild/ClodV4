@@ -57,6 +57,11 @@ const permissions = [
   { name: 'cycles:edit_name', description: 'Редактировать названия циклов', module: 'cycles' },
   { name: 'cycles:plan', description: 'Создавать и редактировать планы циклов', module: 'cycles' },
 
+  // ── Treatments (обработки) ──
+  { name: 'treatments:view', description: 'Видеть раздел «Обработка»', module: 'treatments' },
+  { name: 'treatments:manage', description: 'Создавать/редактировать протоколы и препараты', module: 'treatments' },
+  { name: 'treatments:apply', description: 'Назначать протоколы комнатам', module: 'treatments' },
+
   // ── Templates (шаблоны) ──
   { name: 'templates:manage', description: 'Создавать и удалять шаблоны комнат', module: 'templates' },
 
@@ -97,7 +102,8 @@ const seedDatabase = async () => {
     // View permissions (все разделы)
     const viewPerms = resolve(
       'overview:view', 'active:view', 'harvest:view', 'clones:view',
-      'vegetation:view', 'archive:view', 'stats:view', 'trim:view'
+      'vegetation:view', 'archive:view', 'stats:view', 'trim:view',
+      'treatments:view'
     );
 
     // Create roles
@@ -130,6 +136,8 @@ const seedDatabase = async () => {
             'archive:edit', 'archive:delete',
             // Cycles
             'cycles:edit_name', 'cycles:plan',
+            // Treatments
+            'treatments:manage', 'treatments:apply',
             // Templates
             'templates:manage',
             // Users
@@ -157,6 +165,8 @@ const seedDatabase = async () => {
             'harvest:record', 'harvest:complete', 'harvest:edit_weights',
             // Trim
             'trim:create', 'trim:edit', 'trim:complete',
+            // Treatments
+            'treatments:apply',
             // Cycles
             'cycles:edit_name', 'cycles:plan'
           )

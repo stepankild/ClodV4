@@ -58,6 +58,9 @@ const Trash = () => {
   const canRestoreArchive = hasPermission && hasPermission('archive:delete');
   const canRestoreTrim = hasPermission && hasPermission('trim:edit');
   const canRestoreUsers = hasPermission && hasPermission('users:update');
+  const canRestoreTemplates = hasPermission && hasPermission('templates:manage');
+  const canRestorePlans = hasPermission && hasPermission('cycles:plan');
+  const canRestoreTasks = hasPermission && hasPermission('tasks:delete');
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -69,7 +72,9 @@ const Trash = () => {
     trimLogs: [],
     plans: [],
     users: [],
-    roles: []
+    roles: [],
+    strains: [],
+    templates: []
   });
   const [restoringId, setRestoringId] = useState(null);
 
@@ -77,15 +82,17 @@ const Trash = () => {
     setLoading(true);
     setError('');
     try {
-      const [cloneCuts, vegBatches, archives, tasks, trimLogs, plans, users, roles] = await Promise.all([
+      const [cloneCuts, vegBatches, archives, tasks, trimLogs, plans, users, roles, strains, templates] = await Promise.all([
         canRestoreClones ? cloneCutService.getDeleted().catch(() => []) : [],
         canRestoreVeg ? vegBatchService.getDeleted().catch(() => []) : [],
         canRestoreArchive ? archiveService.getDeleted().catch(() => []) : [],
-        api.get('/tasks/deleted').then((r) => r.data).catch(() => []),
+        canRestoreTasks ? api.get('/tasks/deleted').then((r) => r.data).catch(() => []) : [],
         canRestoreTrim ? api.get('/trim/deleted').then((r) => r.data).catch(() => []) : [],
-        api.get('/rooms/plans/deleted').then((r) => r.data).catch(() => []),
+        canRestorePlans ? api.get('/rooms/plans/deleted').then((r) => r.data).catch(() => []) : [],
         canRestoreUsers ? api.get('/users/deleted').then((r) => r.data).catch(() => []) : [],
-        canRestoreUsers ? api.get('/users/roles/deleted').then((r) => r.data).catch(() => []) : []
+        canRestoreUsers ? api.get('/users/roles/deleted').then((r) => r.data).catch(() => []) : [],
+        api.get('/strains/deleted').then((r) => r.data).catch(() => []),
+        canRestoreTemplates ? api.get('/rooms/templates/deleted').then((r) => r.data).catch(() => []) : []
       ]);
       setDeleted({
         cloneCuts: Array.isArray(cloneCuts) ? cloneCuts : [],
@@ -95,7 +102,9 @@ const Trash = () => {
         trimLogs: Array.isArray(trimLogs) ? trimLogs : [],
         plans: Array.isArray(plans) ? plans : [],
         users: Array.isArray(users) ? users : [],
-        roles: Array.isArray(roles) ? roles : []
+        roles: Array.isArray(roles) ? roles : [],
+        strains: Array.isArray(strains) ? strains : [],
+        templates: Array.isArray(templates) ? templates : []
       });
     } catch (err) {
       setError(err.response?.data?.message || err.message || 'Ошибка загрузки');
@@ -119,6 +128,8 @@ const Trash = () => {
       else if (type === 'plans') await api.post(`/rooms/plans/deleted/${id}/restore`);
       else if (type === 'users') await api.post(`/users/deleted/${id}/restore`);
       else if (type === 'roles') await api.post(`/users/roles/deleted/${id}/restore`);
+      else if (type === 'strains') await api.post(`/strains/deleted/${id}/restore`);
+      else if (type === 'templates') await api.post(`/rooms/templates/deleted/${id}/restore`);
       await load();
     } catch (err) {
       setError(err.response?.data?.message || 'Ошибка восстановления');
@@ -212,6 +223,26 @@ const Trash = () => {
         onRestore={restore}
         restoringId={restoringId}
       />
+
+      <TrashSection
+        title="Сорта"
+        type="strains"
+        items={deleted.strains}
+        renderInfo={(s) => s.name || '—'}
+        onRestore={restore}
+        restoringId={restoringId}
+      />
+
+      {canRestoreTemplates && (
+        <TrashSection
+          title="Шаблоны комнат"
+          type="templates"
+          items={deleted.templates}
+          renderInfo={(t) => `${t.name || '—'} · ${t.customRows?.length || 0} рядов`}
+          onRestore={restore}
+          restoringId={restoringId}
+        />
+      )}
 
       {canRestoreUsers && (
         <>

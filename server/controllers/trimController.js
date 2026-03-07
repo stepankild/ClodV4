@@ -204,8 +204,8 @@ export const getTrimLogs = async (req, res) => {
 // @route   DELETE /api/trim/log/:id
 export const deleteTrimLog = async (req, res) => {
   try {
-    const log = await TrimLog.findById(req.params.id);
-    if (!log || log.deletedAt) {
+    const log = await TrimLog.findOne({ _id: req.params.id, ...notDeleted });
+    if (!log) {
       return res.status(404).json({ message: 'Запись не найдена' });
     }
 

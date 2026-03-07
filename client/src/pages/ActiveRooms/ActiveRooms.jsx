@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import RoomMap from '../../components/RoomMap/RoomMap';
 import StrainSelect from '../../components/StrainSelect';
+import UpcomingTreatments from '../../components/TreatmentSchedule/UpcomingTreatments';
 
 const formatDate = (date) => {
   if (!date) return '—';
@@ -1336,6 +1337,15 @@ export default function ActiveRooms() {
                           )}
                         </div>
                       </div>
+
+                      {/* Treatment protocol widget */}
+                      {selectedRoom.isActive && (
+                        <UpcomingTreatments
+                          targetType="FlowerRoom"
+                          targetId={selectedRoom._id}
+                          onComplete={() => loadRoomTasks(selectedRoom._id)}
+                        />
+                      )}
 
                       {/* Заметки */}
                       <div className="space-y-2 border-t border-dark-700 pt-4">

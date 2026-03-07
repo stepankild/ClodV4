@@ -24,6 +24,7 @@ import vegBatchRoutes from './routes/vegBatches.js';
 import auditLogRoutes from './routes/auditLogs.js';
 import trimRoutes from './routes/trim.js';
 import strainRoutes from './routes/strains.js';
+import treatmentRoutes from './routes/treatments.js';
 
 console.log('=== IMPORTS DONE ===');
 
@@ -42,6 +43,9 @@ import './models/VegBatch.js';
 import './models/TrimLog.js';
 import './models/RoomTemplate.js';
 import './models/Strain.js';
+import './models/TreatmentProduct.js';
+import './models/TreatmentProtocol.js';
+import './models/RoomTreatmentSchedule.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load .env from server folder (Railway uses Variables, so MONGODB_URI must be set there)
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -93,6 +97,7 @@ app.use('/api/veg-batches', vegBatchRoutes);
 app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/trim', trimRoutes);
 app.use('/api/strains', strainRoutes);
+app.use('/api/treatments', treatmentRoutes);
 
 // Health check (Railway and load balancers ping this or /)
 app.get('/api/health', (req, res) => {
