@@ -67,6 +67,7 @@ const Harvest = () => {
   const undoTimerRef = useRef(null);
   const undoCountdownRef = useRef(null);
   const autoRecordRef = useRef(false);
+  const recordingRef = useRef(false); // guard against race condition on fast scans
 
   // ── Crew state ──
   const [myRole, setMyRole] = useState(null);
@@ -303,6 +304,7 @@ const Harvest = () => {
     if (e && e.preventDefault) e.preventDefault();
     if (duplicateError) return;
     if (!isWeigher) return;
+    if (recordingRef.current) return; // prevent race condition on fast scans
     const num = (overridePlantNumber || plantNumber).toString().trim();
     const weight = manualWeight
       ? parseInt(manualWeight, 10)
@@ -317,6 +319,7 @@ const Harvest = () => {
     }
 
     try {
+      recordingRef.current = true;
       setRecordLoading(true);
       setError('');
       const res = await harvestService.addPlant(session._id, num, weight);
@@ -344,6 +347,7 @@ const Harvest = () => {
       setError(err.response?.data?.message || t('harvest.recordError'));
       console.error(err);
     } finally {
+      recordingRef.current = false;
       setRecordLoading(false);
     }
   };
@@ -1377,8 +1381,12 @@ const Harvest = () => {
                 const strainExpected = {};
                 if (selectedRoom?.flowerStrains?.length > 0) {
                   for (const pos of positions) {
-                    const strainIdx = pos.strainIndex ?? 0;
-                    const strainName = selectedRoom.flowerStrains[strainIdx]?.strain || '—';
+                    // Determine strain by plantNumber range, not strainIndex (which isn't stored)
+                    const match = selectedRoom.flowerStrains.find(
+                      fs => fs.startNumber != null && fs.endNumber != null &&
+                            pos.plantNumber >= fs.startNumber && pos.plantNumber <= fs.endNumber
+                    );
+                    const strainName = match?.strain || (selectedRoom.flowerStrains.length === 1 ? selectedRoom.flowerStrains[0].strain : '—') || '—';
                     if (!strainExpected[strainName]) strainExpected[strainName] = 0;
                     strainExpected[strainName]++;
                   }

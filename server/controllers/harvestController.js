@@ -135,11 +135,6 @@ export const addPlant = async (req, res) => {
       return res.status(400).json({ message: t('harvest.invalidWeight', req.lang) });
     }
 
-    const duplicate = session.plants.some(p => p.plantNumber === num);
-    if (duplicate) {
-      return res.status(400).json({ message: t('harvest.plantDuplicate', req.lang, { num }) });
-    }
-
     // Авто-определение сорта по номеру куста из диапазонов flowerStrains
     let strainForPlant = '';
     const room = await FlowerRoom.findById(session.room);
@@ -163,19 +158,38 @@ export const addPlant = async (req, res) => {
       recorderId = overrideWorkerId;
     }
 
-    session.plants.push({
-      plantNumber: num,
-      strain: strainForPlant,
-      wetWeight: weight,
-      recordedAt: new Date(),
-      recordedBy: recorderId
-    });
-    await session.save();
-    await session.populate('plants.recordedBy', 'name email');
+    // Atomic update: add plant ONLY if plantNumber doesn't already exist in session
+    // This prevents race condition when two scans arrive simultaneously
+    const updated = await HarvestSession.findOneAndUpdate(
+      {
+        _id: session._id,
+        status: 'in_progress',
+        'plants.plantNumber': { $ne: num }
+      },
+      {
+        $push: {
+          plants: {
+            plantNumber: num,
+            strain: strainForPlant,
+            wetWeight: weight,
+            recordedAt: new Date(),
+            recordedBy: recorderId
+          }
+        }
+      },
+      { new: true }
+    );
 
-    await createAuditLog(req, { action: 'harvest.plant_add', entityType: 'HarvestSession', entityId: session._id, details: { roomId: session.room?.toString(), plantNumber: num, wetWeight: weight } });
-    const added = session.plants[session.plants.length - 1];
-    res.status(201).json({ session, added });
+    if (!updated) {
+      // Either session changed status or plant already exists (race condition)
+      return res.status(400).json({ message: t('harvest.plantDuplicate', req.lang, { num }) });
+    }
+
+    await updated.populate('plants.recordedBy', 'name email');
+
+    await createAuditLog(req, { action: 'harvest.plant_add', entityType: 'HarvestSession', entityId: updated._id, details: { roomId: updated.room?.toString(), plantNumber: num, wetWeight: weight } });
+    const added = updated.plants[updated.plants.length - 1];
+    res.status(201).json({ session: updated, added });
   } catch (error) {
     console.error('Add plant error:', error);
     res.status(500).json({ message: t('common.serverError', req.lang) });
