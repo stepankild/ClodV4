@@ -281,24 +281,23 @@ const Harvest = () => {
     setPlantNumber(String(num));
     setError('');
 
+    let shouldAutoRecord = false;
     if (barcodeBuffered && barcodeWeight != null && barcodeWeight > 0) {
       setManualWeight(String(Math.round(barcodeWeight)));
-      autoRecordRef.current = true;
+      shouldAutoRecord = true;
     } else if (scaleConnected && scaleWeight != null && scaleWeight > 0) {
-      autoRecordRef.current = true;
+      shouldAutoRecord = true;
     }
 
     setScanFlash(true);
     setTimeout(() => setScanFlash(false), 1500);
-  }, [scanTime]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-record after scan
-  useEffect(() => {
-    if (autoRecordRef.current && plantNumber) {
-      autoRecordRef.current = false;
-      handleRecordPlant(null, plantNumber);
+    // Auto-record directly — don't rely on plantNumber state change
+    // (if scanned number equals current plantNumber, React won't re-render)
+    if (shouldAutoRecord) {
+      setTimeout(() => handleRecordPlant(null, String(num)), 0);
     }
-  }, [plantNumber]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [scanTime]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRecordPlant = async (e, overridePlantNumber) => {
     if (e && e.preventDefault) e.preventDefault();
