@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { roomService } from '../../services/roomService';
 import { cloneCutService } from '../../services/cloneCutService';
@@ -650,15 +651,26 @@ const Clones = () => {
             {t('clones.planSubtitle', { weeks: WEEKS_BEFORE })}
           </p>
         </div>
-        {canCreateClones && (
-          <button
-            type="button"
-            onClick={openCreateBatchModal}
-            className="px-5 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 font-medium shadow-lg"
+        <div className="flex items-center gap-2">
+          <Link
+            to="/strains"
+            className="px-4 py-2.5 bg-dark-700 border border-dark-600 text-dark-300 rounded-lg hover:bg-dark-600 hover:text-white font-medium transition flex items-center gap-2"
           >
-            {t('clones.createBatch')}
-          </button>
-        )}
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+            </svg>
+            {t('nav.strains')}
+          </Link>
+          {canCreateClones && (
+            <button
+              type="button"
+              onClick={openCreateBatchModal}
+              className="px-5 py-2.5 bg-primary-600 text-white rounded-lg hover:bg-primary-500 font-medium shadow-lg"
+            >
+              {t('clones.createBatch')}
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
