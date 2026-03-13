@@ -244,22 +244,24 @@ const Trash = () => {
       />
 
       <TrashSection
-        title="Сорта"
+        title={t('trash.strains')}
         type="strains"
         items={deleted.strains}
         renderInfo={(s) => s.name || '—'}
         onRestore={restore}
         restoringId={restoringId}
+        t={t}
       />
 
       {canRestoreTemplates && (
         <TrashSection
-          title="Шаблоны комнат"
+          title={t('trash.templates')}
           type="templates"
           items={deleted.templates}
-          renderInfo={(t) => `${t.name || '—'} · ${t.customRows?.length || 0} рядов`}
+          renderInfo={(tmpl) => `${tmpl.name || '—'} · ${tmpl.customRows?.length || 0} ${t('trash.rows')}`}
           onRestore={restore}
           restoringId={restoringId}
+          t={t}
         />
       )}
 

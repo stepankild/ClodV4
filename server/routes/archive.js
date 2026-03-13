@@ -25,11 +25,15 @@ router.get('/stats', checkPermission('stats:view'), getArchiveStats);
 router.get('/stats/strain/:strain', checkPermission('stats:view'), getStrainDetailStats);
 router.get('/stats/room/:roomId', checkPermission('stats:view'), getRoomDetailStats);
 router.get('/logs/:roomId', getRoomLogs);
+
+// Корзина (ПЕРЕД /:id, иначе Express считает "deleted" за id)
+router.get('/deleted', checkPermission('archive:delete'), getDeletedArchives);
+router.post('/deleted/:id/restore', checkPermission('archive:delete'), restoreArchive);
+
+// Конкретный архив по ID (ПОСЛЕ специфичных маршрутов)
 router.get('/:id', getArchive);
 
 // Действия
-router.get('/deleted', checkPermission('archive:delete'), getDeletedArchives);
-router.post('/deleted/:id/restore', checkPermission('archive:delete'), restoreArchive);
 router.post('/harvest/:roomId', checkPermission('harvest:complete'), harvestAndArchive);
 router.put('/:id', checkPermission('archive:edit'), updateArchive);
 router.delete('/:id', checkPermission('archive:delete'), deleteArchive);
