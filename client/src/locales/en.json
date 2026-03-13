@@ -106,6 +106,21 @@
     "passwordChanged": "Password changed successfully!",
     "passwordChangeError": "Password change error"
   },
+  "profile": {
+    "title": "Profile",
+    "personalInfo": "Personal info",
+    "changeAvatar": "Change avatar",
+    "removeAvatar": "Remove avatar",
+    "avatarUpdated": "Avatar updated",
+    "avatarRemoved": "Avatar removed",
+    "avatarError": "Avatar upload error",
+    "clickToChange": "Click to change",
+    "name": "Name",
+    "email": "Email",
+    "roles": "Roles",
+    "save": "Save",
+    "cancel": "Cancel"
+  },
   "errorBoundary": {
     "title": "Something went wrong",
     "description": "Refresh the page or come back later.",

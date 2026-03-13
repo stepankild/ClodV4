@@ -21,6 +21,7 @@ import Strains from './pages/Strains/Strains';
 import Labels from './pages/Labels/Labels';
 import Treatments from './pages/Treatments/Treatments';
 import TreatmentProducts from './pages/Treatments/TreatmentProducts';
+import Profile from './pages/Profile/Profile';
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -91,6 +92,7 @@ function App() {
         <Route path="/treatments" element={<ProtectedRoute permission="treatments:view"><Treatments /></ProtectedRoute>} />
         <Route path="/treatments/products" element={<ProtectedRoute permission="treatments:products"><TreatmentProducts /></ProtectedRoute>} />
         <Route path="/strains" element={<Strains />} />
+        <Route path="/profile" element={<Profile />} />
         <Route path="/admin/users" element={<Navigate to="/workers" replace />} />
       </Route>
 

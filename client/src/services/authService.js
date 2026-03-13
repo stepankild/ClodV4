@@ -27,6 +27,16 @@ export const authService = {
     return response.data;
   },
 
+  async uploadAvatar(avatarBase64) {
+    const response = await api.put('/auth/avatar', { avatar: avatarBase64 });
+    return response.data;
+  },
+
+  async deleteAvatar() {
+    const response = await api.delete('/auth/avatar');
+    return response.data;
+  },
+
   isAuthenticated() {
     return !!localStorage.getItem('accessToken');
   }

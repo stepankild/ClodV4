@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { authService } from '../../services/authService';
@@ -126,6 +126,7 @@ const MainLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-dark-950 flex">
@@ -158,11 +159,15 @@ const MainLayout = () => {
 
             <div className="relative group">
               <button className="flex items-center space-x-2 p-2 rounded-lg hover:bg-dark-800">
-                <div className="w-8 h-8 bg-primary-900/50 rounded-full flex items-center justify-center">
-                  <span className="text-sm font-medium text-primary-400">
-                    {user?.name?.charAt(0)?.toUpperCase()}
-                  </span>
-                </div>
+                {user?.avatar ? (
+                  <img src={user.avatar} alt="" className="w-8 h-8 rounded-full object-cover" />
+                ) : (
+                  <div className="w-8 h-8 bg-primary-900/50 rounded-full flex items-center justify-center">
+                    <span className="text-sm font-medium text-primary-400">
+                      {user?.name?.charAt(0)?.toUpperCase()}
+                    </span>
+                  </div>
+                )}
                 <svg className="w-4 h-4 text-dark-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
@@ -171,6 +176,15 @@ const MainLayout = () => {
               {/* Dropdown */}
               <div className="absolute right-0 mt-2 w-52 bg-dark-800 rounded-lg shadow-lg border border-dark-700 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-50">
                 <div className="p-2 space-y-1">
+                  <button
+                    onClick={() => navigate('/profile')}
+                    className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-dark-300 hover:bg-dark-700 hover:text-white rounded-lg"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                    <span>{t('profile.title')}</span>
+                  </button>
                   <button
                     onClick={() => setShowChangePassword(true)}
                     className="w-full flex items-center space-x-2 px-4 py-2 text-sm text-dark-300 hover:bg-dark-700 hover:text-white rounded-lg"

@@ -32,6 +32,11 @@ const messages = {
   'auth.passwordRequired': { ru: 'Укажите текущий и новый пароль', en: 'Provide current and new password' },
   'auth.accountDeleted': { ru: 'Аккаунт удалён', en: 'Account deleted' },
   'auth.refreshTokenMissing': { ru: 'Refresh token не предоставлен', en: 'Refresh token not provided' },
+  'auth.avatarRequired': { ru: 'Изображение не предоставлено', en: 'Image not provided' },
+  'auth.avatarInvalidFormat': { ru: 'Неверный формат (JPEG, PNG, WebP)', en: 'Invalid format (JPEG, PNG, WebP)' },
+  'auth.avatarTooLarge': { ru: 'Изображение слишком большое (макс. 500 КБ)', en: 'Image too large (max 500 KB)' },
+  'auth.avatarUpdated': { ru: 'Аватар обновлён', en: 'Avatar updated' },
+  'auth.avatarDeleted': { ru: 'Аватар удалён', en: 'Avatar removed' },
 
   // ── Пользователи ──
   'users.notFound': { ru: 'Пользователь не найден', en: 'User not found' },

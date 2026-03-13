@@ -106,6 +106,7 @@ export const login = async (req, res) => {
         id: user._id,
         email: user.email,
         name: user.name,
+        avatar: user.avatar || null,
         roles: user.roles.map(r => ({ id: r._id, name: r.name })),
         permissions
       }
@@ -286,11 +287,52 @@ export const getMe = async (req, res) => {
       id: user._id,
       email: user.email,
       name: user.name,
+      avatar: user.avatar || null,
       roles: user.roles.map(r => ({ id: r._id, name: r.name })),
       permissions
     });
   } catch (error) {
     console.error('Get me error:', error);
+    res.status(500).json({ message: t('common.serverError', req.lang) });
+  }
+};
+
+// @desc    Update user avatar
+// @route   PUT /api/auth/avatar
+export const updateAvatar = async (req, res) => {
+  try {
+    const { avatar } = req.body;
+
+    if (!avatar || typeof avatar !== 'string') {
+      return res.status(400).json({ message: t('auth.avatarRequired', req.lang) });
+    }
+
+    const match = avatar.match(/^data:image\/(jpeg|png|webp);base64,/);
+    if (!match) {
+      return res.status(400).json({ message: t('auth.avatarInvalidFormat', req.lang) });
+    }
+
+    const base64Data = avatar.split(',')[1];
+    if (base64Data.length > 500000) {
+      return res.status(400).json({ message: t('auth.avatarTooLarge', req.lang) });
+    }
+
+    await User.findByIdAndUpdate(req.user._id, { avatar });
+    res.json({ message: t('auth.avatarUpdated', req.lang), avatar });
+  } catch (error) {
+    console.error('Update avatar error:', error);
+    res.status(500).json({ message: t('common.serverError', req.lang) });
+  }
+};
+
+// @desc    Delete user avatar
+// @route   DELETE /api/auth/avatar
+export const deleteAvatar = async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, { avatar: null });
+    res.json({ message: t('auth.avatarDeleted', req.lang) });
+  } catch (error) {
+    console.error('Delete avatar error:', error);
     res.status(500).json({ message: t('common.serverError', req.lang) });
   }
 };

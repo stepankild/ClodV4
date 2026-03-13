@@ -49,7 +49,12 @@
       "Bash(grep:*)",
       "Bash(git fetch origin main)",
       "Bash(git merge origin/main --no-edit)",
-      "Bash(npm install i18next react-i18next)"
+      "Bash(npm install i18next react-i18next)",
+      "Bash(MONGODB_URI=\"mongodb+srv://stepankild:Gopgop003Gopgop003@cluster0.iusqhtz.mongodb.net/farm_portal?retryWrites=true&w=majority&appName=Cluster0\" node server/scripts/add-treatment-permissions.js)",
+      "Bash(MONGODB_URI=\"mongodb+srv://stepankild:Gopgop003Gopgop003@cluster0.iusqhtz.mongodb.net/farm_portal?retryWrites=true&w=majority&appName=Cluster0\" node scripts/add-treatment-permissions.js)",
+      "Bash(MONGODB_URI=\"mongodb+srv://stepankild:Gopgop003Gopgop003@cluster0.iusqhtz.mongodb.net/farm_portal?retryWrites=true&w=majority&appName=Cluster0\" node scripts/find-harvest-duplicates.js --fix)",
+      "Bash(where mongodump)",
+      "Bash(MONGODB_URI=\"mongodb+srv://stepankild:Gopgop003Gopgop003@cluster0.iusqhtz.mongodb.net/farm_portal?retryWrites=true&w=majority&appName=Cluster0\" node scripts/backup-db.js)"
     ]
   }
 }

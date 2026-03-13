@@ -106,6 +106,21 @@
     "passwordChanged": "Пароль успешно изменён!",
     "passwordChangeError": "Ошибка смены пароля"
   },
+  "profile": {
+    "title": "Профиль",
+    "personalInfo": "Личные данные",
+    "changeAvatar": "Сменить аватар",
+    "removeAvatar": "Удалить аватар",
+    "avatarUpdated": "Аватар обновлён",
+    "avatarRemoved": "Аватар удалён",
+    "avatarError": "Ошибка загрузки аватара",
+    "clickToChange": "Нажмите для смены",
+    "name": "Имя",
+    "email": "Email",
+    "roles": "Роли",
+    "save": "Сохранить",
+    "cancel": "Отменить"
+  },
   "errorBoundary": {
     "title": "Что-то пошло не так",
     "description": "Обновите страницу или вернитесь позже.",
