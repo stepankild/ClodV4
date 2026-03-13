@@ -29,7 +29,8 @@ const cycleArchiveSchema = new mongoose.Schema({
     strain: { type: String, required: true },
     wetWeight: { type: Number, default: 0 },
     dryWeight: { type: Number, default: 0 },
-    popcornWeight: { type: Number, default: 0 }
+    popcornWeight: { type: Number, default: 0 },      // попкорн со сортировочного стола (уже в trimWeight)
+    popcornMachine: { type: Number, default: 0 }       // попкорн с машинки (НЕ в trimWeight, добавляется к продукту)
   }],
   plantsCount: {
     type: Number,
@@ -75,7 +76,11 @@ const cycleArchiveSchema = new mongoose.Schema({
       default: ''
     },
     popcornWeight: {
-      type: Number,  // попкорн в граммах
+      type: Number,  // попкорн со стола в граммах (уже учтён в trimWeight)
+      default: 0
+    },
+    popcornMachine: {
+      type: Number,  // попкорн с машинки в граммах (НЕ в trimWeight, добавляется к готовому продукту)
       default: 0
     },
     trimProgressPercent: {

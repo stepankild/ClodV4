@@ -120,6 +120,7 @@ export const getArchiveStats = async (req, res) => {
           trimLossDry: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
           trimLossTrimmed: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.trimWeight', 0] } },
           trimLossPopcorn: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, { $ifNull: ['$harvestData.popcornWeight', 0] }, 0] } },
+          trimLossPopcornMachine: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, { $ifNull: ['$harvestData.popcornMachine', 0] }, 0] } },
           trimLossCycles: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, 1, 0] } }
         }
       }
@@ -273,6 +274,7 @@ export const getArchiveStats = async (req, res) => {
       trimLossDry: raw.trimLossDry || 0,
       trimLossTrimmed: raw.trimLossTrimmed || 0,
       trimLossPopcorn: raw.trimLossPopcorn || 0,
+      trimLossPopcornMachine: raw.trimLossPopcornMachine || 0,
       trimLossCycles: raw.trimLossCycles || 0
     };
     totalData.totalTrimWeight = trimTotalAgg[0]?.totalTrimWeight || 0;
@@ -388,9 +390,10 @@ export const harvestAndArchive = async (req, res) => {
           strain: s.strain || '—',
           wetWeight: 0,
           dryWeight: 0,
-          popcornWeight: 0
+          popcornWeight: 0,
+          popcornMachine: 0
         }))
-      : [{ strain: room.strain || '—', wetWeight: wetWeight || 0, dryWeight: dryWeight || 0, popcornWeight: 0 }];
+      : [{ strain: room.strain || '—', wetWeight: wetWeight || 0, dryWeight: dryWeight || 0, popcornWeight: 0, popcornMachine: 0 }];
 
     // Защита от дублей: если архив с этой комнатой и startDate уже существует — не создаём
     const existingArchive = await CycleArchive.findOne({

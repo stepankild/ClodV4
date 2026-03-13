@@ -247,7 +247,7 @@ export const updateTrimArchive = async (req, res) => {
       return res.status(404).json({ message: t('archive.notFound', req.lang) });
     }
 
-    const { dryWeight, popcornWeight, strainData, strains } = req.body;
+    const { dryWeight, popcornWeight, popcornMachine, strainData, strains } = req.body;
     if (dryWeight !== undefined) {
       archive.harvestData.dryWeight = Number(dryWeight) || 0;
       // Пересчитать метрики при изменении сухого веса
@@ -261,6 +261,7 @@ export const updateTrimArchive = async (req, res) => {
         ? Math.round(dry / archive.lighting.totalWatts * 100) / 100 : 0;
     }
     if (popcornWeight !== undefined) archive.harvestData.popcornWeight = Number(popcornWeight) || 0;
+    if (popcornMachine !== undefined) archive.harvestData.popcornMachine = Number(popcornMachine) || 0;
     if (Array.isArray(strains) && strains.length > 0) {
       archive.strains = strains.map(s => String(s || '').trim()).filter(Boolean);
     }
@@ -269,7 +270,8 @@ export const updateTrimArchive = async (req, res) => {
         strain: String(row.strain || '').trim(),
         wetWeight: Number(row.wetWeight) || 0,
         dryWeight: Number(row.dryWeight) || 0,
-        popcornWeight: Number(row.popcornWeight) || 0
+        popcornWeight: Number(row.popcornWeight) || 0,
+        popcornMachine: Number(row.popcornMachine) || 0
       }));
     }
     await archive.save();
@@ -278,7 +280,7 @@ export const updateTrimArchive = async (req, res) => {
       action: 'trim.archive_update',
       entityType: 'CycleArchive',
       entityId: archive._id,
-      details: { dryWeight, popcornWeight, roomName: archive.roomName }
+      details: { dryWeight, popcornWeight, popcornMachine, roomName: archive.roomName }
     });
 
     res.json(archive);
@@ -295,6 +297,15 @@ export const completeTrim = async (req, res) => {
     const archive = await CycleArchive.findById(req.params.archiveId);
     if (!archive) {
       return res.status(404).json({ message: t('archive.notFound', req.lang) });
+    }
+
+    // Валидация: нельзя завершить без попкорна со стола и с машинки
+    const popcornTable = archive.harvestData?.popcornWeight || 0;
+    const popcornMach = archive.harvestData?.popcornMachine || 0;
+    if (popcornTable <= 0 || popcornMach <= 0) {
+      return res.status(400).json({
+        message: t('trim.completeRequiresPopcorn', req.lang)
+      });
     }
 
     archive.trimStatus = 'completed';

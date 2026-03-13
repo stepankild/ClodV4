@@ -449,9 +449,11 @@ const Statistics = () => {
   const shrinkageFraction = total.shrinkageWet > 0 && total.shrinkageDry > 0
     ? roundTo(total.shrinkageWet / total.shrinkageDry, 1)
     : null;
-  // Потери на триме: (dry - trimmed - popcorn) / dry * 100%
-  const trimLossPct = total.trimLossDry > 0 && total.trimLossTrimmed > 0
-    ? roundTo((total.trimLossDry - total.trimLossTrimmed - (total.trimLossPopcorn || 0)) / total.trimLossDry * 100, 1)
+  // Потери на триме: (dry - finalProduct) / dry * 100%
+  // finalProduct = trimmed + popcornMachine (попкорн со стола уже учтён в trimmed)
+  const trimFinalProduct = (total.trimLossTrimmed || 0) + (total.trimLossPopcornMachine || 0);
+  const trimLossPct = total.trimLossDry > 0 && trimFinalProduct > 0
+    ? roundTo((total.trimLossDry - trimFinalProduct) / total.trimLossDry * 100, 1)
     : null;
 
   // Best strain & room by g/plant

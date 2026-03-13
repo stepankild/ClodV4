@@ -134,6 +134,7 @@ const messages = {
   'trim.invalidStrain': { ru: 'Выберите сорт из списка сортов этой комнаты', en: 'Select strain from this room strain list' },
   'trim.logDeleted': { ru: 'Запись удалена', en: 'Record deleted' },
   'trim.deletedNotFound': { ru: 'Удалённая запись не найдена', en: 'Deleted record not found' },
+  'trim.completeRequiresPopcorn': { ru: 'Заполните вес попкорна со стола и с машинки перед завершением', en: 'Enter popcorn weight from table and machine before completing' },
 
   // ── Сорта ──
   'strains.nameRequired': { ru: 'Название сорта обязательно', en: 'Strain name is required' },
