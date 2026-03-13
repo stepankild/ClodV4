@@ -445,9 +445,9 @@ const Statistics = () => {
   const cyclesPerYearFarm = avgCycleDays && avgCycleDays > 0 ? (DAYS_PER_YEAR / avgCycleDays) * safeRooms.length : null;
   const avgGpw = roundTo(total.avgGramsPerWatt, 2);
   const avgGpp = roundTo(total.avgGramsPerPlant, 1);
-  // Усушка как дробь: wet/dry → "1/N" (из N кг мокрого = 1 кг сухого)
-  const shrinkageFraction = total.shrinkageWet > 0 && total.shrinkageDry > 0
-    ? roundTo(total.shrinkageWet / total.shrinkageDry, 1)
+  // Усушка как дробь: wet/finalProduct → "1/N" (из N кг мокрого = 1 кг готового продукта)
+  const shrinkageFraction = total.shrinkageWet > 0 && total.shrinkageFinal > 0
+    ? roundTo(total.shrinkageWet / total.shrinkageFinal, 1)
     : null;
   // Потери на триме: (dry - finalProduct) / dry * 100%
   // finalProduct = trimmed + popcornMachine (попкорн со стола уже учтён в trimmed)

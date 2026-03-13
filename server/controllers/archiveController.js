@@ -106,10 +106,10 @@ export const getArchiveStats = async (req, res) => {
           totalPlants: { $sum: '$plantsCount' },
           totalDryWeight: { $sum: '$harvestData.dryWeight' },
           totalWetWeight: { $sum: '$harvestData.wetWeight' },
-          // Усушка: считаем только по циклам где и wet > 0 и dry > 0
-          shrinkageWet: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: ['$harvestData.dryWeight', 0] }] }, '$harvestData.wetWeight', 0] } },
-          shrinkageDry: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: ['$harvestData.dryWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
-          shrinkageCycles: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: ['$harvestData.dryWeight', 0] }] }, 1, 0] } },
+          // Усушка: wet → finalProduct (trimWeight + popcornMachine). Считаем только по циклам где wet > 0 и finalProduct > 0
+          shrinkageWet: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $add: [{ $ifNull: ['$harvestData.trimWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] }] }, '$harvestData.wetWeight', 0] } },
+          shrinkageFinal: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $add: [{ $ifNull: ['$harvestData.trimWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] }] }, { $add: [{ $ifNull: ['$harvestData.trimWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] } },
+          shrinkageCycles: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $add: [{ $ifNull: ['$harvestData.trimWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] }] }, 1, 0] } },
           avgDaysFlowering: { $avg: '$actualDays' },
           // Средние показатели: только по циклам с dryWeight > 0
           _gppSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerPlant', 0] }, 0] } },
@@ -264,7 +264,7 @@ export const getArchiveStats = async (req, res) => {
       totalDryWeight: raw.totalDryWeight || 0,
       totalWetWeight: raw.totalWetWeight || 0,
       shrinkageWet: raw.shrinkageWet || 0,
-      shrinkageDry: raw.shrinkageDry || 0,
+      shrinkageFinal: raw.shrinkageFinal || 0,
       shrinkageCycles: raw.shrinkageCycles || 0,
       avgDaysFlowering: raw.avgDaysFlowering || 0,
       // Средние только по циклам с dryWeight > 0

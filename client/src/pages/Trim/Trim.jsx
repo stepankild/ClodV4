@@ -42,7 +42,7 @@ const calcMetrics = (a) => {
   const totalPopcorn = popcorn + popcornMachine;
   const finalProduct = trim + popcornMachine;                // готовый продукт = трим + машинка
   const trimProgress = dry > 0 ? Math.min(100, Math.round(finalProduct / dry * 100)) : 0;
-  const shrinkage = wet > 0 && dry > 0 ? ((wet - dry) / wet * 100) : null;
+  const shrinkage = wet > 0 && finalProduct > 0 ? ((wet - finalProduct) / wet * 100) : null;
   const trimLoss = dry > 0 && finalProduct > 0 ? ((dry - finalProduct) / dry * 100) : null;
   return { wet, dry, trim, popcorn, popcornMachine, totalPopcorn, finalProduct, trimProgress, shrinkage, trimLoss };
 };
