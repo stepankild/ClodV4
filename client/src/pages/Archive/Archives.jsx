@@ -183,10 +183,10 @@ export default function Archives() {
           va = a.metrics?.gramsPerPlant || 0;
           vb = b.metrics?.gramsPerPlant || 0;
         } else if (sortBy === 'shrinkage') {
-          const wa = a.harvestData?.wetWeight || 0, da = a.harvestData?.dryWeight || 0;
-          va = wa > 0 ? da / wa : 0;
-          const wb = b.harvestData?.wetWeight || 0, db = b.harvestData?.dryWeight || 0;
-          vb = wb > 0 ? db / wb : 0;
+          const wa = a.harvestData?.wetWeight || 0, ta = (a.trimLogWeight || a.harvestData?.trimWeight || 0) + (a.harvestData?.popcornMachine || 0);
+          va = wa > 0 && ta > 0 ? (wa - ta) / wa : 0;
+          const wb = b.harvestData?.wetWeight || 0, tb = (b.trimLogWeight || b.harvestData?.trimWeight || 0) + (b.harvestData?.popcornMachine || 0);
+          vb = wb > 0 && tb > 0 ? (wb - tb) / wb : 0;
         } else {
           va = a[sortBy] || 0;
           vb = b[sortBy] || 0;
@@ -220,7 +220,10 @@ export default function Archives() {
 
   const archives = data.archives;
   const st = stats?.total || {};
-  const shrinkagePct = pct(st.totalDryWeight, st.totalWetWeight);
+  // Усушка: (wet - finalProduct) / wet * 100, где finalProduct = shrinkageFinal (trimWeight + popcornMachine)
+  const shrinkagePct = st.shrinkageWet > 0 && st.shrinkageFinal > 0
+    ? (((st.shrinkageWet - st.shrinkageFinal) / st.shrinkageWet) * 100).toFixed(1)
+    : null;
 
   return (
     <div className="p-4 sm:p-6 max-w-[1400px] mx-auto">
@@ -434,7 +437,10 @@ export default function Archives() {
             const wet = a.harvestData?.wetWeight || 0;
             const dry = a.harvestData?.dryWeight || 0;
             const trim = a.trimLogWeight || a.harvestData?.trimWeight || 0;
-            const shrink = pct(dry, wet);
+            const popcornMachine = a.harvestData?.popcornMachine || 0;
+            const finalProduct = trim + popcornMachine;
+            // Усушка: (wet - finalProduct) / wet * 100
+            const shrink = wet > 0 && finalProduct > 0 ? (((wet - finalProduct) / wet) * 100).toFixed(1) : null;
             const strainCount = Array.isArray(a.strains) ? a.strains.length : 0;
             const isExpanded = expandedId === a._id;
             const gpp = a.metrics?.gramsPerPlant;
@@ -707,7 +713,10 @@ function TimelinePhases({ archive, t, i18n }) {
       icon: '✅',
       label: t('archive.phaseDone'),
       date: a.trimCompletedAt ? formatDate(a.trimCompletedAt, lang) : '',
-      info: a.harvestData?.dryWeight ? t('archive.phaseTotalInfo', { weight: formatG(a.harvestData.dryWeight, lang) }) : null,
+      info: (() => {
+        const fp = (a.harvestData?.trimWeight || 0) + (a.harvestData?.popcornMachine || 0);
+        return fp > 0 ? t('archive.phaseTotalInfo', { weight: formatG(fp, lang) }) : (a.harvestData?.dryWeight ? t('archive.phaseTotalInfo', { weight: formatG(a.harvestData.dryWeight, lang) }) : null);
+      })(),
       days: null,
       color: 'text-green-400'
     });

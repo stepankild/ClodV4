@@ -201,8 +201,20 @@ export default function ArchiveDetail() {
     return null;
   })();
 
-  // Drying ratio
-  const dryingRatio = h.wetWeight && h.dryWeight ? ((h.dryWeight / h.wetWeight) * 100).toFixed(1) : null;
+  // Попкорн и готовый продукт
+  const popcornTable = h.popcornWeight || 0;
+  const popcornMachine = h.popcornMachine || 0;
+  const totalPopcorn = popcornTable + popcornMachine;
+  const finalProduct = (h.trimWeight || 0) + popcornMachine;
+
+  // Усушка: (wet - finalProduct) / wet * 100
+  const shrinkagePct = h.wetWeight > 0 && finalProduct > 0
+    ? (((h.wetWeight - finalProduct) / h.wetWeight) * 100).toFixed(1)
+    : null;
+  // Потери на триме: (dry - finalProduct) / dry * 100
+  const trimLossPct = h.dryWeight > 0 && finalProduct > 0
+    ? (((h.dryWeight - finalProduct) / h.dryWeight) * 100).toFixed(1)
+    : null;
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
@@ -406,10 +418,13 @@ export default function ArchiveDetail() {
                 <InfoRow label={t('archive.wetWeightLabel')} value={`${formatNum(h.wetWeight, locale)} ${t('common.grams')}`} />
                 <InfoRow label={t('archive.dryWeightLabel')} value={`${formatNum(h.dryWeight, locale)} ${t('common.grams')}`} highlight color="text-green-400" />
                 <InfoRow label={t('archive.trimWeightLabel')} value={`${formatNum(h.trimWeight, locale)} ${t('common.grams')}`} />
+                {finalProduct > 0 && <InfoRow label={t('trim.finalProduct')} value={`${formatNum(finalProduct, locale)} ${t('common.grams')}`} highlight color="text-emerald-400" />}
+                {totalPopcorn > 0 && <InfoRow label={t('trim.totalPopcorn')} value={`${formatNum(totalPopcorn, locale)} ${t('common.grams')}`} />}
                 <InfoRow label={t('archive.gramsPerPlant')} value={formatNum(m.gramsPerPlant, locale)} highlight color="text-primary-400" />
                 <InfoRow label={t('archive.gPerDay')} value={formatNum(m.gramsPerDay, locale)} />
                 {m.gramsPerWatt > 0 && <InfoRow label={t('archive.gPerWattLabel')} value={formatNum(m.gramsPerWatt, locale)} color="text-amber-400" />}
-                {dryingRatio && <InfoRow label={t('archive.dryingRatio')} value={`${dryingRatio}%`} />}
+                {shrinkagePct && <InfoRow label={t('archive.shrinkage')} value={`${shrinkagePct}%`} color="text-red-400" />}
+                {trimLossPct && <InfoRow label={t('trim.loss')} value={`${trimLossPct}%`} color="text-orange-400" />}
                 <InfoRow
                   label={t('archive.qualityLabel')}
                   value={qualityLabel[h.quality] || h.quality || '—'}
