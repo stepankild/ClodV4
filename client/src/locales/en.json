@@ -956,6 +956,7 @@
     "days90": "90 days",
     "grams": "g",
     "trimmed": "Trimmed",
+    "dailyChart": "Trim by day",
     "emptyActive": "No active rooms in drying/trim stage",
     "emptyCompleted": "No completed records",
     "emptyAll": "No data",
