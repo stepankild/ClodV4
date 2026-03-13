@@ -22,9 +22,8 @@ router.use(protect);
 // Просмотр — доступно всем авторизованным (фильтруется через view-пермишены на фронте)
 router.get('/', getRooms);
 router.get('/summary', getRoomsSummary);
-router.get('/:id', getRoom);
 
-// Планы циклов
+// Планы циклов (ПЕРЕД /:id, иначе Express считает "plans" за id)
 router.get('/plans', getPlans);
 router.get('/plans/deleted', checkPermission('cycles:plan'), getDeletedPlans);
 router.post('/plans', checkPermission('cycles:plan'), createPlan);
@@ -32,12 +31,15 @@ router.put('/plans/:id', checkPermission('cycles:plan'), updatePlan);
 router.delete('/plans/:id', checkPermission('cycles:plan'), deletePlan);
 router.post('/plans/deleted/:id/restore', checkPermission('cycles:plan'), restorePlan);
 
-// Шаблоны комнат
+// Шаблоны комнат (ПЕРЕД /:id)
 router.get('/templates', getTemplates);
 router.get('/templates/deleted', checkPermission('templates:manage'), getDeletedTemplates);
 router.post('/templates', checkPermission('templates:manage'), createTemplate);
 router.delete('/templates/:id', checkPermission('templates:manage'), deleteTemplate);
 router.post('/templates/deleted/:id/restore', checkPermission('templates:manage'), restoreTemplate);
+
+// Конкретная комната по ID (ПОСЛЕ специфичных маршрутов)
+router.get('/:id', getRoom);
 
 // Действия с комнатами
 router.put('/:id', checkPermission('rooms:edit'), updateRoom);
