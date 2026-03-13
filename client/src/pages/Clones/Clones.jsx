@@ -9,6 +9,36 @@ import { localizeRoomName } from '../../utils/localizeRoomName';
 
 const WEEKS_BEFORE = 4;
 const DAYS_OFFSET = WEEKS_BEFORE * 7;
+const ROOTING_TARGET_DAYS = 14; // целевое время укоренения (дней)
+
+/** Прогресс-бар укоренения */
+const RootingBar = ({ cutDate, isDone, hasTransplanted, t }) => {
+  if (!isDone || !cutDate) return <span className="text-dark-600 text-xs">—</span>;
+  const now = new Date();
+  const cut = new Date(cutDate);
+  const days = Math.max(0, Math.floor((now - cut) / (1000 * 60 * 60 * 24)));
+  const pct = Math.min(100, Math.round((days / ROOTING_TARGET_DAYS) * 100));
+  const isOverdue = days > ROOTING_TARGET_DAYS;
+  const barColor = hasTransplanted
+    ? 'bg-primary-500'
+    : isOverdue
+      ? 'bg-red-500'
+      : days >= ROOTING_TARGET_DAYS - 2
+        ? 'bg-yellow-500'
+        : 'bg-green-500';
+  return (
+    <div className="min-w-[90px]">
+      <div className="flex items-center justify-between text-xs mb-0.5">
+        <span className={`font-medium ${hasTransplanted ? 'text-primary-400' : isOverdue ? 'text-red-400' : 'text-dark-300'}`}>
+          {t('clones.rootingDays', { days })}
+        </span>
+      </div>
+      <div className="h-1.5 bg-dark-600 rounded-full overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  );
+};
 
 const getStrainsFromCut = (cut) => {
   if (!cut) return [];
@@ -653,6 +683,7 @@ const Clones = () => {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.cutDate')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.cloneStrain')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.quantity')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.rootingCol')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.statusCol')}</th>
                 <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.actionsCol')}</th>
               </tr>
@@ -660,7 +691,7 @@ const Clones = () => {
             <tbody className="divide-y divide-dark-700">
               {rows.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-dark-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-dark-500">
                     {t('clones.noRoomsWithDate')}
                   </td>
                 </tr>
@@ -674,6 +705,9 @@ const Clones = () => {
                     <td className="px-4 py-3 text-dark-300">{formatDate(row.cutDate)}</td>
                     <td className="px-4 py-3 text-dark-300">{formatStrainsShort(row.strains)}</td>
                     <td className="px-4 py-3 text-dark-300">{row.quantity > 0 ? row.quantity : '—'}</td>
+                    <td className="px-4 py-3">
+                      <RootingBar cutDate={row.cutDate} isDone={row.isDone} hasTransplanted={row.hasTransplanted} t={t} />
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex px-2 py-1 text-xs font-medium rounded ${
@@ -766,6 +800,7 @@ const Clones = () => {
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.cutDate')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.strainQty')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('common.notes')}</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.rootingCol')}</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.statusCol')}</th>
                 {canCreateClones && (
                   <th className="px-4 py-3 text-right text-xs font-semibold text-dark-400 uppercase tracking-wider">{t('clones.actionsCol')}</th>
@@ -775,7 +810,7 @@ const Clones = () => {
             <tbody className="divide-y divide-dark-700">
               {orderCuts.length === 0 ? (
                 <tr>
-                  <td colSpan={canCreateClones ? 5 : 4} className="px-4 py-6 text-center text-dark-500">
+                  <td colSpan={canCreateClones ? 6 : 5} className="px-4 py-6 text-center text-dark-500">
                     {t('clones.noOrderBatches')}
                   </td>
                 </tr>
@@ -788,6 +823,9 @@ const Clones = () => {
                       <td className="px-4 py-3 text-dark-300">{formatDate(cut.cutDate)}</td>
                       <td className="px-4 py-3 text-dark-300">{formatStrainsShort(strains)}</td>
                       <td className="px-4 py-3 text-dark-500 text-xs max-w-[200px] truncate" title={cut.notes}>{cut.notes || '—'}</td>
+                      <td className="px-4 py-3">
+                        <RootingBar cutDate={cut.cutDate} isDone={cut.isDone} hasTransplanted={false} t={t} />
+                      </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex px-2 py-1 text-xs font-medium rounded ${cut.isDone ? 'bg-green-900/50 text-green-400' : 'bg-red-900/50 text-red-400'}`}>
                           {cut.isDone ? t('clones.cut') : t('clones.notCut')}
