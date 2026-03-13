@@ -708,7 +708,7 @@ const Trim = () => {
                     {/* Recent logs inline */}
                     {a.recentLogs?.length > 0 && (
                       <div className="text-xs text-dark-400 flex flex-wrap gap-x-3 gap-y-0.5">
-                        {a.recentLogs.map((log, i) => (
+                        {a.recentLogs.slice(0, 3).map((log, i) => (
                           <span key={i}>
                             {formatLogDate(log.date)}: <span className="text-dark-300">{fmt(log.weight, 0)}г</span>
                             {isMultiStrain && log.strain && <span className="text-dark-500"> ({log.strain})</span>}
@@ -875,6 +875,39 @@ const Trim = () => {
                 )}
 
                 {/* ════════════════════════════════════════════ */}
+                {/* Daily trim chart (always visible) */}
+                {/* ════════════════════════════════════════════ */}
+                {a.recentLogs?.length > 1 && (() => {
+                  const byDay = {};
+                  a.recentLogs.forEach(l => {
+                    const d = l.date ? new Date(l.date).toISOString().slice(5, 10) : '?';
+                    byDay[d] = (byDay[d] || 0) + (l.weight || 0);
+                  });
+                  const chartData = Object.entries(byDay)
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([d, w]) => ({ date: d, weight: w }));
+                  if (chartData.length < 2) return null;
+                  return (
+                    <div className="pt-2 border-t border-dark-700/50">
+                      <div className="text-dark-500 text-[10px] uppercase tracking-wider mb-1">{t('trim.dailyChart')}</div>
+                      <ResponsiveContainer width="100%" height={110}>
+                        <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#2a2d35" />
+                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} />
+                          <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} />
+                          <Tooltip
+                            contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
+                            labelStyle={{ color: '#9ca3af' }}
+                            formatter={(v) => [`${v}${t('trim.grams')}`, t('trim.trimmed')]}
+                          />
+                          <Bar dataKey="weight" fill="#f59e0b" radius={[3, 3, 0, 0]} />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  );
+                })()}
+
+                {/* ════════════════════════════════════════════ */}
                 {/* Action buttons */}
                 {/* ════════════════════════════════════════════ */}
                 <div className="flex items-center gap-2 pt-1 border-t border-dark-700">
@@ -922,36 +955,7 @@ const Trim = () => {
                       <div className="text-center text-dark-500 py-4 text-sm">{t('common.loading')}</div>
                     ) : cardLogs.length === 0 ? (
                       <div className="text-center text-dark-500 py-4 text-sm">{t('trim.noRecords')}</div>
-                    ) : (<>
-                      {/* ── Daily trim chart ── */}
-                      {cardLogs.length > 1 && (() => {
-                        const byDay = {};
-                        cardLogs.forEach(l => {
-                          const d = l.date ? new Date(l.date).toISOString().slice(5, 10) : '?';
-                          byDay[d] = (byDay[d] || 0) + (l.weight || 0);
-                        });
-                        const chartData = Object.entries(byDay)
-                          .sort(([a], [b]) => a.localeCompare(b))
-                          .map(([d, w]) => ({ date: d, weight: w }));
-                        return (
-                          <div className="px-3 pt-3 pb-1">
-                            <div className="text-dark-500 text-[10px] uppercase tracking-wider mb-1">{t('trim.dailyChart')}</div>
-                            <ResponsiveContainer width="100%" height={110}>
-                              <BarChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
-                                <CartesianGrid strokeDasharray="3 3" stroke="#2a2d35" />
-                                <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#6b7280' }} />
-                                <YAxis tick={{ fontSize: 10, fill: '#6b7280' }} />
-                                <Tooltip
-                                  contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }}
-                                  labelStyle={{ color: '#9ca3af' }}
-                                  formatter={(v) => [`${v}${t('trim.grams')}`, t('trim.trimmed')]}
-                                />
-                                <Bar dataKey="weight" fill="#f59e0b" radius={[3, 3, 0, 0]} />
-                              </BarChart>
-                            </ResponsiveContainer>
-                          </div>
-                        );
-                      })()}
+                    ) : (
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-dark-400 text-xs uppercase">
@@ -982,7 +986,7 @@ const Trim = () => {
                           ))}
                         </tbody>
                       </table>
-                    </>)}
+                    )}
                   </div>
                 )}
               </div>

@@ -60,7 +60,7 @@ export const getActiveTrimArchives = async (req, res) => {
         _id: '$archive',
         logs: { $push: { weight: '$weight', strain: '$strain', date: '$date' } }
       }},
-      { $project: { logs: { $slice: ['$logs', 3] } } }
+      // return all logs (used for daily chart on client)
     ]);
     const recentLogsMap = {};
     recentLogsAgg.forEach(r => { recentLogsMap[r._id.toString()] = r.logs; });
