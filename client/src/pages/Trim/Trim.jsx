@@ -40,7 +40,7 @@ const calcMetrics = (a) => {
   const wet = a.harvestData?.wetWeight || 0;
   const dry = a.harvestData?.dryWeight || 0;
   const trim = a.harvestData?.trimWeight || 0;
-  const popcorn = a.harvestData?.popcornWeight || 0;         // общий попкорн (входит в finalWeight)
+  const popcorn = (a.harvestData?.popcornWeight || 0) + (a.harvestData?.popcornMachine || 0); // сумма стол+машинка для старых данных
   const finalWeight = a.harvestData?.finalWeight || 0;       // финальный вес (ручной ввод, включая попкорн)
   const finalProduct = finalWeight > 0 ? finalWeight : trim; // backward compat
   const trimProgress = dry > 0 ? Math.min(100, Math.round(trim / dry * 100)) : 0;
@@ -186,8 +186,8 @@ const Trim = () => {
   // ─── Final weight form ───
   const openFinalWeightForm = (a) => {
     const sd = Array.isArray(a.strainData) && a.strainData.length
-      ? a.strainData.map(s => ({ strain: s.strain || '', dryWeight: s.dryWeight ?? 0, finalWeight: s.finalWeight ?? 0, popcornWeight: s.popcornWeight ?? 0 }))
-      : [{ strain: a.strain || '', dryWeight: a.harvestData?.dryWeight ?? 0, finalWeight: a.harvestData?.finalWeight ?? 0, popcornWeight: a.harvestData?.popcornWeight ?? 0 }];
+      ? a.strainData.map(s => ({ strain: s.strain || '', dryWeight: s.dryWeight ?? 0, finalWeight: s.finalWeight ?? 0, popcornWeight: (s.popcornWeight ?? 0) + (s.popcornMachine ?? 0) }))
+      : [{ strain: a.strain || '', dryWeight: a.harvestData?.dryWeight ?? 0, finalWeight: a.harvestData?.finalWeight ?? 0, popcornWeight: (a.harvestData?.popcornWeight ?? 0) + (a.harvestData?.popcornMachine ?? 0) }];
     setFinalWeightForms(prev => ({ ...prev, [a._id]: sd }));
     setFinalWeightOpen(prev => ({ ...prev, [a._id]: true }));
   };
@@ -308,8 +308,8 @@ const Trim = () => {
     setEditModal(archiveId);
     setEditStrainData(
       Array.isArray(arch.strainData) && arch.strainData.length
-        ? arch.strainData.map(s => ({ strain: s.strain || '', wetWeight: s.wetWeight ?? 0, dryWeight: s.dryWeight ?? 0, popcornWeight: s.popcornWeight ?? 0, finalWeight: s.finalWeight ?? 0 }))
-        : [{ strain: arch.strain || '', wetWeight: arch.harvestData?.wetWeight ?? 0, dryWeight: arch.harvestData?.dryWeight ?? 0, popcornWeight: arch.harvestData?.popcornWeight ?? 0, finalWeight: arch.harvestData?.finalWeight ?? 0 }]
+        ? arch.strainData.map(s => ({ strain: s.strain || '', wetWeight: s.wetWeight ?? 0, dryWeight: s.dryWeight ?? 0, popcornWeight: (s.popcornWeight ?? 0) + (s.popcornMachine ?? 0), finalWeight: s.finalWeight ?? 0 }))
+        : [{ strain: arch.strain || '', wetWeight: arch.harvestData?.wetWeight ?? 0, dryWeight: arch.harvestData?.dryWeight ?? 0, popcornWeight: (arch.harvestData?.popcornWeight ?? 0) + (arch.harvestData?.popcornMachine ?? 0), finalWeight: arch.harvestData?.finalWeight ?? 0 }]
     );
   };
 
@@ -823,7 +823,7 @@ const Trim = () => {
                         <tbody>
                           {sd.map((s, i) => {
                             const sFinal = s.finalWeight || 0;
-                            const sPopcorn = s.popcornWeight || 0;
+                            const sPopcorn = (s.popcornWeight || 0) + (s.popcornMachine || 0);
                             const sPopcornPct = sPopcorn > 0 && sFinal > 0 ? (sPopcorn / sFinal * 100) : null;
                             const sLoss = (s.dryWeight || 0) > 0 && sFinal > 0 ? (((s.dryWeight || 0) - sFinal) / (s.dryWeight || 1) * 100) : null;
                             return (
@@ -842,7 +842,7 @@ const Trim = () => {
                           {sd.length > 1 && (() => {
                             const totalDry = sd.reduce((s, r) => s + (r.dryWeight || 0), 0);
                             const totalFinal = sd.reduce((s, r) => s + (r.finalWeight || 0), 0);
-                            const totalPopcorn = sd.reduce((s, r) => s + (r.popcornWeight || 0), 0);
+                            const totalPopcorn = sd.reduce((s, r) => s + (r.popcornWeight || 0) + (r.popcornMachine || 0), 0);
                             const totalPopcornPct = totalPopcorn > 0 && totalFinal > 0 ? (totalPopcorn / totalFinal * 100) : null;
                             const totalLoss = totalDry > 0 && totalFinal > 0 ? ((totalDry - totalFinal) / totalDry * 100) : null;
                             return (
@@ -969,7 +969,7 @@ const Trim = () => {
                         <tbody>
                           {sd.map((s, i) => {
                             const sFinal = s.finalWeight || 0;
-                            const sPopcorn = s.popcornWeight || 0;
+                            const sPopcorn = (s.popcornWeight || 0) + (s.popcornMachine || 0);
                             const sFinalYield = sFinal > 0 ? sFinal : (a.trimByStrain?.[s.strain] || 0);
                             const sPopcornPct = sPopcorn > 0 && sFinalYield > 0 ? (sPopcorn / sFinalYield * 100) : null;
                             const sLoss = (s.dryWeight || 0) > 0 && sFinalYield > 0 ? (((s.dryWeight || 0) - sFinalYield) / (s.dryWeight || 1) * 100) : null;
