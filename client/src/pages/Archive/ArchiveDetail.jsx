@@ -430,7 +430,7 @@ export default function ArchiveDetail() {
                   value={qualityLabel[h.quality] || h.quality || '—'}
                   color={qualityColor[h.quality]}
                 />
-                {h.notes && (
+                {h.notes && !h.notes.startsWith('Автоархив') && !h.notes.startsWith('Auto-archived') && (
                   <div className="col-span-2 sm:col-span-4">
                     <span className="text-dark-400 text-sm">{t('archive.harvestNotes')}</span>
                     <p className="text-dark-300">{h.notes}</p>

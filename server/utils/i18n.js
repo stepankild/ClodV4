@@ -80,7 +80,7 @@ const messages = {
   'harvest.plantRecordNotFound': { ru: 'Запись куста не найдена', en: 'Plant record not found' },
   'harvest.invalidRole': { ru: 'Некорректная роль. Допустимые: {{roles}}', en: 'Invalid role. Allowed: {{roles}}' },
   'harvest.weighingTaken': { ru: 'Роль «Взвешивание» уже занята: {{name}}', en: 'Weighing role already taken by: {{name}}' },
-  'harvest.archiveNote': { ru: 'Автоархив после сбора. Записей кустов: {{count}}. Сухой вес можно добавить в архиве.', en: 'Auto-archived after harvest. Plant records: {{count}}. Dry weight can be added in archive.' },
+  'harvest.archiveNote': { ru: 'Автоархив после сбора. Кустов: {{count}}.', en: 'Auto-archived after harvest. Plants: {{count}}.' },
 
   // ── Клоны ──
   'clones.specifyDate': { ru: 'Укажите дату нарезки (cutDate)', en: 'Specify cut date (cutDate)' },

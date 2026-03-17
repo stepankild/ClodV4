@@ -714,7 +714,7 @@ function TimelinePhases({ archive, t, i18n }) {
       label: t('archive.phaseDone'),
       date: a.trimCompletedAt ? formatDate(a.trimCompletedAt, lang) : '',
       info: (() => {
-        const fp = (a.harvestData?.trimWeight || 0) + (a.harvestData?.popcornMachine || 0);
+        const fp = (a.harvestData?.finalWeight || 0) > 0 ? a.harvestData.finalWeight : (a.harvestData?.trimWeight || 0);
         return fp > 0 ? t('archive.phaseTotalInfo', { weight: formatG(fp, lang) }) : (a.harvestData?.dryWeight ? t('archive.phaseTotalInfo', { weight: formatG(a.harvestData.dryWeight, lang) }) : null);
       })(),
       days: null,
