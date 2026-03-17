@@ -450,11 +450,15 @@ const Statistics = () => {
     ? roundTo(total.shrinkageWet / total.shrinkageFinal, 1)
     : null;
   // Потери на триме: (dry - finalProduct) / dry * 100%
-  // finalProduct = trimmed + popcornMachine (попкорн со стола уже учтён в trimmed)
-  const trimFinalProduct = (total.trimLossTrimmed || 0) + (total.trimLossPopcornMachine || 0);
+  // finalProduct = finalWeight если есть, иначе trimWeight (из серверной агрегации)
+  const trimFinalProduct = total.trimLossFinalProduct || 0;
   const trimLossPct = total.trimLossDry > 0 && trimFinalProduct > 0
     ? roundTo((total.trimLossDry - trimFinalProduct) / total.trimLossDry * 100, 1)
     : null;
+  // Попкорн: общий вес (стол + машинка)
+  const trimPopcornTotal = total.trimLossPopcorn || 0;
+  const trimPopcornPct = trimPopcornTotal > 0 && trimFinalProduct > 0
+    ? roundTo(trimPopcornTotal / trimFinalProduct * 100, 1) : null;
 
   // Best strain & room by g/plant
   const bestStrain = byStrain.length > 0
@@ -598,6 +602,17 @@ const Statistics = () => {
             <p className="text-dark-500 text-xs mt-0.5">{t('stats.shrinkageCycles', { count: total.trimLossCycles })}</p>
           )}
         </div>
+        {trimPopcornTotal > 0 && (
+          <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">
+            <div className="text-dark-400 text-xs font-medium">{t('trim.popcorn')}</div>
+            <div className="text-2xl font-bold text-amber-400 mt-1">
+              {formatNum(trimPopcornTotal, locale)}<span className="text-sm ml-1">{t('common.grams')}</span>
+            </div>
+            {trimPopcornPct != null && (
+              <p className="text-dark-500 text-xs mt-0.5">{trimPopcornPct}% {t('stats.ofFinalProduct')}</p>
+            )}
+          </div>
+        )}
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
         <div className="bg-dark-800 rounded-xl border border-dark-700 p-4">

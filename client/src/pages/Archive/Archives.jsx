@@ -183,10 +183,10 @@ export default function Archives() {
           va = a.metrics?.gramsPerPlant || 0;
           vb = b.metrics?.gramsPerPlant || 0;
         } else if (sortBy === 'shrinkage') {
-          const wa = a.harvestData?.wetWeight || 0, ta = (a.trimLogWeight || a.harvestData?.trimWeight || 0) + (a.harvestData?.popcornMachine || 0);
-          va = wa > 0 && ta > 0 ? (wa - ta) / wa : 0;
-          const wb = b.harvestData?.wetWeight || 0, tb = (b.trimLogWeight || b.harvestData?.trimWeight || 0) + (b.harvestData?.popcornMachine || 0);
-          vb = wb > 0 && tb > 0 ? (wb - tb) / wb : 0;
+          const wa = a.harvestData?.wetWeight || 0, fa = (a.harvestData?.finalWeight || 0) > 0 ? a.harvestData.finalWeight : (a.trimLogWeight || a.harvestData?.trimWeight || 0);
+          va = wa > 0 && fa > 0 ? (wa - fa) / wa : 0;
+          const wb = b.harvestData?.wetWeight || 0, fb = (b.harvestData?.finalWeight || 0) > 0 ? b.harvestData.finalWeight : (b.trimLogWeight || b.harvestData?.trimWeight || 0);
+          vb = wb > 0 && fb > 0 ? (wb - fb) / wb : 0;
         } else {
           va = a[sortBy] || 0;
           vb = b[sortBy] || 0;
@@ -437,8 +437,8 @@ export default function Archives() {
             const wet = a.harvestData?.wetWeight || 0;
             const dry = a.harvestData?.dryWeight || 0;
             const trim = a.trimLogWeight || a.harvestData?.trimWeight || 0;
-            const popcornMachine = a.harvestData?.popcornMachine || 0;
-            const finalProduct = trim + popcornMachine;
+            // finalWeight (ручной ввод) — основной; fallback на trim для старых данных
+            const finalProduct = (a.harvestData?.finalWeight || 0) > 0 ? a.harvestData.finalWeight : trim;
             // Усушка: (wet - finalProduct) / wet * 100
             const shrink = wet > 0 && finalProduct > 0 ? (((wet - finalProduct) / wet) * 100).toFixed(1) : null;
             const strainCount = Array.isArray(a.strains) ? a.strains.length : 0;

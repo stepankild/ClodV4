@@ -106,22 +106,22 @@ export const getArchiveStats = async (req, res) => {
           totalPlants: { $sum: '$plantsCount' },
           totalDryWeight: { $sum: '$harvestData.dryWeight' },
           totalWetWeight: { $sum: '$harvestData.wetWeight' },
-          // Усушка: wet → finalProduct (trimWeight + popcornMachine). Считаем только по циклам где wet > 0 и finalProduct > 0
-          shrinkageWet: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $add: [{ $ifNull: ['$harvestData.trimWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] }] }, '$harvestData.wetWeight', 0] } },
-          shrinkageFinal: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $add: [{ $ifNull: ['$harvestData.trimWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] }] }, { $add: [{ $ifNull: ['$harvestData.trimWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] } },
-          shrinkageCycles: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $add: [{ $ifNull: ['$harvestData.trimWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] }] }, 1, 0] } },
+          // Усушка: wet → finalProduct. finalWeight (ручной ввод) если есть, иначе trimWeight (fallback для старых данных)
+          shrinkageWet: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $cond: [{ $gt: [{ $ifNull: ['$harvestData.finalWeight', 0] }, 0] }, { $ifNull: ['$harvestData.finalWeight', 0] }, { $ifNull: ['$harvestData.trimWeight', 0] }] }, 0] }] }, '$harvestData.wetWeight', 0] } },
+          shrinkageFinal: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $cond: [{ $gt: [{ $ifNull: ['$harvestData.finalWeight', 0] }, 0] }, { $ifNull: ['$harvestData.finalWeight', 0] }, { $ifNull: ['$harvestData.trimWeight', 0] }] }, 0] }] }, { $cond: [{ $gt: [{ $ifNull: ['$harvestData.finalWeight', 0] }, 0] }, { $ifNull: ['$harvestData.finalWeight', 0] }, { $ifNull: ['$harvestData.trimWeight', 0] }] }, 0] } },
+          shrinkageCycles: { $sum: { $cond: [{ $and: [{ $gt: ['$harvestData.wetWeight', 0] }, { $gt: [{ $cond: [{ $gt: [{ $ifNull: ['$harvestData.finalWeight', 0] }, 0] }, { $ifNull: ['$harvestData.finalWeight', 0] }, { $ifNull: ['$harvestData.trimWeight', 0] }] }, 0] }] }, 1, 0] } },
           avgDaysFlowering: { $avg: '$actualDays' },
           // Средние показатели: только по циклам с dryWeight > 0
           _gppSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerPlant', 0] }, 0] } },
           _gppCount: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, 1, 0] } },
           _gpwSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerWatt', 0] }, 0] } },
           _gpdSum: { $sum: { $cond: [{ $gt: ['$harvestData.dryWeight', 0] }, { $ifNull: ['$metrics.gramsPerDay', 0] }, 0] } },
-          // Потери на триме: считаем только по завершённым циклам (trimStatus = completed, dry > 0, trimWeight > 0)
-          trimLossDry: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
-          trimLossTrimmed: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, '$harvestData.trimWeight', 0] } },
-          trimLossPopcorn: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, { $ifNull: ['$harvestData.popcornWeight', 0] }, 0] } },
-          trimLossPopcornMachine: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, { $ifNull: ['$harvestData.popcornMachine', 0] }, 0] } },
-          trimLossCycles: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }, { $gt: ['$harvestData.trimWeight', 0] }] }, 1, 0] } }
+          // Потери на триме: считаем только по завершённым циклам (trimStatus = completed, dry > 0)
+          // finalProduct = finalWeight если есть, иначе trimWeight (fallback)
+          trimLossDry: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }] }, '$harvestData.dryWeight', 0] } },
+          trimLossFinalProduct: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }] }, { $cond: [{ $gt: [{ $ifNull: ['$harvestData.finalWeight', 0] }, 0] }, { $ifNull: ['$harvestData.finalWeight', 0] }, { $ifNull: ['$harvestData.trimWeight', 0] }] }, 0] } },
+          trimLossPopcorn: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }] }, { $add: [{ $ifNull: ['$harvestData.popcornWeight', 0] }, { $ifNull: ['$harvestData.popcornMachine', 0] }] }, 0] } },
+          trimLossCycles: { $sum: { $cond: [{ $and: [{ $eq: ['$trimStatus', 'completed'] }, { $gt: ['$harvestData.dryWeight', 0] }] }, 1, 0] } }
         }
       }
     ]);

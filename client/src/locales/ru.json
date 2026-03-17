@@ -1494,7 +1494,8 @@
     "totalPlants": "Всего кустов",
     "byStrainEst": "(по сорту)",
     "shrinkageCycles": "по {{count}} циклам",
-    "trimLoss": "Потери на триме"
+    "trimLoss": "Потери на триме",
+    "ofFinalProduct": "от готового продукта"
   },
   "labels": {
     "title": "Печать этикеток",

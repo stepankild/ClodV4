@@ -202,10 +202,10 @@ export default function ArchiveDetail() {
   })();
 
   // Попкорн и готовый продукт
-  const popcornTable = h.popcornWeight || 0;
-  const popcornMachine = h.popcornMachine || 0;
-  const totalPopcorn = popcornTable + popcornMachine;
-  const finalProduct = (h.trimWeight || 0) + popcornMachine;
+  const totalPopcorn = (h.popcornWeight || 0) + (h.popcornMachine || 0);
+  // finalWeight (ручной ввод) — основной показатель; fallback на trimWeight для старых данных
+  const finalProduct = (h.finalWeight || 0) > 0 ? h.finalWeight : (h.trimWeight || 0);
+  const popcornPct = totalPopcorn > 0 && finalProduct > 0 ? (totalPopcorn / finalProduct * 100).toFixed(1) : null;
 
   // Усушка: (wet - finalProduct) / wet * 100
   const shrinkagePct = h.wetWeight > 0 && finalProduct > 0
@@ -418,8 +418,8 @@ export default function ArchiveDetail() {
                 <InfoRow label={t('archive.wetWeightLabel')} value={`${formatNum(h.wetWeight, locale)} ${t('common.grams')}`} />
                 <InfoRow label={t('archive.dryWeightLabel')} value={`${formatNum(h.dryWeight, locale)} ${t('common.grams')}`} highlight color="text-green-400" />
                 <InfoRow label={t('archive.trimWeightLabel')} value={`${formatNum(h.trimWeight, locale)} ${t('common.grams')}`} />
-                {finalProduct > 0 && <InfoRow label={t('trim.finalProduct')} value={`${formatNum(finalProduct, locale)} ${t('common.grams')}`} highlight color="text-emerald-400" />}
-                {totalPopcorn > 0 && <InfoRow label={t('trim.totalPopcorn')} value={`${formatNum(totalPopcorn, locale)} ${t('common.grams')}`} />}
+                {finalProduct > 0 && <InfoRow label={t('trim.finalWeight')} value={`${formatNum(finalProduct, locale)} ${t('common.grams')}`} highlight color="text-emerald-400" />}
+                {totalPopcorn > 0 && <InfoRow label={t('trim.popcorn')} value={`${formatNum(totalPopcorn, locale)} ${t('common.grams')}${popcornPct ? ` (${popcornPct}%)` : ''}`} />}
                 <InfoRow label={t('archive.gramsPerPlant')} value={formatNum(m.gramsPerPlant, locale)} highlight color="text-primary-400" />
                 <InfoRow label={t('archive.gPerDay')} value={formatNum(m.gramsPerDay, locale)} />
                 {m.gramsPerWatt > 0 && <InfoRow label={t('archive.gPerWattLabel')} value={formatNum(m.gramsPerWatt, locale)} color="text-amber-400" />}
