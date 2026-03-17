@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../context/AuthContext';
 import { vegBatchService } from '../../services/vegBatchService';
@@ -143,16 +143,18 @@ const Vegetation = () => {
     try {
       setLoading(true);
       setError('');
-      const [inVeg, deletedData, roomsData, cutsData] = await Promise.all([
+      const [inVeg, deletedData, roomsData, cutsData, mapData] = await Promise.all([
         vegBatchService.getInVeg(),
         vegBatchService.getDeleted().catch(() => []),
         roomService.getRoomsSummary().catch(() => []),
-        cloneCutService.getAll().catch(() => [])
+        cloneCutService.getAll().catch(() => []),
+        vegMapService.get().catch(() => null)
       ]);
       setBatches(Array.isArray(inVeg) ? inVeg : []);
       setDeletedBatches(Array.isArray(deletedData) ? deletedData : []);
       setRooms(Array.isArray(roomsData) ? roomsData : []);
       setCloneCuts(Array.isArray(cutsData) ? cutsData : []);
+      if (mapData) setVegMapData(mapData);
     } catch (err) {
       setError(err.response?.data?.message || err.message || t('common.loadError'));
       setBatches([]);
@@ -175,6 +177,16 @@ const Vegetation = () => {
       setVegMapLoading(false);
     }
   };
+
+  // Количество расставленных на карте кустов по каждому батчу
+  const batchPlacedMap = useMemo(() => {
+    const map = {};
+    (vegMapData?.batchPositions || []).forEach(p => {
+      const id = p.batchId?.toString?.() || p.batchId;
+      if (id) map[id] = (map[id] || 0) + 1;
+    });
+    return map;
+  }, [vegMapData]);
 
   const handleToggleVegMap = () => {
     if (!showVegMap && !vegMapData) {
@@ -665,6 +677,9 @@ const Vegetation = () => {
                           <span className="text-dark-300">{getBatchInitialTotal(b)}</span>
                           <span className="text-dark-500 mx-1">/</span>
                           <span className="text-primary-400/90">{getBatchGoodCount(b)}</span>
+                          {getBatchGoodCount(b) > 0 && !(batchPlacedMap[b._id] > 0) && (
+                            <div className="text-amber-400 text-[10px] mt-0.5">🗺️ {t('vegetation.needsPlacement')}</div>
+                          )}
                         </td>
                         <td className="px-3 py-2 align-top">
                           <span className={getBatchGoodPercent(b) >= 80 ? 'text-green-400' : getBatchGoodPercent(b) >= 50 ? 'text-amber-400' : 'text-red-400'}>
@@ -774,6 +789,9 @@ const Vegetation = () => {
                                 <div className="text-dark-500 text-xs uppercase tracking-wide mb-1">{t('vegetation.quantitySection')}</div>
                                 <div className="text-dark-300 text-xs">{t('common.total')}: <span className="text-white">{getBatchInitialTotal(b)}</span></div>
                                 <div className="text-dark-300 text-xs mt-1">{t('vegetation.good')}: <span className="text-primary-400">{getBatchGoodCount(b)}</span></div>
+                                {getBatchGoodCount(b) > 0 && !(batchPlacedMap[b._id] > 0) && (
+                                  <div className="text-amber-400 text-[10px] mt-0.5">🗺️ {t('vegetation.needsPlacement')}</div>
+                                )}
                                 <div className="text-dark-300 text-xs mt-1">{t('vegetation.toFlowerLabel')}: <span className="text-white">{b.sentToFlowerCount || 0}</span></div>
                                 {(b.disposedCount || 0) > 0 && (
                                   <div className="text-dark-300 text-xs mt-1">{t('vegetation.disposed')}: <span className="text-amber-400">{b.disposedCount}</span></div>

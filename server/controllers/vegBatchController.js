@@ -1,5 +1,6 @@
 import VegBatch from '../models/VegBatch.js';
 import FlowerRoom from '../models/FlowerRoom.js';
+import VegMap from '../models/VegMap.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
@@ -248,6 +249,16 @@ export const updateVegBatch = async (req, res) => {
         .map((s) => ({ strain: String(s.strain || '').trim(), quantity: Math.max(0, parseInt(s.quantity, 10) || 0) }));
       if (flowerRoom !== undefined && doc.sentToFlowerStrains.length > 0) {
         reduceStrainsBySent(doc, doc.sentToFlowerStrains, oldSentStrains);
+        // Убираем позиции батча с карты — физически кусты уехали, расстановка невалидна
+        const vegMap = await VegMap.findOne();
+        if (vegMap && vegMap.batchPositions?.length > 0) {
+          const batchIdStr = doc._id.toString();
+          const before = vegMap.batchPositions.length;
+          vegMap.batchPositions = vegMap.batchPositions.filter(
+            p => p.batchId?.toString() !== batchIdStr
+          );
+          if (vegMap.batchPositions.length < before) await vegMap.save();
+        }
       }
     }
     if (disposeRemaining === true) {

@@ -554,6 +554,9 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
                   <span className={`ml-1 ${isFull ? 'text-red-400/80' : 'opacity-60'}`}>
                     {placed}/{goodCount}
                   </span>
+                  {goodCount - placed > 0 && !isActive && (
+                    <span className="ml-1 text-amber-400">+{goodCount - placed}</span>
+                  )}
                 </button>
               );
             })}
@@ -609,12 +612,16 @@ export default function VegMap({ vegMapData, batches, onSave, saving }) {
             const color = STRAIN_COLORS[idx % STRAIN_COLORS.length];
             const placed = batchCellCounts[b._id] || 0;
             const goodCount = batchGoodCountMap[b._id] || 0;
-            if (placed === 0) return null;
+            if (placed === 0 && goodCount === 0) return null;
+            const unplaced = goodCount - placed;
             return (
               <div key={b._id} className="flex items-center gap-1.5">
                 <span className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
                 <span className="text-dark-300">{b.name || '—'}</span>
                 <span className="text-dark-500">{placed}/{goodCount}</span>
+                {unplaced > 0 && (
+                  <span className="text-amber-400">(+{unplaced} {t('vegMap.unplaced')})</span>
+                )}
               </div>
             );
           })}
