@@ -140,6 +140,7 @@ const messages = {
   'trim.logDeleted': { ru: 'Запись удалена', en: 'Record deleted' },
   'trim.deletedNotFound': { ru: 'Удалённая запись не найдена', en: 'Deleted record not found' },
   'trim.completeRequiresPopcorn': { ru: 'Заполните вес попкорна с отсевочного стола и с машинки перед завершением', en: 'Enter popcorn weight from sorting table and machine before completing' },
+  'trim.completeRequiresFinalWeight': { ru: 'Внесите финальный вес перед завершением', en: 'Enter final weight before completing' },
 
   // ── Сорта ──
   'strains.nameRequired': { ru: 'Название сорта обязательно', en: 'Strain name is required' },

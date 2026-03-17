@@ -19,7 +19,7 @@ const progressColor = (pct) => {
 };
 
 // ─── Phase detection ───
-const PHASE_KEYS = ['drying', 'dry_weight', 'trimming', 'completed'];
+const PHASE_KEYS = ['drying', 'dry_weight', 'trimming', 'final_weight', 'completed'];
 
 const derivePhase = (a) => {
   if (a.trimStatus === 'completed') return 'completed';
@@ -27,6 +27,9 @@ const derivePhase = (a) => {
   const sd = a.strainData || [];
   const hasDry = dry > 0 || sd.some(s => (s.dryWeight || 0) > 0);
   if (!hasDry) return 'drying';
+  const hasFinalWeight = (a.harvestData?.finalWeight || 0) > 0
+    || sd.some(s => (s.finalWeight || 0) > 0);
+  if (hasFinalWeight) return 'final_weight';
   return 'trimming';
 };
 
@@ -40,11 +43,13 @@ const calcMetrics = (a) => {
   const popcorn = a.harvestData?.popcornWeight || 0;        // попкорн со стола (уже в trim)
   const popcornMachine = a.harvestData?.popcornMachine || 0; // попкорн с машинки (НЕ в trim)
   const totalPopcorn = popcorn + popcornMachine;
-  const finalProduct = trim + popcornMachine;                // готовый продукт = трим + машинка
+  const finalWeight = a.harvestData?.finalWeight || 0;       // финальный вес (ручной ввод)
+  // backward compat: если finalWeight не введён → fallback на формулу
+  const finalProduct = finalWeight > 0 ? finalWeight : (trim + popcornMachine);
   const trimProgress = dry > 0 ? Math.min(100, Math.round(finalProduct / dry * 100)) : 0;
   const shrinkage = wet > 0 && finalProduct > 0 ? ((wet - finalProduct) / wet * 100) : null;
   const trimLoss = dry > 0 && finalProduct > 0 ? ((dry - finalProduct) / dry * 100) : null;
-  return { wet, dry, trim, popcorn, popcornMachine, totalPopcorn, finalProduct, trimProgress, shrinkage, trimLoss };
+  return { wet, dry, trim, popcorn, popcornMachine, totalPopcorn, finalWeight, finalProduct, trimProgress, shrinkage, trimLoss };
 };
 
 const Trim = () => {
@@ -95,6 +100,11 @@ const Trim = () => {
   const [popcornForms, setPopcornForms] = useState({});  // { archiveId: [{ strain, popcornWeight }] }
   const [popcornSaving, setPopcornSaving] = useState({});
   const [popcornOpen, setPopcornOpen] = useState({});
+
+  // Final weight inline form per card
+  const [finalWeightForms, setFinalWeightForms] = useState({});
+  const [finalWeightSaving, setFinalWeightSaving] = useState({});
+  const [finalWeightOpen, setFinalWeightOpen] = useState({});
 
   // Accordion logs per card
   const [expandedLogs, setExpandedLogs] = useState({});
@@ -158,16 +168,19 @@ const Trim = () => {
           wetWeight: Number(r.wetWeight) || 0,
           dryWeight: Number(r.dryWeight) || 0,
           popcornWeight: existing?.popcornWeight || 0,
-          popcornMachine: existing?.popcornMachine || 0
+          popcornMachine: existing?.popcornMachine || 0,
+          finalWeight: existing?.finalWeight || 0
         };
       }).filter(s => s.strain !== '');
       const dryTotal = strainData.reduce((sum, s) => sum + s.dryWeight, 0);
       const popcornTotal = strainData.reduce((sum, s) => sum + s.popcornWeight, 0);
       const popcornMachineTotal = strainData.reduce((sum, s) => sum + s.popcornMachine, 0);
+      const finalTotal = strainData.reduce((sum, s) => sum + s.finalWeight, 0);
       await trimService.updateArchive(archiveId, {
         dryWeight: dryTotal,
         popcornWeight: popcornTotal,
         popcornMachine: popcornMachineTotal,
+        finalWeight: finalTotal,
         strainData: strainData.length ? strainData : undefined,
         strains: strainData.length ? strainData.map(s => s.strain) : undefined
       });
@@ -203,16 +216,19 @@ const Trim = () => {
           wetWeight: existing?.wetWeight || 0,
           dryWeight: existing?.dryWeight || 0,
           popcornWeight: Number(r.popcornWeight) || 0,
-          popcornMachine: Number(r.popcornMachine) || 0
+          popcornMachine: Number(r.popcornMachine) || 0,
+          finalWeight: existing?.finalWeight || 0
         };
       }).filter(s => s.strain !== '');
       const dryTotal = strainData.reduce((sum, s) => sum + s.dryWeight, 0);
       const popcornTotal = strainData.reduce((sum, s) => sum + s.popcornWeight, 0);
       const popcornMachineTotal = strainData.reduce((sum, s) => sum + s.popcornMachine, 0);
+      const finalTotal = strainData.reduce((sum, s) => sum + s.finalWeight, 0);
       await trimService.updateArchive(archiveId, {
         dryWeight: dryTotal,
         popcornWeight: popcornTotal,
         popcornMachine: popcornMachineTotal,
+        finalWeight: finalTotal,
         strainData: strainData.length ? strainData : undefined
       });
       setPopcornOpen(prev => ({ ...prev, [archiveId]: false }));
@@ -221,6 +237,53 @@ const Trim = () => {
       setError(err.response?.data?.message || t('trim.saveError'));
     } finally {
       setPopcornSaving(prev => ({ ...prev, [archiveId]: false }));
+    }
+  };
+
+  // ─── Final weight form ───
+  const openFinalWeightForm = (a) => {
+    const sd = Array.isArray(a.strainData) && a.strainData.length
+      ? a.strainData.map(s => ({ strain: s.strain || '', dryWeight: s.dryWeight ?? 0, finalWeight: s.finalWeight ?? 0 }))
+      : [{ strain: a.strain || '', dryWeight: a.harvestData?.dryWeight ?? 0, finalWeight: a.harvestData?.finalWeight ?? 0 }];
+    setFinalWeightForms(prev => ({ ...prev, [a._id]: sd }));
+    setFinalWeightOpen(prev => ({ ...prev, [a._id]: true }));
+  };
+
+  const handleSaveFinalWeight = async (archiveId) => {
+    const rows = finalWeightForms[archiveId];
+    if (!rows) return;
+    setFinalWeightSaving(prev => ({ ...prev, [archiveId]: true }));
+    try {
+      const archive = archives.find(a => a._id === archiveId);
+      const existingSD = Array.isArray(archive?.strainData) ? archive.strainData : [];
+      const strainData = rows.map(r => {
+        const existing = existingSD.find(s => s.strain === r.strain);
+        return {
+          strain: String(r.strain || '').trim(),
+          wetWeight: existing?.wetWeight || 0,
+          dryWeight: Number(r.dryWeight) || 0,
+          popcornWeight: existing?.popcornWeight || 0,
+          popcornMachine: existing?.popcornMachine || 0,
+          finalWeight: Number(r.finalWeight) || 0
+        };
+      }).filter(s => s.strain !== '');
+      const dryTotal = strainData.reduce((sum, s) => sum + s.dryWeight, 0);
+      const popcornTotal = strainData.reduce((sum, s) => sum + s.popcornWeight, 0);
+      const popcornMachineTotal = strainData.reduce((sum, s) => sum + s.popcornMachine, 0);
+      const finalTotal = strainData.reduce((sum, s) => sum + s.finalWeight, 0);
+      await trimService.updateArchive(archiveId, {
+        dryWeight: dryTotal,
+        popcornWeight: popcornTotal,
+        popcornMachine: popcornMachineTotal,
+        finalWeight: finalTotal,
+        strainData: strainData.length ? strainData : undefined
+      });
+      setFinalWeightOpen(prev => ({ ...prev, [archiveId]: false }));
+      await load();
+    } catch (err) {
+      setError(err.response?.data?.message || t('trim.saveError'));
+    } finally {
+      setFinalWeightSaving(prev => ({ ...prev, [archiveId]: false }));
     }
   };
 
@@ -305,8 +368,8 @@ const Trim = () => {
     setEditModal(archiveId);
     setEditStrainData(
       Array.isArray(arch.strainData) && arch.strainData.length
-        ? arch.strainData.map(s => ({ strain: s.strain || '', wetWeight: s.wetWeight ?? 0, dryWeight: s.dryWeight ?? 0, popcornWeight: s.popcornWeight ?? 0, popcornMachine: s.popcornMachine ?? 0 }))
-        : [{ strain: arch.strain || '', wetWeight: arch.harvestData?.wetWeight ?? 0, dryWeight: arch.harvestData?.dryWeight ?? 0, popcornWeight: arch.harvestData?.popcornWeight ?? 0, popcornMachine: arch.harvestData?.popcornMachine ?? 0 }]
+        ? arch.strainData.map(s => ({ strain: s.strain || '', wetWeight: s.wetWeight ?? 0, dryWeight: s.dryWeight ?? 0, popcornWeight: s.popcornWeight ?? 0, popcornMachine: s.popcornMachine ?? 0, finalWeight: s.finalWeight ?? 0 }))
+        : [{ strain: arch.strain || '', wetWeight: arch.harvestData?.wetWeight ?? 0, dryWeight: arch.harvestData?.dryWeight ?? 0, popcornWeight: arch.harvestData?.popcornWeight ?? 0, popcornMachine: arch.harvestData?.popcornMachine ?? 0, finalWeight: arch.harvestData?.finalWeight ?? 0 }]
     );
   };
 
@@ -315,15 +378,17 @@ const Trim = () => {
     setEditSaving(true);
     try {
       const strainData = editStrainData
-        .map(s => ({ strain: String(s.strain || '').trim(), wetWeight: Number(s.wetWeight) || 0, dryWeight: Number(s.dryWeight) || 0, popcornWeight: Number(s.popcornWeight) || 0, popcornMachine: Number(s.popcornMachine) || 0 }))
+        .map(s => ({ strain: String(s.strain || '').trim(), wetWeight: Number(s.wetWeight) || 0, dryWeight: Number(s.dryWeight) || 0, popcornWeight: Number(s.popcornWeight) || 0, popcornMachine: Number(s.popcornMachine) || 0, finalWeight: Number(s.finalWeight) || 0 }))
         .filter(s => s.strain !== '');
       const dryTotal = strainData.reduce((sum, s) => sum + s.dryWeight, 0);
       const popcornTotal = strainData.reduce((sum, s) => sum + s.popcornWeight, 0);
       const popcornMachineTotal = strainData.reduce((sum, s) => sum + s.popcornMachine, 0);
+      const finalTotal = strainData.reduce((sum, s) => sum + s.finalWeight, 0);
       await trimService.updateArchive(editModal, {
         dryWeight: dryTotal,
         popcornWeight: popcornTotal,
         popcornMachine: popcornMachineTotal,
+        finalWeight: finalTotal,
         strainData: strainData.length ? strainData : undefined,
         strains: strainData.length ? strainData.map(s => s.strain) : undefined
       });
@@ -462,7 +527,7 @@ const Trim = () => {
           // Per-strain data for tables
           const sd = Array.isArray(a.strainData) && a.strainData.length
             ? a.strainData
-            : [{ strain: a.strain || '', wetWeight: m.wet, dryWeight: m.dry, popcornWeight: m.popcorn, popcornMachine: m.popcornMachine }];
+            : [{ strain: a.strain || '', wetWeight: m.wet, dryWeight: m.dry, popcornWeight: m.popcorn, popcornMachine: m.popcornMachine, finalWeight: m.finalWeight }];
 
           return (
             <div key={a._id} className="bg-dark-800 rounded-xl border border-dark-700 overflow-hidden">
@@ -477,6 +542,7 @@ const Trim = () => {
                 </div>
                 <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 ml-2 ${
                   phase === 'completed' ? 'bg-green-900/40 text-green-400'
+                    : phase === 'final_weight' ? 'bg-purple-900/40 text-purple-400'
                     : phase === 'trimming' ? 'bg-amber-900/40 text-amber-400'
                     : phase === 'drying' ? 'bg-dark-700 text-dark-400'
                     : 'bg-blue-900/40 text-blue-400'
@@ -782,11 +848,217 @@ const Trim = () => {
                         </div>
                       </div>
                     )}
+
+                    {/* Final weight entry */}
+                    {canEdit && !finalWeightOpen[a._id] && (
+                      <button
+                        type="button"
+                        onClick={() => openFinalWeightForm(a)}
+                        className="text-xs text-purple-400 hover:text-purple-300"
+                      >
+                        + {t('trim.enterFinalWeight')}
+                      </button>
+                    )}
+                    {finalWeightOpen[a._id] && finalWeightForms[a._id] && (
+                      <div className="bg-dark-900/50 rounded-lg p-3 border border-purple-800/40 space-y-2">
+                        <p className="text-xs text-white font-medium">{t('trim.finalWeightByStrains')}</p>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-dark-500">
+                              <th className="text-left py-1 pr-1">{t('common.strain')}</th>
+                              <th className="text-right py-1 px-1 w-20">{t('trim.dry')}</th>
+                              <th className="text-right py-1 px-1 w-24">{t('trim.finalWeight')}</th>
+                              <th className="text-right py-1 pl-1 w-16">{t('trim.loss')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {finalWeightForms[a._id].map((row, i) => {
+                              const loss = row.dryWeight > 0 && Number(row.finalWeight) > 0
+                                ? ((row.dryWeight - Number(row.finalWeight)) / row.dryWeight * 100) : null;
+                              return (
+                                <tr key={i} className="border-t border-dark-700/50">
+                                  <td className="py-1 pr-1 text-dark-300">{row.strain}</td>
+                                  <td className="py-1 px-1 text-right text-blue-400">{row.dryWeight > 0 ? `${fmt(row.dryWeight, 0)}г` : '—'}</td>
+                                  <td className="py-1 px-1">
+                                    <input
+                                      type="number" min="0"
+                                      value={row.finalWeight || ''}
+                                      placeholder="0"
+                                      onChange={e => setFinalWeightForms(prev => ({
+                                        ...prev,
+                                        [a._id]: prev[a._id].map((r, j) => j === i ? { ...r, finalWeight: e.target.value } : r)
+                                      }))}
+                                      className="w-full px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm text-right"
+                                    />
+                                  </td>
+                                  <td className="py-1 pl-1 text-right text-xs">
+                                    {loss != null
+                                      ? <span className="text-red-400">{fmt(loss, 1)}%</span>
+                                      : <span className="text-dark-500">—</span>
+                                    }
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setFinalWeightOpen(prev => ({ ...prev, [a._id]: false }))}
+                            className="px-3 py-1 text-dark-400 hover:text-white text-xs rounded"
+                          >
+                            {t('common.cancel')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveFinalWeight(a._id)}
+                            disabled={!!finalWeightSaving[a._id]}
+                            className="px-3 py-1 bg-purple-600/80 text-white rounded text-xs font-medium hover:bg-purple-500 disabled:opacity-50 ml-auto"
+                          >
+                            {finalWeightSaving[a._id] ? '...' : t('trim.saveFinalWeight')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
 
                 {/* ════════════════════════════════════════════ */}
-                {/* Phase 4: Completed — summary table */}
+                {/* Phase 4: Final weight — summary */}
+                {/* ════════════════════════════════════════════ */}
+                {phase === 'final_weight' && (
+                  <div className="space-y-3">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-dark-500">
+                            <th className="text-left py-1 pr-1">{t('common.strain')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.dry')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.trimmed')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.totalPopcorn')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.finalWeight')}</th>
+                            <th className="text-right py-1 pl-1">{t('trim.loss')}</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {sd.map((s, i) => {
+                            const sTrim = a.trimByStrain?.[s.strain] || 0;
+                            const sMachine = s.popcornMachine || 0;
+                            const sFinal = s.finalWeight || 0;
+                            const sTotalPopcorn = (s.popcornWeight || 0) + sMachine;
+                            const sLoss = (s.dryWeight || 0) > 0 && sFinal > 0 ? (((s.dryWeight || 0) - sFinal) / (s.dryWeight || 1) * 100) : null;
+                            return (
+                              <tr key={i} className="border-t border-dark-700/50">
+                                <td className="py-1 pr-1 text-dark-300 font-medium">{s.strain}</td>
+                                <td className="py-1 px-1 text-right text-blue-400">{s.dryWeight > 0 ? `${fmt(s.dryWeight, 0)}г` : '—'}</td>
+                                <td className="py-1 px-1 text-right text-green-400">{sTrim > 0 ? `${fmt(sTrim, 0)}г` : '—'}</td>
+                                <td className="py-1 px-1 text-right text-amber-400">{sTotalPopcorn > 0 ? `${fmt(sTotalPopcorn, 0)}г` : '—'}</td>
+                                <td className="py-1 px-1 text-right text-purple-400 font-medium">{sFinal > 0 ? `${fmt(sFinal, 0)}г` : '—'}</td>
+                                <td className="py-1 pl-1 text-right">
+                                  {sLoss != null ? <span className="text-red-400">{fmt(sLoss, 1)}%</span> : '—'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                          {sd.length > 1 && (() => {
+                            const totalDry = sd.reduce((s, r) => s + (r.dryWeight || 0), 0);
+                            const totalTrim = Object.values(a.trimByStrain || {}).reduce((s, v) => s + v, 0);
+                            const totalPopcornAll = sd.reduce((s, r) => s + (r.popcornWeight || 0) + (r.popcornMachine || 0), 0);
+                            const totalFinal = sd.reduce((s, r) => s + (r.finalWeight || 0), 0);
+                            const totalLoss = totalDry > 0 && totalFinal > 0 ? ((totalDry - totalFinal) / totalDry * 100) : null;
+                            return (
+                              <tr className="border-t border-dark-600 font-medium">
+                                <td className="py-1 pr-1 text-dark-200">{t('common.total')}</td>
+                                <td className="py-1 px-1 text-right text-blue-400">{totalDry > 0 ? `${fmt(totalDry, 0)}г` : '—'}</td>
+                                <td className="py-1 px-1 text-right text-green-400">{totalTrim > 0 ? `${fmt(totalTrim, 0)}г` : '—'}</td>
+                                <td className="py-1 px-1 text-right text-amber-400">{totalPopcornAll > 0 ? `${fmt(totalPopcornAll, 0)}г` : '—'}</td>
+                                <td className="py-1 px-1 text-right text-purple-400 font-medium">{totalFinal > 0 ? `${fmt(totalFinal, 0)}г` : '—'}</td>
+                                <td className="py-1 pl-1 text-right">
+                                  {totalLoss != null ? <span className="text-red-400">{fmt(totalLoss, 1)}%</span> : '—'}
+                                </td>
+                              </tr>
+                            );
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() => openFinalWeightForm(a)}
+                        className="text-xs text-purple-400 hover:text-purple-300"
+                      >
+                        {t('trim.editFinalWeight')}
+                      </button>
+                    )}
+                    {finalWeightOpen[a._id] && finalWeightForms[a._id] && (
+                      <div className="bg-dark-900/50 rounded-lg p-3 border border-purple-800/40 space-y-2">
+                        <p className="text-xs text-white font-medium">{t('trim.finalWeightByStrains')}</p>
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-dark-500">
+                              <th className="text-left py-1 pr-1">{t('common.strain')}</th>
+                              <th className="text-right py-1 px-1 w-20">{t('trim.dry')}</th>
+                              <th className="text-right py-1 px-1 w-24">{t('trim.finalWeight')}</th>
+                              <th className="text-right py-1 pl-1 w-16">{t('trim.loss')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {finalWeightForms[a._id].map((row, i) => {
+                              const loss = row.dryWeight > 0 && Number(row.finalWeight) > 0
+                                ? ((row.dryWeight - Number(row.finalWeight)) / row.dryWeight * 100) : null;
+                              return (
+                                <tr key={i} className="border-t border-dark-700/50">
+                                  <td className="py-1 pr-1 text-dark-300">{row.strain}</td>
+                                  <td className="py-1 px-1 text-right text-blue-400">{row.dryWeight > 0 ? `${fmt(row.dryWeight, 0)}г` : '—'}</td>
+                                  <td className="py-1 px-1">
+                                    <input
+                                      type="number" min="0"
+                                      value={row.finalWeight || ''}
+                                      placeholder="0"
+                                      onChange={e => setFinalWeightForms(prev => ({
+                                        ...prev,
+                                        [a._id]: prev[a._id].map((r, j) => j === i ? { ...r, finalWeight: e.target.value } : r)
+                                      }))}
+                                      className="w-full px-2 py-1 bg-dark-700 border border-dark-600 rounded text-white text-sm text-right"
+                                    />
+                                  </td>
+                                  <td className="py-1 pl-1 text-right text-xs">
+                                    {loss != null
+                                      ? <span className="text-red-400">{fmt(loss, 1)}%</span>
+                                      : <span className="text-dark-500">—</span>
+                                    }
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                        <div className="flex gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() => setFinalWeightOpen(prev => ({ ...prev, [a._id]: false }))}
+                            className="px-3 py-1 text-dark-400 hover:text-white text-xs rounded"
+                          >
+                            {t('common.cancel')}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveFinalWeight(a._id)}
+                            disabled={!!finalWeightSaving[a._id]}
+                            className="px-3 py-1 bg-purple-600/80 text-white rounded text-xs font-medium hover:bg-purple-500 disabled:opacity-50 ml-auto"
+                          >
+                            {finalWeightSaving[a._id] ? '...' : t('trim.saveFinalWeight')}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ════════════════════════════════════════════ */}
+                {/* Phase 5: Completed — summary table */}
                 {/* ════════════════════════════════════════════ */}
                 {phase === 'completed' && (
                   <div className="space-y-3">
@@ -796,11 +1068,10 @@ const Trim = () => {
                         <thead>
                           <tr className="text-dark-500">
                             <th className="text-left py-1 pr-1">{t('common.strain')}</th>
-                            <th className="text-right py-1 px-1">{t('trim.wet')}</th>
                             <th className="text-right py-1 px-1">{t('trim.dry')}</th>
                             <th className="text-right py-1 px-1">{t('trim.trimmed')}</th>
                             <th className="text-right py-1 px-1">{t('trim.totalPopcorn')}</th>
-                            <th className="text-right py-1 px-1">{t('trim.finalProduct')}</th>
+                            <th className="text-right py-1 px-1">{t('trim.finalWeight')}</th>
                             <th className="text-right py-1 pl-1">{t('trim.loss')}</th>
                           </tr>
                         </thead>
@@ -808,17 +1079,18 @@ const Trim = () => {
                           {sd.map((s, i) => {
                             const sTrim = a.trimByStrain?.[s.strain] || 0;
                             const sMachine = s.popcornMachine || 0;
-                            const sProduct = sTrim + sMachine;
+                            const sFinal = s.finalWeight || 0;
                             const sTotalPopcorn = (s.popcornWeight || 0) + sMachine;
-                            const sLoss = (s.dryWeight || 0) > 0 ? (((s.dryWeight || 0) - sProduct) / (s.dryWeight || 1) * 100) : null;
+                            // потери от финального веса, fallback на формулу
+                            const sFinalYield = sFinal > 0 ? sFinal : (sTrim + sMachine);
+                            const sLoss = (s.dryWeight || 0) > 0 && sFinalYield > 0 ? (((s.dryWeight || 0) - sFinalYield) / (s.dryWeight || 1) * 100) : null;
                             return (
                               <tr key={i} className="border-t border-dark-700/50">
                                 <td className="py-1 pr-1 text-dark-300 font-medium">{s.strain}</td>
-                                <td className="py-1 px-1 text-right text-cyan-400">{s.wetWeight > 0 ? `${fmt(s.wetWeight, 0)}г` : '—'}</td>
                                 <td className="py-1 px-1 text-right text-blue-400">{s.dryWeight > 0 ? `${fmt(s.dryWeight, 0)}г` : '—'}</td>
                                 <td className="py-1 px-1 text-right text-green-400">{sTrim > 0 ? `${fmt(sTrim, 0)}г` : '—'}</td>
                                 <td className="py-1 px-1 text-right text-amber-400">{sTotalPopcorn > 0 ? `${fmt(sTotalPopcorn, 0)}г` : '—'}</td>
-                                <td className="py-1 px-1 text-right text-emerald-400">{sProduct > 0 ? `${fmt(sProduct, 0)}г` : '—'}</td>
+                                <td className="py-1 px-1 text-right text-purple-400 font-medium">{sFinalYield > 0 ? `${fmt(sFinalYield, 0)}г` : '—'}</td>
                                 <td className="py-1 pl-1 text-right">
                                   {sLoss != null ? <span className="text-red-400">{fmt(sLoss, 1)}%</span> : '—'}
                                 </td>
@@ -829,11 +1101,10 @@ const Trim = () => {
                           {sd.length > 1 && (
                             <tr className="border-t border-dark-600 font-medium">
                               <td className="py-1 pr-1 text-dark-200">{t('common.total')}</td>
-                              <td className="py-1 px-1 text-right text-cyan-400">{m.wet > 0 ? `${fmt(m.wet, 0)}г` : '—'}</td>
                               <td className="py-1 px-1 text-right text-blue-400">{m.dry > 0 ? `${fmt(m.dry, 0)}г` : '—'}</td>
                               <td className="py-1 px-1 text-right text-green-400">{m.trim > 0 ? `${fmt(m.trim, 0)}г` : '—'}</td>
                               <td className="py-1 px-1 text-right text-amber-400">{m.totalPopcorn > 0 ? `${fmt(m.totalPopcorn, 0)}г` : '—'}</td>
-                              <td className="py-1 px-1 text-right text-emerald-400">{m.finalProduct > 0 ? `${fmt(m.finalProduct, 0)}г` : '—'}</td>
+                              <td className="py-1 px-1 text-right text-purple-400 font-medium">{m.finalProduct > 0 ? `${fmt(m.finalProduct, 0)}г` : '—'}</td>
                               <td className="py-1 pl-1 text-right">
                                 {m.trimLoss != null ? <span className="text-red-400">{fmt(m.trimLoss, 1)}%</span> : '—'}
                               </td>
@@ -861,6 +1132,9 @@ const Trim = () => {
                     )}
                     {m.totalPopcorn > 0 && (
                       <span><span className="text-dark-500">{t('trim.totalPopcorn')}: </span><span className="text-amber-400">{fmt(m.totalPopcorn, 0)}{t('trim.grams')}</span></span>
+                    )}
+                    {m.finalWeight > 0 && (
+                      <span><span className="text-dark-500">{t('trim.finalWeight')}: </span><span className="text-purple-400">{fmt(m.finalWeight, 0)}{t('trim.grams')}</span></span>
                     )}
                     {m.finalProduct > 0 && (
                       <span><span className="text-dark-500">{t('trim.finalProduct')}: </span><span className="text-emerald-400">{fmt(m.finalProduct, 0)}{t('trim.grams')}</span></span>
@@ -930,20 +1204,15 @@ const Trim = () => {
                       &#9881;
                     </button>
                   )}
-                  {canEdit && !isCompleted && phase === 'trimming' && (() => {
-                    const canComplete = m.popcorn > 0 && m.popcornMachine > 0;
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => handleCompleteTrim(a._id)}
-                        disabled={!canComplete}
-                        className="px-3 py-1.5 bg-green-600/80 text-white rounded text-xs hover:bg-green-500 ml-auto font-medium disabled:opacity-40 disabled:cursor-not-allowed"
-                        title={!canComplete ? t('trim.completeRequiresPopcorn') : ''}
-                      >
-                        &#10003; {t('trim.complete')}
-                      </button>
-                    );
-                  })()}
+                  {canEdit && !isCompleted && phase === 'final_weight' && (
+                    <button
+                      type="button"
+                      onClick={() => handleCompleteTrim(a._id)}
+                      className="px-3 py-1.5 bg-green-600/80 text-white rounded text-xs hover:bg-green-500 ml-auto font-medium"
+                    >
+                      &#10003; {t('trim.complete')}
+                    </button>
+                  )}
                 </div>
 
                 {/* ════════════════════════════════════════════ */}
@@ -1015,7 +1284,8 @@ const Trim = () => {
                     <th className="text-right py-1 px-1 w-20">{t('trim.wetG')}</th>
                     <th className="text-right py-1 px-1 w-20">{t('trim.dryG')}</th>
                     <th className="text-right py-1 px-1 w-20">{t('trim.popcornTableG')}</th>
-                    <th className="text-right py-1 pl-1 w-20">{t('trim.popcornMachineG')}</th>
+                    <th className="text-right py-1 px-1 w-20">{t('trim.popcornMachineG')}</th>
+                    <th className="text-right py-1 pl-1 w-20">{t('trim.finalG')}</th>
                     <th className="w-8" />
                   </tr>
                 </thead>
@@ -1057,11 +1327,19 @@ const Trim = () => {
                           className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm text-right"
                         />
                       </td>
-                      <td className="py-1 pl-1">
+                      <td className="py-1 px-1">
                         <input
                           type="number" min="0"
                           value={s.popcornMachine}
                           onChange={e => setEditStrainData(prev => prev.map((r, j) => j === i ? { ...r, popcornMachine: e.target.value } : r))}
+                          className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm text-right"
+                        />
+                      </td>
+                      <td className="py-1 pl-1">
+                        <input
+                          type="number" min="0"
+                          value={s.finalWeight}
+                          onChange={e => setEditStrainData(prev => prev.map((r, j) => j === i ? { ...r, finalWeight: e.target.value } : r))}
                           className="w-full px-2 py-1.5 bg-dark-700 border border-dark-600 rounded text-white text-sm text-right"
                         />
                       </td>
@@ -1082,7 +1360,7 @@ const Trim = () => {
 
             <button
               type="button"
-              onClick={() => setEditStrainData(prev => [...prev, { strain: '', wetWeight: 0, dryWeight: 0, popcornWeight: 0, popcornMachine: 0 }])}
+              onClick={() => setEditStrainData(prev => [...prev, { strain: '', wetWeight: 0, dryWeight: 0, popcornWeight: 0, popcornMachine: 0, finalWeight: 0 }])}
               className="text-xs text-primary-400 hover:text-primary-300 mb-4"
             >
               + {t('trim.addStrain')}

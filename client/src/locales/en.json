@@ -953,6 +953,7 @@
     "phase_drying": "Drying",
     "phase_dry_weight": "Dry weight",
     "phase_trimming": "Trimming",
+    "phase_final_weight": "Final weight",
     "phase_completed": "Done",
     "today": "Today",
     "yesterday": "Yesterday",
@@ -1008,7 +1009,14 @@
     "popcornTableG": "Sort. table (g)",
     "popcornMachineG": "Machine (g)",
     "wetWeightFromHarvest": "Wet weight is taken from harvest data",
-    "addStrain": "Add strain"
+    "addStrain": "Add strain",
+    "finalWeight": "Final weight",
+    "finalG": "Final (g)",
+    "enterFinalWeight": "Enter final weight",
+    "finalWeightByStrains": "Final weight by strains",
+    "saveFinalWeight": "Save final weight",
+    "editFinalWeight": "Edit final weight",
+    "completeRequiresFinalWeight": "Enter final weight before completing"
   },
   "treatments": {
     "title": "Treatments",

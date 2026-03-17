@@ -953,6 +953,7 @@
     "phase_drying": "Сушка",
     "phase_dry_weight": "Сухой вес",
     "phase_trimming": "Трим",
+    "phase_final_weight": "Финальный вес",
     "phase_completed": "Готово",
     "today": "Сегодня",
     "yesterday": "Вчера",
@@ -1008,7 +1009,14 @@
     "popcornTableG": "Отсев. стол (г)",
     "popcornMachineG": "Машинка (г)",
     "wetWeightFromHarvest": "Мокрый вес берётся из данных харвеста",
-    "addStrain": "Добавить сорт"
+    "addStrain": "Добавить сорт",
+    "finalWeight": "Финальный вес",
+    "finalG": "Финал. (г)",
+    "enterFinalWeight": "Внести финальный вес",
+    "finalWeightByStrains": "Финальный вес по сортам",
+    "saveFinalWeight": "Сохранить финальный вес",
+    "editFinalWeight": "Изменить финальный вес",
+    "completeRequiresFinalWeight": "Внесите финальный вес перед завершением"
   },
   "treatments": {
     "title": "Обработки",
