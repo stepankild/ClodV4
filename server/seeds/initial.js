@@ -16,6 +16,7 @@ const permissions = [
   { name: 'archive:view', description: 'Видеть раздел «Архив циклов»', module: 'view' },
   { name: 'stats:view', description: 'Видеть раздел «Статистика»', module: 'view' },
   { name: 'trim:view', description: 'Видеть раздел «Трим»', module: 'view' },
+  { name: 'mothers:view', description: 'Видеть раздел «Материнские»', module: 'view' },
 
   // ── Rooms (комнаты) ──
   { name: 'rooms:edit', description: 'Редактировать настройки комнат (освещение, площадь, карта)', module: 'rooms' },
@@ -61,6 +62,9 @@ const permissions = [
   { name: 'treatments:view', description: 'Видеть раздел «Обработка»', module: 'treatments' },
   { name: 'treatments:manage', description: 'Создавать/редактировать протоколы и препараты', module: 'treatments' },
   { name: 'treatments:apply', description: 'Назначать протоколы комнатам', module: 'treatments' },
+
+  // ── Mothers (материнские) ──
+  { name: 'mothers:manage', description: 'Управлять материнскими растениями', module: 'mothers' },
 
   // ── Templates (шаблоны) ──
   { name: 'templates:manage', description: 'Создавать и удалять шаблоны комнат', module: 'templates' },
@@ -110,7 +114,7 @@ const seedDatabase = async () => {
     const viewPerms = resolve(
       'overview:view', 'active:view', 'harvest:view', 'clones:view',
       'vegetation:view', 'archive:view', 'stats:view', 'trim:view',
-      'treatments:view'
+      'treatments:view', 'mothers:view'
     );
 
     // Create roles
@@ -147,6 +151,8 @@ const seedDatabase = async () => {
             'treatments:manage', 'treatments:apply',
             // Templates
             'templates:manage',
+            // Mothers
+            'mothers:manage',
             // Treatments
             'treatments:create', 'treatments:edit', 'treatments:delete', 'treatments:products',
             // Users
@@ -178,6 +184,8 @@ const seedDatabase = async () => {
             'treatments:apply',
             // Cycles
             'cycles:edit_name', 'cycles:plan',
+            // Mothers
+            'mothers:manage',
             // Treatments
             'treatments:create', 'treatments:edit', 'treatments:products'
           )

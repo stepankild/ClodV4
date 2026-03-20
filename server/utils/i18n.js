@@ -183,6 +183,14 @@ const messages = {
 
   // ── Harvest (доп.) ──
   'harvest.forceInvalidRole': { ru: 'Некорректная роль', en: 'Invalid role' },
+
+  // ── Материнские ──
+  'mothers.notFound': { ru: 'Растение не найдено', en: 'Plant not found' },
+  'mothers.nameRequired': { ru: 'Укажите имя растения', en: 'Plant name is required' },
+  'mothers.dateRequired': { ru: 'Укажите дату посадки', en: 'Planting date is required' },
+  'mothers.alreadyRetired': { ru: 'Растение уже списано', en: 'Plant already retired' },
+  'mothers.deleted': { ru: 'Удалено (можно восстановить)', en: 'Deleted (can be restored)' },
+  'mothers.notFoundOrRestored': { ru: 'Растение не найдено или уже восстановлено', en: 'Plant not found or already restored' },
 };
 
 /**

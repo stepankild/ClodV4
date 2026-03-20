@@ -22,6 +22,7 @@ import Labels from './pages/Labels/Labels';
 import Treatments from './pages/Treatments/Treatments';
 import TreatmentProducts from './pages/Treatments/TreatmentProducts';
 import Profile from './pages/Profile/Profile';
+import MotherRoom from './pages/MotherRoom/MotherRoom';
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -61,6 +62,7 @@ function App() {
         <Route path="/trim" element={<ProtectedRoute permission="trim:view"><Trim /></ProtectedRoute>} />
         <Route path="/clones" element={<ProtectedRoute permission="clones:view"><Clones /></ProtectedRoute>} />
         <Route path="/vegetation" element={<ProtectedRoute permission="vegetation:view"><Vegetation /></ProtectedRoute>} />
+        <Route path="/mothers" element={<ProtectedRoute permission="mothers:view"><MotherRoom /></ProtectedRoute>} />
         <Route path="/archive" element={<ProtectedRoute permission="archive:view"><Archives /></ProtectedRoute>} />
         <Route path="/archive/:id" element={<ProtectedRoute permission="archive:view"><ArchiveDetail /></ProtectedRoute>} />
         <Route path="/stats" element={<ProtectedRoute permission="stats:view"><Statistics /></ProtectedRoute>} />

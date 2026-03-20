@@ -30,6 +30,7 @@ import strainRoutes from './routes/strains.js';
 import treatmentRoutes from './routes/treatments.js';
 import treatmentProductRoutes from './routes/treatmentProducts.js';
 import treatmentRecordRoutes from './routes/treatmentRecords.js';
+import motherRoomRoutes from './routes/motherRoom.js';
 import { detectLanguage } from './middleware/lang.js';
 
 console.log('=== IMPORTS DONE ===');
@@ -53,6 +54,8 @@ import './models/TreatmentProduct.js';
 import './models/TreatmentProtocol.js';
 import './models/RoomTreatmentSchedule.js';
 import './models/TreatmentRecord.js';
+import './models/MotherPlant.js';
+import './models/MotherRoomMap.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load .env from server folder (Railway uses Variables, so MONGODB_URI must be set there)
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -139,6 +142,7 @@ app.use('/api/strains', strainRoutes);
 app.use('/api/treatments', treatmentRoutes);
 app.use('/api/treatment-products', treatmentProductRoutes);
 app.use('/api/treatments', treatmentRecordRoutes);
+app.use('/api/mother-room', motherRoomRoutes);
 
 // Health check (Railway and load balancers ping this or /)
 app.get('/api/health', (req, res) => {
