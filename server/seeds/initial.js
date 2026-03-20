@@ -69,8 +69,6 @@ const permissions = [
   // ── Templates (шаблоны) ──
   { name: 'templates:manage', description: 'Создавать и удалять шаблоны комнат', module: 'templates' },
 
-  // ── Treatments (обработки) ──
-  { name: 'treatments:view', description: 'Видеть раздел «Обработки»', module: 'treatments' },
   { name: 'treatments:create', description: 'Создавать записи обработок', module: 'treatments' },
   { name: 'treatments:edit', description: 'Редактировать записи обработок', module: 'treatments' },
   { name: 'treatments:delete', description: 'Удалять записи обработок', module: 'treatments' },
