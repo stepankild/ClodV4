@@ -232,7 +232,8 @@ const seedDatabase = async () => {
       password: 'admin123',
       name: 'Администратор',
       roles: [roleMap['SuperAdmin']],
-      isActive: true
+      isActive: true,
+      isApproved: true
     });
 
     await adminUser.save();
