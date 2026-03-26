@@ -50,6 +50,17 @@ export function connectScale() {
     listeners.forEach(cb => cb('sync_status', data));
   });
 
+  // IoT sensor events
+  socket.on('sensor:data', (data) => {
+    listeners.forEach(cb => cb('sensor_data', data));
+  });
+  socket.on('sensor:status', (data) => {
+    listeners.forEach(cb => cb('sensor_status', data));
+  });
+  socket.on('sensor:zones', (data) => {
+    listeners.forEach(cb => cb('sensor_zones', data));
+  });
+
   socket.on('connect', () => {
     listeners.forEach(cb => cb('socketConnected', {}));
   });

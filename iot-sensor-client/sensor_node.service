@@ -1,0 +1,16 @@
+[Unit]
+Description=TRUE GROW IoT Sensor Node
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/iot-sensor-client
+ExecStart=/home/pi/iot-sensor-client/venv/bin/python sensor_node.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

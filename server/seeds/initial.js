@@ -17,6 +17,10 @@ const permissions = [
   { name: 'stats:view', description: 'Видеть раздел «Статистика»', module: 'view' },
   { name: 'trim:view', description: 'Видеть раздел «Трим»', module: 'view' },
   { name: 'mothers:view', description: 'Видеть раздел «Материнские»', module: 'view' },
+  { name: 'iot:view', description: 'Видеть раздел «IoT мониторинг»', module: 'view' },
+
+  // ── IoT (зоны мониторинга) ──
+  { name: 'iot:manage', description: 'Управлять IoT зонами и настройками', module: 'iot' },
 
   // ── Rooms (комнаты) ──
   { name: 'rooms:edit', description: 'Редактировать настройки комнат (освещение, площадь, карта)', module: 'rooms' },
@@ -112,7 +116,7 @@ const seedDatabase = async () => {
     const viewPerms = resolve(
       'overview:view', 'active:view', 'harvest:view', 'clones:view',
       'vegetation:view', 'archive:view', 'stats:view', 'trim:view',
-      'treatments:view', 'mothers:view'
+      'treatments:view', 'mothers:view', 'iot:view'
     );
 
     // Create roles
@@ -155,7 +159,9 @@ const seedDatabase = async () => {
             'treatments:create', 'treatments:edit', 'treatments:delete', 'treatments:products',
             // Users
             'users:read', 'users:create', 'users:update', 'users:delete',
-            'audit:read'
+            'audit:read',
+            // IoT
+            'iot:manage'
           )
         ],
         isSystem: true
@@ -185,7 +191,9 @@ const seedDatabase = async () => {
             // Mothers
             'mothers:manage',
             // Treatments
-            'treatments:create', 'treatments:edit', 'treatments:products'
+            'treatments:create', 'treatments:edit', 'treatments:products',
+            // IoT
+            'iot:manage'
           )
         ],
         isSystem: true

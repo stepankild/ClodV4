@@ -307,6 +307,17 @@ function handleBrowserConnection(io, socket) {
     socket.emit('pi:sync_status', { syncing: true, count: scaleState.syncCount });
   }
 
+  // Отправить текущие состояния IoT зон
+  try {
+    const { getZoneStates } = await import('../mqtt/index.js');
+    const zones = getZoneStates();
+    if (Object.keys(zones).length > 0) {
+      socket.emit('sensor:zones', zones);
+    }
+  } catch (e) {
+    // MQTT module may not be initialized yet
+  }
+
   socket.on('disconnect', () => {
     // Браузер отключился — ничего особенного
   });

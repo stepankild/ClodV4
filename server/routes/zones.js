@@ -1,0 +1,29 @@
+import express from 'express';
+import {
+  getZones,
+  getZone,
+  createZone,
+  updateZone,
+  deleteZone,
+  getReadings,
+  getLatestReading
+} from '../controllers/zoneController.js';
+import { protect } from '../middleware/auth.js';
+import { checkPermission } from '../middleware/rbac.js';
+
+const router = express.Router();
+
+router.use(protect);
+
+// Read — iot:view
+router.get('/', checkPermission('iot:view'), getZones);
+router.get('/:zoneId', checkPermission('iot:view'), getZone);
+router.get('/:zoneId/readings', checkPermission('iot:view'), getReadings);
+router.get('/:zoneId/readings/latest', checkPermission('iot:view'), getLatestReading);
+
+// Write — iot:manage
+router.post('/', checkPermission('iot:manage'), createZone);
+router.put('/:zoneId', checkPermission('iot:manage'), updateZone);
+router.delete('/:zoneId', checkPermission('iot:manage'), deleteZone);
+
+export default router;

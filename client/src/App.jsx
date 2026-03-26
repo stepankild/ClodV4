@@ -21,6 +21,8 @@ import Strains from './pages/Strains/Strains';
 import Labels from './pages/Labels/Labels';
 import Treatments from './pages/Treatments/Treatments';
 import TreatmentProducts from './pages/Treatments/TreatmentProducts';
+import IoTOverview from './pages/IoT/IoTOverview';
+import ZoneDetail from './pages/IoT/ZoneDetail';
 import Profile from './pages/Profile/Profile';
 import MotherRoom from './pages/MotherRoom/MotherRoom';
 
@@ -93,6 +95,8 @@ function App() {
         <Route path="/labels" element={<ProtectedRoute permission="active:view"><Labels /></ProtectedRoute>} />
         <Route path="/treatments" element={<ProtectedRoute permission="treatments:view"><Treatments /></ProtectedRoute>} />
         <Route path="/treatments/products" element={<ProtectedRoute permission="treatments:products"><TreatmentProducts /></ProtectedRoute>} />
+        <Route path="/iot" element={<ProtectedRoute permission="iot:view"><IoTOverview /></ProtectedRoute>} />
+        <Route path="/iot/:zoneId" element={<ProtectedRoute permission="iot:view"><ZoneDetail /></ProtectedRoute>} />
         <Route path="/strains" element={<Strains />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="/admin/users" element={<Navigate to="/workers" replace />} />

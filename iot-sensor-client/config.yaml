@@ -1,0 +1,20 @@
+zone_id: "zone-1"
+zone_name: "Room 1"
+
+mqtt:
+  broker: "192.168.0.1"   # Master Pi IP (update when Mosquitto is set up)
+  port: 1883
+  username: "grow-zone-1"
+  password: ""
+
+sensors:
+  ds18b20:
+    - id: "28-0000108e9976"
+      location: "canopy"
+    - id: "28-0000108eeb37"
+      location: "substrate"
+  scd41:
+    enabled: true
+    address: 0x64  # STCC4 module uses 0x64
+
+interval: 30  # seconds between readings

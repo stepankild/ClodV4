@@ -1,0 +1,155 @@
+import mqtt from 'mqtt';
+import SensorReading from '../models/SensorReading.js';
+import Zone from '../models/Zone.js';
+
+// ── In-memory zone states ──
+const zoneStates = new Map();
+
+const ZONE_OFFLINE_TIMEOUT_MS = 90000; // 90 seconds without data = offline
+const zoneTimers = new Map();
+
+export function getZoneStates() {
+  return Object.fromEntries(zoneStates);
+}
+
+export function getZoneState(zoneId) {
+  return zoneStates.get(zoneId) || null;
+}
+
+function setZoneOnline(zoneId, data) {
+  const state = zoneStates.get(zoneId) || { online: false, lastData: null, lastSeen: null };
+  state.online = true;
+  state.lastData = data;
+  state.lastSeen = new Date();
+  zoneStates.set(zoneId, state);
+
+  // Reset offline timer
+  if (zoneTimers.has(zoneId)) clearTimeout(zoneTimers.get(zoneId));
+  zoneTimers.set(zoneId, setTimeout(() => {
+    const s = zoneStates.get(zoneId);
+    if (s) {
+      s.online = false;
+      zoneStates.set(zoneId, s);
+      // Broadcast offline status
+      if (globalIo) globalIo.emit('sensor:status', { zoneId, online: false });
+      Zone.findOneAndUpdate({ zoneId }, { 'piStatus.online': false }).catch(() => {});
+    }
+  }, ZONE_OFFLINE_TIMEOUT_MS));
+}
+
+function setZoneOffline(zoneId) {
+  const state = zoneStates.get(zoneId);
+  if (state) {
+    state.online = false;
+    zoneStates.set(zoneId, state);
+  }
+  if (zoneTimers.has(zoneId)) {
+    clearTimeout(zoneTimers.get(zoneId));
+    zoneTimers.delete(zoneId);
+  }
+}
+
+let globalIo = null;
+let mqttClient = null;
+
+export function initializeMqtt(io) {
+  globalIo = io;
+
+  const brokerUrl = process.env.MQTT_BROKER_URL;
+  if (!brokerUrl) {
+    console.log('[MQTT] MQTT_BROKER_URL not set, skipping MQTT initialization');
+    return;
+  }
+
+  const options = {
+    clientId: `truegrow-server-${Date.now()}`,
+    clean: true,
+    reconnectPeriod: 5000,
+    connectTimeout: 10000,
+  };
+
+  if (process.env.MQTT_USERNAME) {
+    options.username = process.env.MQTT_USERNAME;
+    options.password = process.env.MQTT_PASSWORD;
+  }
+
+  mqttClient = mqtt.connect(brokerUrl, options);
+
+  mqttClient.on('connect', () => {
+    console.log('[MQTT] Connected to broker:', brokerUrl);
+    mqttClient.subscribe('grow/#', (err) => {
+      if (err) console.error('[MQTT] Subscribe error:', err);
+      else console.log('[MQTT] Subscribed to grow/#');
+    });
+  });
+
+  mqttClient.on('message', async (topic, message) => {
+    try {
+      const parts = topic.split('/');
+      // grow/zone/{zoneId}/sensors
+      if (parts[0] === 'grow' && parts[1] === 'zone' && parts.length >= 4) {
+        const zoneId = parts[2];
+        const type = parts[3];
+
+        if (type === 'sensors') {
+          const data = JSON.parse(message.toString());
+          await handleSensorData(zoneId, data);
+        } else if (type === 'status') {
+          const data = JSON.parse(message.toString());
+          if (data.online === false) {
+            setZoneOffline(zoneId);
+            io.emit('sensor:status', { zoneId, online: false });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('[MQTT] Message handling error:', err.message);
+    }
+  });
+
+  mqttClient.on('error', (err) => {
+    console.error('[MQTT] Connection error:', err.message);
+  });
+
+  mqttClient.on('reconnect', () => {
+    console.log('[MQTT] Reconnecting...');
+  });
+}
+
+async function handleSensorData(zoneId, data) {
+  // Update in-memory state
+  setZoneOnline(zoneId, data);
+
+  // Store reading in MongoDB
+  const reading = new SensorReading({
+    zoneId,
+    timestamp: data.timestamp || new Date(),
+    temperatures: data.temperatures || [],
+    humidity: data.humidity ?? null,
+    temperature: data.temperature ?? null,
+    co2: data.co2 ?? null,
+    light: data.light ?? null,
+    humidifierState: data.humidifierState ?? null,
+  });
+
+  await reading.save();
+
+  // Update zone piStatus in DB
+  Zone.findOneAndUpdate(
+    { zoneId },
+    { 'piStatus.online': true, 'piStatus.lastSeen': new Date() },
+    { upsert: false }
+  ).catch(() => {});
+
+  // Broadcast to all browser clients
+  if (globalIo) {
+    globalIo.emit('sensor:data', { zoneId, ...data, timestamp: reading.timestamp });
+  }
+}
+
+// Publish a command to a zone (for humidifier control etc.)
+export function publishToZone(zoneId, subtopic, payload) {
+  if (mqttClient && mqttClient.connected) {
+    mqttClient.publish(`grow/zone/${zoneId}/${subtopic}`, JSON.stringify(payload));
+  }
+}
