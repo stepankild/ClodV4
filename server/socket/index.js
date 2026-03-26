@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from 'socket.io';
 import { verifyAccessToken } from '../utils/jwt.js';
 import User from '../models/User.js';
+import { getZoneStates } from '../mqtt/index.js';
 
 // ── In-memory состояние весов ──
 let scaleState = {
@@ -309,7 +310,6 @@ function handleBrowserConnection(io, socket) {
 
   // Отправить текущие состояния IoT зон
   try {
-    const { getZoneStates } = await import('../mqtt/index.js');
     const zones = getZoneStates();
     if (Object.keys(zones).length > 0) {
       socket.emit('sensor:zones', zones);
