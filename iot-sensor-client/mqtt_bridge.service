@@ -1,0 +1,16 @@
+[Unit]
+Description=TRUE GROW IoT MQTT-to-API Bridge
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+User=stepan
+WorkingDirectory=/home/stepan/iot-sensor-client
+ExecStart=/home/stepan/iot-sensor-client/venv/bin/python mqtt_bridge.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

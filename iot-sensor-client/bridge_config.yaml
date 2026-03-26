@@ -1,0 +1,7 @@
+mqtt:
+  broker: "localhost"
+  port: 1883
+
+api:
+  url: "https://clodv4-production.up.railway.app"
+  key: "truegrow-sensor-key-2026"

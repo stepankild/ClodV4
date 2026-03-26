@@ -32,6 +32,7 @@ import treatmentProductRoutes from './routes/treatmentProducts.js';
 import treatmentRecordRoutes from './routes/treatmentRecords.js';
 import motherRoomRoutes from './routes/motherRoom.js';
 import zoneRoutes from './routes/zones.js';
+import sensorIngestRoutes from './routes/sensorIngest.js';
 import { detectLanguage } from './middleware/lang.js';
 
 console.log('=== IMPORTS DONE ===');
@@ -147,6 +148,7 @@ app.use('/api/treatment-products', treatmentProductRoutes);
 app.use('/api/treatments', treatmentRecordRoutes);
 app.use('/api/mother-room', motherRoomRoutes);
 app.use('/api/zones', zoneRoutes);
+app.use('/api/sensor-data', sensorIngestRoutes);
 
 // Health check (Railway and load balancers ping this or /)
 app.get('/api/health', (req, res) => {
