@@ -9,9 +9,11 @@ export const getZones = async (req, res) => {
     const zones = await Zone.find().sort({ zoneId: 1 }).lean();
     const states = getZoneStates();
 
-    // Attach live status and last data to each zone
-    const result = zones.map(zone => {
+    // Attach live status and last reading to each zone
+    const result = await Promise.all(zones.map(async (zone) => {
       const live = states[zone.zoneId];
+      const lastReading = await SensorReading.findOne({ zoneId: zone.zoneId })
+        .sort({ timestamp: -1 }).lean();
       return {
         ...zone,
         piStatus: {
@@ -19,9 +21,9 @@ export const getZones = async (req, res) => {
           online: live?.online ?? zone.piStatus?.online ?? false,
           lastSeen: live?.lastSeen ?? zone.piStatus?.lastSeen,
         },
-        lastData: live?.lastData ?? null,
+        lastData: live?.lastData ?? lastReading ?? null,
       };
-    });
+    }));
 
     res.json(result);
   } catch (error) {
@@ -43,7 +45,9 @@ export const getZone = async (req, res) => {
       online: live?.online ?? zone.piStatus?.online ?? false,
       lastSeen: live?.lastSeen ?? zone.piStatus?.lastSeen,
     };
-    zone.lastData = live?.lastData ?? null;
+    const lastReading = await SensorReading.findOne({ zoneId: zone.zoneId })
+      .sort({ timestamp: -1 }).lean();
+    zone.lastData = live?.lastData ?? lastReading ?? null;
 
     res.json(zone);
   } catch (error) {
