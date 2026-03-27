@@ -1,16 +1,16 @@
 #pragma once
 
 // ===== WiFi =====
-#define WIFI_SSID     "YOUR_WIFI_SSID"
-#define WIFI_PASS     "YOUR_WIFI_PASSWORD"
+#define WIFI_SSID     "gigacube-2754DD"
+#define WIFI_PASS     "2rBTjt4gm532yr47"
 
 // ===== API =====
 #define API_HOST      "clodv4-production.up.railway.app"
 #define API_PATH      "/api/sensor-data/display/zone-1"
-#define API_KEY       "YOUR_SENSOR_API_KEY"
+#define API_KEY       "truegrow-sensor-key-2026"
 
 // ===== Timing =====
-#define SLEEP_MINUTES 5          // Deep sleep between refreshes
+#define SLEEP_MINUTES 2          // Deep sleep between refreshes
 #define WIFI_TIMEOUT  15000      // ms to wait for WiFi
 
 // ===== ESPink-42 V3 (ESP32-S3) pinout =====

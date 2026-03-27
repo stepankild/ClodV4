@@ -160,13 +160,14 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
       vpd = Math.round(Math.max(0, svpL - svpA * rh / 100) * 100) / 100;
     }
 
-    // Sparkline history: last 6h, 30 points (every 12 min)
-    const since6h = new Date(Date.now() - 6 * 3600 * 1000);
+    // Sparkline history: last 24h, ~48 points (every 30 min)
+    const since24hHist = new Date(Date.now() - 24 * 3600 * 1000);
+    const bucketMs = 30 * 60 * 1000; // 30 min buckets
     const histPipeline = [
-      { $match: { zoneId, timestamp: { $gte: since6h } } },
+      { $match: { zoneId, timestamp: { $gte: since24hHist } } },
       { $sort: { timestamp: 1 } },
       { $group: {
-        _id: { $toDate: { $subtract: [{ $toLong: '$timestamp' }, { $mod: [{ $toLong: '$timestamp' }, 12 * 60 * 1000] }] } },
+        _id: { $toDate: { $subtract: [{ $toLong: '$timestamp' }, { $mod: [{ $toLong: '$timestamp' }, bucketMs] }] } },
         t: { $avg: '$temperature' },
         rh: { $avg: { $ifNull: ['$humidity_sht45', '$humidity'] } },
         co2: { $avg: '$co2' },
@@ -178,11 +179,11 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
 
     // Also get canopy temps for VPD sparkline
     const canopyPipeline = [
-      { $match: { zoneId, timestamp: { $gte: since6h } } },
+      { $match: { zoneId, timestamp: { $gte: since24hHist } } },
       { $unwind: '$temperatures' },
       { $match: { 'temperatures.location': 'canopy' } },
       { $group: {
-        _id: { $toDate: { $subtract: [{ $toLong: '$timestamp' }, { $mod: [{ $toLong: '$timestamp' }, 12 * 60 * 1000] }] } },
+        _id: { $toDate: { $subtract: [{ $toLong: '$timestamp' }, { $mod: [{ $toLong: '$timestamp' }, bucketMs] }] } },
         ct: { $avg: '$temperatures.value' },
       }},
       { $sort: { _id: 1 } },

@@ -8,462 +8,447 @@
 #include <U8g2_for_Adafruit_GFX.h>
 #include "config.h"
 
-// 4-color 4.2" display (400x300) — GDEY0420F51
 GxEPD2_4C<GxEPD2_420c_GDEY0420F51, GxEPD2_420c_GDEY0420F51::HEIGHT> display(
     GxEPD2_420c_GDEY0420F51(SS, EPD_DC, EPD_RST, EPD_BUSY)
 );
-
 U8G2_FOR_ADAFRUIT_GFX u8g2Fonts;
 
 #define BLACK   GxEPD_BLACK
 #define WHITE   GxEPD_WHITE
 #define RED     GxEPD_RED
 #define YELLOW  GxEPD_YELLOW
-
 #define W 400
 #define H 300
-#define MAX_HIST 40
+#define MAX_HIST 60
 
 // ===== Data =====
-struct DisplayData {
+struct SData {
   String zoneName;
   bool online;
   String timestamp;
-  float temps[4];
-  String tempLocs[4];
-  int tempCount;
+  float temps[4]; String tempLocs[4]; int tempCount;
   float airT, rh, rh2, vpd;
   int co2, lux;
   float photoDay, photoNight;
   bool hasAirT, hasRH, hasRH2, hasCO2, hasLux, hasVPD, hasPhoto;
-  // Sparkline history
-  float histT[MAX_HIST], histRH[MAX_HIST], histCO2[MAX_HIST];
-  float histVPD[MAX_HIST];
+  float histT[MAX_HIST], histRH[MAX_HIST], histVPD[MAX_HIST];
   int histCount;
-};
+} D;
 
-DisplayData data;
-
-// ===== WiFi =====
 bool connectWiFi() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-  unsigned long start = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_TIMEOUT) {
-    delay(250);
-  }
+  unsigned long s = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - s < WIFI_TIMEOUT) delay(200);
   return WiFi.status() == WL_CONNECTED;
 }
 
-// ===== VPD calculation =====
-float calcVPD(float leafT, float airT, float rh) {
-  if (leafT < -40 || airT < -40 || rh < 0) return -1;
-  float svpL = 0.6108f * expf(17.27f * leafT / (leafT + 237.3f));
-  float svpA = 0.6108f * expf(17.27f * airT / (airT + 237.3f));
+float calcVPD(float lf, float at, float rh) {
+  if (lf < -40 || at < -40 || rh < 0) return -999;
+  float svpL = 0.6108f * expf(17.27f * lf / (lf + 237.3f));
+  float svpA = 0.6108f * expf(17.27f * at / (at + 237.3f));
   float v = svpL - svpA * rh / 100.0f;
   return v > 0 ? v : 0;
 }
 
-// ===== Fetch data =====
 bool fetchData() {
   WiFiClientSecure client;
   client.setInsecure();
   HTTPClient http;
-  String url = String("https://") + API_HOST + API_PATH;
-  http.begin(client, url);
+  http.begin(client, String("https://") + API_HOST + API_PATH);
   http.addHeader("X-API-KEY", API_KEY);
   http.setTimeout(10000);
-
   int code = http.GET();
-  if (code != 200) {
-    Serial.printf("HTTP error: %d\n", code);
-    http.end();
-    return false;
-  }
-
+  if (code != 200) { http.end(); return false; }
   String payload = http.getString();
   http.end();
 
   JsonDocument doc;
   if (deserializeJson(doc, payload)) return false;
 
-  data.zoneName = doc["zone"].as<String>();
-  data.online = doc["online"] | false;
-  data.timestamp = doc["ts"].as<String>();
+  D.zoneName = doc["zone"].as<String>();
+  D.online = doc["online"] | false;
+  D.timestamp = doc["ts"].as<String>();
 
-  data.tempCount = 0;
+  D.tempCount = 0;
   for (JsonObject t : doc["temps"].as<JsonArray>()) {
-    if (data.tempCount >= 4) break;
-    data.temps[data.tempCount] = t["v"];
-    data.tempLocs[data.tempCount] = t["loc"].as<String>();
-    data.tempCount++;
+    if (D.tempCount >= 4) break;
+    D.temps[D.tempCount] = t["v"];
+    D.tempLocs[D.tempCount] = t["loc"].as<String>();
+    D.tempCount++;
   }
 
-  data.hasAirT = !doc["airT"].isNull(); data.airT = doc["airT"] | 0.0f;
-  data.hasRH = !doc["rh"].isNull(); data.rh = doc["rh"] | 0.0f;
-  data.hasRH2 = !doc["rh2"].isNull(); data.rh2 = doc["rh2"] | 0.0f;
-  data.hasCO2 = !doc["co2"].isNull(); data.co2 = doc["co2"] | 0;
-  data.hasLux = !doc["lux"].isNull(); data.lux = doc["lux"] | 0;
-  data.hasVPD = !doc["vpd"].isNull(); data.vpd = doc["vpd"] | 0.0f;
-  data.hasPhoto = !doc["photo"].isNull();
-  if (data.hasPhoto) {
-    data.photoDay = doc["photo"]["day"] | 0.0f;
-    data.photoNight = doc["photo"]["night"] | 0.0f;
-  }
+  D.hasAirT = !doc["airT"].isNull(); D.airT = doc["airT"] | 0.0f;
+  D.hasRH = !doc["rh"].isNull(); D.rh = doc["rh"] | 0.0f;
+  D.hasRH2 = !doc["rh2"].isNull(); D.rh2 = doc["rh2"] | 0.0f;
+  D.hasCO2 = !doc["co2"].isNull(); D.co2 = doc["co2"] | 0;
+  D.hasLux = !doc["lux"].isNull(); D.lux = doc["lux"] | 0;
+  D.hasVPD = !doc["vpd"].isNull(); D.vpd = doc["vpd"] | 0.0f;
+  D.hasPhoto = !doc["photo"].isNull();
+  if (D.hasPhoto) { D.photoDay = doc["photo"]["day"] | 0.0f; D.photoNight = doc["photo"]["night"] | 0.0f; }
 
-  // Parse sparkline history
   JsonArray hist = doc["hist"];
   JsonArray canopyH = doc["canopyHist"];
-  data.histCount = 0;
+  D.histCount = 0;
   int i = 0;
   for (JsonObject h : hist) {
     if (i >= MAX_HIST) break;
-    data.histT[i] = h["t"] | -999.0f;
-    data.histRH[i] = h["rh"] | -999.0f;
-    data.histCO2[i] = h["co2"] | -999.0f;
-    // VPD from canopy + airT + rh
+    D.histT[i] = h["t"] | -999.0f;
+    D.histRH[i] = h["rh"] | -999.0f;
     float ct = (i < (int)canopyH.size()) ? canopyH[i].as<float>() : -999.0f;
-    float at = data.histT[i];
-    float rh = data.histRH[i];
-    if (ct > -40 && at > -40 && rh >= 0) {
-      data.histVPD[i] = calcVPD(ct, at, rh);
-    } else {
-      data.histVPD[i] = -999.0f;
-    }
+    float at = D.histT[i];
+    float rh = D.histRH[i];
+    D.histVPD[i] = calcVPD(ct, at, rh);
     i++;
   }
-  data.histCount = i;
-
+  D.histCount = i;
   return true;
 }
 
-// ===== Drawing helpers =====
-void textCenter(int16_t x, int16_t y, const char* text) {
-  int16_t tw = u8g2Fonts.getUTF8Width(text);
-  u8g2Fonts.setCursor(x - tw / 2, y);
-  u8g2Fonts.print(text);
+// ===== Drawing =====
+void tCenter(int16_t x, int16_t y, const char* t) {
+  u8g2Fonts.setCursor(x - u8g2Fonts.getUTF8Width(t) / 2, y);
+  u8g2Fonts.print(t);
+}
+void tRight(int16_t x, int16_t y, const char* t) {
+  u8g2Fonts.setCursor(x - u8g2Fonts.getUTF8Width(t), y);
+  u8g2Fonts.print(t);
 }
 
-void textRight(int16_t x, int16_t y, const char* text) {
-  int16_t tw = u8g2Fonts.getUTF8Width(text);
-  u8g2Fonts.setCursor(x - tw, y);
-  u8g2Fonts.print(text);
+// Draw a single chart line within the chart area
+void drawChartLine(int16_t cx, int16_t cy, int16_t cw, int16_t ch,
+                   float* vals, int count, float vmin, float vmax, uint16_t color, bool thick) {
+  if (count < 2 || vmax <= vmin) return;
+  float range = vmax - vmin;
+  int prevX = -1, prevY = -1;
+  for (int i = 0; i < count; i++) {
+    if (vals[i] < -900) { prevX = -1; continue; }
+    int px = cx + (i * cw) / (count - 1);
+    int py = cy + ch - (int)((vals[i] - vmin) / range * ch);
+    py = constrain(py, cy, cy + ch);
+    if (prevX >= 0) {
+      display.drawLine(prevX, prevY, px, py, color);
+      if (thick) display.drawLine(prevX, prevY - 1, px, py - 1, color);
+    }
+    prevX = px; prevY = py;
+  }
 }
 
-// Draw sparkline chart
-void drawSparkline(int16_t x, int16_t y, int16_t w, int16_t h,
-                   float* vals, int count, uint16_t color,
-                   const char* label, const char* unit, float current) {
-  if (count < 2) return;
-
-  // Find min/max (skip invalid)
-  float vmin = 99999, vmax = -99999;
+void getMinMax(float* vals, int count, float &vmin, float &vmax) {
+  vmin = 99999; vmax = -99999;
   for (int i = 0; i < count; i++) {
     if (vals[i] < -900) continue;
     if (vals[i] < vmin) vmin = vals[i];
     if (vals[i] > vmax) vmax = vals[i];
   }
   if (vmin >= vmax) { vmin -= 1; vmax += 1; }
-
-  float range = vmax - vmin;
-  float padding = range * 0.1f;
-  vmin -= padding;
-  vmax += padding;
-  range = vmax - vmin;
-
-  // Chart area
-  int16_t chartX = x + 45;  // space for label
-  int16_t chartW = w - 45;
-  int16_t chartH = h - 2;
-
-  // Draw baseline
-  display.drawFastHLine(chartX, y + h - 1, chartW, BLACK);
-
-  // Draw data line
-  int prevPx = -1, prevPy = -1;
-  for (int i = 0; i < count; i++) {
-    if (vals[i] < -900) { prevPx = -1; continue; }
-    int px = chartX + (i * chartW) / (count - 1);
-    int py = y + h - 1 - (int)((vals[i] - vmin) / range * chartH);
-    py = constrain(py, y, y + h - 1);
-
-    if (prevPx >= 0) {
-      display.drawLine(prevPx, prevPy, px, py, color);
-      // Thicken line
-      display.drawLine(prevPx, prevPy + 1, px, py + 1, color);
-    }
-    prevPx = px;
-    prevPy = py;
-  }
-
-  // Label + current value
-  u8g2Fonts.setFont(u8g2_font_helvB08_tr);
-  u8g2Fonts.setForegroundColor(color);
-  u8g2Fonts.setCursor(x, y + 10);
-  u8g2Fonts.print(label);
-
-  u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-  u8g2Fonts.setForegroundColor(BLACK);
-  char buf[16];
-  if (strcmp(unit, " ppm") == 0) {
-    snprintf(buf, sizeof(buf), "%d%s", (int)current, unit);
-  } else {
-    snprintf(buf, sizeof(buf), "%.1f%s", current, unit);
-  }
-  u8g2Fonts.setCursor(x, y + 22);
-  u8g2Fonts.print(buf);
-
-  // Min/max labels
-  u8g2Fonts.setFont(u8g2_font_micro_tr);
-  u8g2Fonts.setForegroundColor(BLACK);
-  char minBuf[8], maxBuf[8];
-  if (range > 50) {
-    snprintf(maxBuf, sizeof(maxBuf), "%d", (int)vmax);
-    snprintf(minBuf, sizeof(minBuf), "%d", (int)vmin);
-  } else {
-    snprintf(maxBuf, sizeof(maxBuf), "%.1f", vmax);
-    snprintf(minBuf, sizeof(minBuf), "%.1f", vmin);
-  }
-  textRight(chartX - 2, y + 6, maxBuf);
-  textRight(chartX - 2, y + h, minBuf);
+  float pad = (vmax - vmin) * 0.08f;
+  vmin -= pad; vmax += pad;
 }
 
-// ===== Main display =====
-// Layout 400x300:
-// [0-30]    Header: zone name + status
-// [32-72]   Temperature cards (3-4 columns)
-// [74-110]  Metrics: RH, CO2, VPD, Photo bar
-// [114-178] Chart: Temperature sparkline
-// [180-234] Chart: Humidity sparkline
-// [236-290] Chart: VPD sparkline
-// [292-300] Footer: timestamp + battery
+// ===== MAIN LAYOUT =====
+// 400x300:
+// [0-24]    Header
+// [26-57]   4 metric boxes: temps (compact) + RH + CO2 + VPD
+// [59-67]   Photo bar
+// [70-182]  BIG combined chart: Temp (red) + RH (black) + VPD (yellow)
+// [184-192] Chart legend
+// [194-210] Secondary info: Light, all individual temps
+// [212-222] Footer
 
 void drawDisplay() {
   display.setFullWindow();
   display.firstPage();
-
   do {
     display.fillScreen(WHITE);
     u8g2Fonts.setFontMode(1);
     u8g2Fonts.setFontDirection(0);
+    u8g2Fonts.setBackgroundColor(WHITE);
 
-    // ===== HEADER =====
-    display.fillRect(0, 0, W, 28, BLACK);
-    u8g2Fonts.setFont(u8g2_font_helvB12_tr);
+    char buf[32];
+
+    // ===== HEADER (0-24) =====
+    display.fillRect(0, 0, W, 24, BLACK);
+    u8g2Fonts.setFont(u8g2_font_helvB10_tr);
     u8g2Fonts.setForegroundColor(WHITE);
     u8g2Fonts.setBackgroundColor(BLACK);
-    u8g2Fonts.setCursor(8, 20);
-    u8g2Fonts.print(data.zoneName.c_str());
-
-    // Status dot
-    display.fillCircle(W - 16, 14, 5, data.online ? WHITE : RED);
-
-    // ===== TEMPERATURE CARDS =====
-    int y = 32;
+    u8g2Fonts.setCursor(8, 17);
+    u8g2Fonts.print(D.zoneName.c_str());
+    display.fillCircle(W - 14, 12, 4, D.online ? WHITE : RED);
+    // Timestamp in header
+    if (D.timestamp.length() > 16) {
+      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+      String ts = D.timestamp.substring(11, 16);
+      tRight(W - 26, 17, ts.c_str());
+    }
     u8g2Fonts.setBackgroundColor(WHITE);
-    int cols = data.tempCount + (data.hasAirT ? 1 : 0);
-    if (cols == 0) cols = 1;
-    int cardW = (W - 16 - (cols - 1) * 4) / cols;
-    int cx = 8;
 
-    for (int i = 0; i < data.tempCount; i++) {
-      display.drawRoundRect(cx, y, cardW, 40, 3, BLACK);
+    // ===== METRIC BOXES (26-60) =====
+    int y = 26;
+    int boxH = 34;
+    // 4 equal boxes across
+    int bw = (W - 24) / 4;  // ~94px each
+    int bx = 6;
 
-      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+    // Box 1: Main temperature (canopy or first)
+    {
+      display.drawRoundRect(bx, y, bw, boxH, 3, BLACK);
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
       u8g2Fonts.setForegroundColor(BLACK);
-      textCenter(cx + cardW / 2, y + 12, data.tempLocs[i].c_str());
-
-      u8g2Fonts.setFont(u8g2_font_helvB14_tr);
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%.1f`C", data.temps[i]);
-      textCenter(cx + cardW / 2, y + 33, buf);
-
-      cx += cardW + 4;
+      const char* lbl = D.tempCount > 0 ? D.tempLocs[0].c_str() : "Temp";
+      tCenter(bx + bw/2, y + 8, lbl);
+      u8g2Fonts.setFont(u8g2_font_helvB12_tr);
+      float tv = D.tempCount > 0 ? D.temps[0] : (D.hasAirT ? D.airT : 0);
+      snprintf(buf, sizeof(buf), "%.1f", tv);
+      tCenter(bx + bw/2, y + 26, buf);
+      // small C
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
+      int tw2 = u8g2Fonts.getUTF8Width(buf);
+      u8g2Fonts.setCursor(bx + bw/2 + tw2/2 + 1, y + 20);
+      u8g2Fonts.print("C");
     }
+    bx += bw + 4;
 
-    if (data.hasAirT) {
-      display.drawRoundRect(cx, y, cardW, 40, 3, RED);
-
-      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-      u8g2Fonts.setForegroundColor(RED);
-      textCenter(cx + cardW / 2, y + 12, "Ambient");
-
-      u8g2Fonts.setFont(u8g2_font_helvB14_tr);
+    // Box 2: Humidity
+    {
+      display.drawRoundRect(bx, y, bw, boxH, 3, BLACK);
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
       u8g2Fonts.setForegroundColor(BLACK);
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%.1f`C", data.airT);
-      textCenter(cx + cardW / 2, y + 33, buf);
+      tCenter(bx + bw/2, y + 8, "RH");
+      u8g2Fonts.setFont(u8g2_font_helvB12_tr);
+      float rv = D.hasRH2 ? D.rh2 : D.rh;
+      snprintf(buf, sizeof(buf), "%.0f%%", rv);
+      tCenter(bx + bw/2, y + 26, buf);
     }
+    bx += bw + 4;
 
-    // ===== METRICS ROW =====
-    y = 76;
-    cx = 8;
-    int metricW = 95;
-
-    // Humidity
-    if (data.hasRH || data.hasRH2) {
-      float showRH = data.hasRH2 ? data.rh2 : data.rh;
-      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-      u8g2Fonts.setForegroundColor(BLACK);
-      u8g2Fonts.setCursor(cx, y + 10);
-      u8g2Fonts.print("RH");
-      u8g2Fonts.setFont(u8g2_font_helvB14_tr);
-      u8g2Fonts.setForegroundColor(BLACK);
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%.0f%%", showRH);
-      u8g2Fonts.setCursor(cx, y + 30);
-      u8g2Fonts.print(buf);
-      cx += metricW;
-    }
-
-    // CO2
-    if (data.hasCO2) {
-      uint16_t co2c = data.co2 > 1500 ? RED : (data.co2 > 1000 ? YELLOW : BLACK);
-      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-      u8g2Fonts.setForegroundColor(BLACK);
-      u8g2Fonts.setCursor(cx, y + 10);
-      u8g2Fonts.print("CO2");
-      u8g2Fonts.setFont(u8g2_font_helvB14_tr);
+    // Box 3: CO2
+    {
+      uint16_t co2c = D.co2 > 1500 ? RED : (D.co2 > 1000 ? YELLOW : BLACK);
+      display.drawRoundRect(bx, y, bw, boxH, 3, co2c);
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
       u8g2Fonts.setForegroundColor(co2c);
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%d", data.co2);
-      u8g2Fonts.setCursor(cx, y + 30);
-      u8g2Fonts.print(buf);
-      cx += metricW;
+      tCenter(bx + bw/2, y + 8, "CO2");
+      u8g2Fonts.setFont(u8g2_font_helvB12_tr);
+      snprintf(buf, sizeof(buf), "%d", D.co2);
+      tCenter(bx + bw/2, y + 26, buf);
     }
+    bx += bw + 4;
 
-    // VPD
-    if (data.hasVPD) {
-      uint16_t vc = data.vpd > 1.6f ? RED : (data.vpd > 1.2f ? YELLOW : BLACK);
-      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-      u8g2Fonts.setForegroundColor(BLACK);
-      u8g2Fonts.setCursor(cx, y + 10);
-      u8g2Fonts.print("VPD");
-      u8g2Fonts.setFont(u8g2_font_helvB14_tr);
+    // Box 4: VPD
+    if (D.hasVPD) {
+      uint16_t vc = D.vpd > 1.6f ? RED : (D.vpd > 1.2f ? YELLOW : BLACK);
+      display.drawRoundRect(bx, y, bw, boxH, 3, vc);
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
       u8g2Fonts.setForegroundColor(vc);
-      char buf[16];
-      snprintf(buf, sizeof(buf), "%.2f", data.vpd);
-      u8g2Fonts.setCursor(cx, y + 30);
-      u8g2Fonts.print(buf);
-      cx += metricW;
-    }
-
-    // Photoperiod mini bar
-    if (data.hasPhoto) {
-      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+      tCenter(bx + bw/2, y + 8, "VPD");
+      u8g2Fonts.setFont(u8g2_font_helvB12_tr);
       u8g2Fonts.setForegroundColor(BLACK);
-      u8g2Fonts.setCursor(cx, y + 10);
-      char pbuf[16];
-      snprintf(pbuf, sizeof(pbuf), "%.0f/%.0fh", data.photoDay, data.photoNight);
-      u8g2Fonts.print(pbuf);
-
-      int barW = W - cx - 8;
-      int dayW = (int)(barW * data.photoDay / 24.0f);
-      if (dayW > 0) display.fillRect(cx, y + 15, dayW, 10, YELLOW);
-      if (dayW < barW) display.fillRect(cx + dayW, y + 15, barW - dayW, 10, BLACK);
+      snprintf(buf, sizeof(buf), "%.2f", D.vpd);
+      tCenter(bx + bw/2, y + 26, buf);
     }
 
-    // ===== SPARKLINE CHARTS =====
-    y = 114;
-    int chartH = 54;
-    int chartGap = 4;
-
-    // Temperature chart
-    if (data.histCount > 1) {
-      display.drawFastHLine(8, y - 2, W - 16, BLACK);
-      float showT = data.hasAirT ? data.airT : (data.tempCount > 0 ? data.temps[0] : 0);
-      drawSparkline(8, y, W - 16, chartH, data.histT, data.histCount,
-                    RED, "Temp", "`C", showT);
+    // ===== PHOTOPERIOD BAR (62-72) =====
+    y = 63;
+    if (D.hasPhoto) {
+      int barX = 6, barW = W - 12, barH = 8;
+      int dayW = (int)(barW * D.photoDay / 24.0f);
+      if (dayW > 0) display.fillRoundRect(barX, y, dayW, barH, 2, YELLOW);
+      if (dayW < barW) display.fillRoundRect(barX + dayW, y, barW - dayW, barH, 2, BLACK);
+      // Labels
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
+      u8g2Fonts.setForegroundColor(BLACK);
+      snprintf(buf, sizeof(buf), "%.0fh day", D.photoDay);
+      u8g2Fonts.setCursor(barX, y + barH + 8);
+      u8g2Fonts.print(buf);
+      snprintf(buf, sizeof(buf), "%.0fh night", D.photoNight);
+      tRight(barX + barW, y + barH + 8, buf);
     }
 
-    // Humidity chart
-    y += chartH + chartGap;
-    if (data.histCount > 1) {
-      float showRH = data.hasRH2 ? data.rh2 : data.rh;
-      drawSparkline(8, y, W - 16, chartH, data.histRH, data.histCount,
-                    BLACK, "RH", "%", showRH);
+    // ===== BIG COMBINED CHART (82-240) =====
+    int chartY = 82;
+    int chartH = 158;
+    int chartX = 35;  // space for left Y labels
+    int chartW = W - chartX - 35; // space for right Y labels
+
+    display.drawRect(chartX, chartY, chartW, chartH, BLACK);
+
+    // Grid lines (horizontal, 4 divisions)
+    for (int g = 1; g < 4; g++) {
+      int gy = chartY + (chartH * g) / 4;
+      for (int gx = chartX; gx < chartX + chartW; gx += 6) {
+        display.drawPixel(gx, gy, BLACK);
+      }
+    }
+    // Grid lines (vertical, ~6h markers)
+    if (D.histCount > 0) {
+      for (int g = 1; g < 4; g++) {
+        int gx = chartX + (chartW * g) / 4;
+        for (int gy2 = chartY; gy2 < chartY + chartH; gy2 += 6) {
+          display.drawPixel(gx, gy2, BLACK);
+        }
+      }
+      // Time labels: -24h, -18h, -12h, -6h, now
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
+      u8g2Fonts.setForegroundColor(BLACK);
+      tCenter(chartX, chartY + chartH + 8, "-24h");
+      tCenter(chartX + chartW/4, chartY + chartH + 8, "-18h");
+      tCenter(chartX + chartW/2, chartY + chartH + 8, "-12h");
+      tCenter(chartX + 3*chartW/4, chartY + chartH + 8, "-6h");
+      tCenter(chartX + chartW, chartY + chartH + 8, "now");
     }
 
-    // VPD chart
-    y += chartH + chartGap;
-    bool hasVPDhist = false;
-    for (int i = 0; i < data.histCount; i++) {
-      if (data.histVPD[i] > -900) { hasVPDhist = true; break; }
-    }
-    if (hasVPDhist && data.hasVPD) {
-      drawSparkline(8, y, W - 16, chartH, data.histVPD, data.histCount,
-                    YELLOW, "VPD", " kPa", data.vpd);
+    if (D.histCount > 1) {
+      // Temperature line (RED) — left Y axis
+      float tMin, tMax;
+      getMinMax(D.histT, D.histCount, tMin, tMax);
+      drawChartLine(chartX + 1, chartY + 1, chartW - 2, chartH - 2,
+                    D.histT, D.histCount, tMin, tMax, RED, true);
+
+      // Left Y-axis labels (Temp)
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
+      u8g2Fonts.setForegroundColor(RED);
+      snprintf(buf, sizeof(buf), "%.0f", tMax);
+      tRight(chartX - 2, chartY + 6, buf);
+      snprintf(buf, sizeof(buf), "%.0f", tMin);
+      tRight(chartX - 2, chartY + chartH, buf);
+
+      // Humidity line (BLACK dashed effect - draw every other segment)
+      float rMin, rMax;
+      getMinMax(D.histRH, D.histCount, rMin, rMax);
+      drawChartLine(chartX + 1, chartY + 1, chartW - 2, chartH - 2,
+                    D.histRH, D.histCount, rMin, rMax, BLACK, false);
+
+      // Right Y-axis labels (RH%)
+      u8g2Fonts.setForegroundColor(BLACK);
+      snprintf(buf, sizeof(buf), "%.0f%%", rMax);
+      u8g2Fonts.setCursor(chartX + chartW + 3, chartY + 6);
+      u8g2Fonts.print(buf);
+      snprintf(buf, sizeof(buf), "%.0f%%", rMin);
+      u8g2Fonts.setCursor(chartX + chartW + 3, chartY + chartH);
+      u8g2Fonts.print(buf);
+
+      // VPD line (YELLOW)
+      bool hasVH = false;
+      for (int i = 0; i < D.histCount; i++) { if (D.histVPD[i] > -900) { hasVH = true; break; } }
+      if (hasVH) {
+        float vMin, vMax;
+        getMinMax(D.histVPD, D.histCount, vMin, vMax);
+        drawChartLine(chartX + 1, chartY + 1, chartW - 2, chartH - 2,
+                      D.histVPD, D.histCount, vMin, vMax, YELLOW, true);
+      }
     }
 
-    // ===== FOOTER =====
-    y = H - 16;
-    display.drawFastHLine(8, y - 4, W - 16, BLACK);
+    // ===== CHART LEGEND (244-252) =====
+    y = 244;
+    u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+    int lx = chartX;
 
+    // Temp legend
+    display.fillRect(lx, y + 2, 12, 3, RED);
+    u8g2Fonts.setForegroundColor(RED);
+    snprintf(buf, sizeof(buf), "Temp %.1fC", D.hasAirT ? D.airT : (D.tempCount > 0 ? D.temps[0] : 0));
+    u8g2Fonts.setCursor(lx + 15, y + 8);
+    u8g2Fonts.print(buf);
+    lx += 95;
+
+    // RH legend
+    display.fillRect(lx, y + 2, 12, 3, BLACK);
+    u8g2Fonts.setForegroundColor(BLACK);
+    snprintf(buf, sizeof(buf), "RH %.0f%%", D.hasRH2 ? D.rh2 : D.rh);
+    u8g2Fonts.setCursor(lx + 15, y + 8);
+    u8g2Fonts.print(buf);
+    lx += 75;
+
+    // VPD legend
+    if (D.hasVPD) {
+      display.fillRect(lx, y + 2, 12, 3, YELLOW);
+      u8g2Fonts.setForegroundColor(YELLOW);
+      snprintf(buf, sizeof(buf), "VPD %.2f", D.vpd);
+      u8g2Fonts.setCursor(lx + 15, y + 8);
+      u8g2Fonts.print(buf);
+    }
+
+    // ===== BOTTOM INFO ROW (256-274) =====
+    y = 258;
     u8g2Fonts.setFont(u8g2_font_helvR08_tr);
     u8g2Fonts.setForegroundColor(BLACK);
 
-    // Timestamp
-    if (data.timestamp.length() > 16) {
-      String ts = data.timestamp.substring(8, 10) + "." +
-                  data.timestamp.substring(5, 7) + " " +
-                  data.timestamp.substring(11, 16);
-      u8g2Fonts.setCursor(8, y + 8);
+    // All temperature sensors in a compact row
+    int ix = 6;
+    for (int i = 0; i < D.tempCount; i++) {
+      snprintf(buf, sizeof(buf), "%s:%.1f", D.tempLocs[i].c_str(), D.temps[i]);
+      u8g2Fonts.setCursor(ix, y + 10);
+      u8g2Fonts.print(buf);
+      ix += u8g2Fonts.getUTF8Width(buf) + 10;
+    }
+    if (D.hasAirT) {
+      snprintf(buf, sizeof(buf), "air:%.1f", D.airT);
+      u8g2Fonts.setCursor(ix, y + 10);
+      u8g2Fonts.print(buf);
+      ix += u8g2Fonts.getUTF8Width(buf) + 10;
+    }
+
+    // Light + second humidity on the right
+    if (D.hasLux) {
+      snprintf(buf, sizeof(buf), "%dlux", D.lux);
+      tRight(W - 6, y + 10, buf);
+    }
+
+    // ===== FOOTER (280-298) =====
+    y = 282;
+    display.drawFastHLine(6, y, W - 12, BLACK);
+    u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+    u8g2Fonts.setForegroundColor(BLACK);
+
+    if (D.timestamp.length() > 16) {
+      String ts = D.timestamp.substring(8, 10) + "." +
+                  D.timestamp.substring(5, 7) + " " +
+                  D.timestamp.substring(11, 16);
+      u8g2Fonts.setCursor(6, y + 14);
       u8g2Fonts.print(ts.c_str());
     }
 
-    // "6h" label for charts
-    textCenter(W / 2, y + 8, "6h history");
+    tCenter(W / 2, y + 14, "24h");
 
-    // Battery
     int batRaw = analogRead(9);
     float batV = batRaw * 2.0f * 3.3f / 4095.0f;
     if (batV > 1.0f) {
-      char buf[16];
       snprintf(buf, sizeof(buf), "%.1fV", batV);
-      textRight(W - 8, y + 8, buf);
+      tRight(W - 6, y + 14, buf);
     }
 
   } while (display.nextPage());
 }
 
-// ===== Error screen =====
 void drawError(const char* msg) {
   display.setFullWindow();
   display.firstPage();
   do {
     display.fillScreen(WHITE);
-    u8g2Fonts.setFontMode(1);
-    u8g2Fonts.setFontDirection(0);
+    u8g2Fonts.setFontMode(1); u8g2Fonts.setFontDirection(0);
     u8g2Fonts.setFont(u8g2_font_helvB14_tr);
     u8g2Fonts.setForegroundColor(RED);
     u8g2Fonts.setBackgroundColor(WHITE);
-    textCenter(W / 2, H / 2 - 10, "ERROR");
+    tCenter(W/2, H/2 - 10, "ERROR");
     u8g2Fonts.setFont(u8g2_font_helvR10_tr);
     u8g2Fonts.setForegroundColor(BLACK);
-    textCenter(W / 2, H / 2 + 15, msg);
-    u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-    char buf[32];
-    snprintf(buf, sizeof(buf), "Retry in %d min", SLEEP_MINUTES);
-    textCenter(W / 2, H / 2 + 35, buf);
+    tCenter(W/2, H/2 + 15, msg);
   } while (display.nextPage());
 }
 
-// ===== Deep sleep =====
 void goToSleep() {
   digitalWrite(EPD_POWER, LOW);
-  WiFi.disconnect(true);
-  WiFi.mode(WIFI_OFF);
+  WiFi.disconnect(true); WiFi.mode(WIFI_OFF);
   esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_MINUTES * 60ULL * 1000000ULL);
-  Serial.printf("Sleep %d min...\n", SLEEP_MINUTES);
+  Serial.printf("Sleep %dmin\n", SLEEP_MINUTES);
   Serial.flush();
   esp_deep_sleep_start();
 }
 
-// ===== Setup =====
 void setup() {
-  Serial.begin(115200);
-  delay(100);
-  Serial.println("\n=== ESPink-42 Zone Display ===");
+  Serial.begin(115200); delay(100);
+  Serial.println("\n=== ESPink-42 v3 ===");
 
   pinMode(EPD_POWER, OUTPUT);
   digitalWrite(EPD_POWER, HIGH);
@@ -475,30 +460,13 @@ void setup() {
   display.setTextWrap(false);
   u8g2Fonts.begin(display);
 
-  Serial.print("WiFi...");
-  if (!connectWiFi()) {
-    Serial.println(" FAIL");
-    drawError("WiFi failed");
-    goToSleep();
-    return;
-  }
-  Serial.printf(" OK %s\n", WiFi.localIP().toString().c_str());
+  if (!connectWiFi()) { drawError("WiFi failed"); goToSleep(); return; }
+  Serial.printf("WiFi OK %s\n", WiFi.localIP().toString().c_str());
 
-  Serial.print("API...");
-  if (!fetchData()) {
-    Serial.println(" FAIL");
-    drawError("API failed");
-    goToSleep();
-    return;
-  }
-  Serial.printf(" OK (%d hist pts)\n", data.histCount);
+  if (!fetchData()) { drawError("API failed"); goToSleep(); return; }
+  Serial.printf("Data OK, %d hist pts\n", D.histCount);
 
-  Serial.print("Draw...");
-  display.clearScreen();
-  delay(100);
   drawDisplay();
-  Serial.println(" OK");
-
   display.hibernate();
   goToSleep();
 }
