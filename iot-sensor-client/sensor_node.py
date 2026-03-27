@@ -585,7 +585,7 @@ def main():
             if scd_rh is not None:
                 payload["humidity"] = round(scd_rh, 1)
 
-            # Read SHT45 (T + RH) — higher accuracy than STCC4's built-in SHT40
+            # Read SHT45 (T + RH) — separate high-accuracy sensor
             sht_temp, sht_rh = read_sht45()
             if sht_temp is not None:
                 payload.setdefault("temperatures", []).append({
@@ -594,8 +594,7 @@ def main():
                     "value": sht_temp,
                 })
             if sht_rh is not None:
-                # SHT45 is more accurate — override STCC4's humidity
-                payload["humidity"] = sht_rh
+                payload["humidity_sht45"] = sht_rh
 
             # Read BH1750 (Light)
             lux = read_bh1750()

@@ -122,6 +122,7 @@ const IoTOverview = () => {
             const data = getData(zone);
             const temps = getAllTemperatures(zone);
             const humidity = data?.humidity ?? null;
+            const humiditySht45 = data?.humidity_sht45 ?? null;
             const co2 = data?.co2 ?? null;
             const online = isOnline(zone);
 
@@ -163,14 +164,23 @@ const IoTOverview = () => {
 
                 {/* Humidity + CO2 row */}
                 <div className="flex items-center justify-between pt-2 border-t border-dark-700">
-                  <div className="flex items-center gap-1.5">
-                    <svg className="w-3.5 h-3.5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z" clipRule="evenodd" />
-                    </svg>
-                    <span className="text-sm text-dark-400">{t('iot.humidity')}</span>
-                    <span className="text-base font-semibold text-blue-400 ml-1">
-                      {humidity != null ? `${humidity.toFixed(0)}%` : '—'}
-                    </span>
+                  <div className="flex flex-col gap-1">
+                    {humidity != null && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-dark-500">STCC4</span>
+                        <span className="text-sm font-semibold text-blue-400">
+                          {humidity.toFixed(0)}%
+                        </span>
+                      </div>
+                    )}
+                    {humiditySht45 != null && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs text-dark-500">SHT45</span>
+                        <span className="text-sm font-semibold text-cyan-400">
+                          {humiditySht45.toFixed(0)}%
+                        </span>
+                      </div>
+                    )}
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-sm text-dark-400">CO₂</span>

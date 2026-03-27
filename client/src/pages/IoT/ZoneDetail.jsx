@@ -125,8 +125,18 @@ const ZoneDetail = () => {
     if (readings.some(r => r.humidity != null)) {
       series.push({
         key: 'humidity',
-        label: t('iot.humidity'),
+        label: `${t('iot.humidity')} (STCC4)`,
         color: SERIES_COLORS.humidity,
+        yAxisId: 'left',
+        unit: '%',
+      });
+    }
+
+    if (readings.some(r => r.humidity_sht45 != null)) {
+      series.push({
+        key: 'humidity_sht45',
+        label: `${t('iot.humidity')} (SHT45)`,
+        color: '#06b6d4', // cyan
         yAxisId: 'left',
         unit: '%',
       });
@@ -184,6 +194,7 @@ const ZoneDetail = () => {
         time: new Date(r.timestamp).getTime(),
         temperature: r.temperature ?? null,
         humidity: r.humidity ?? null,
+        humidity_sht45: r.humidity_sht45 ?? null,
         co2: r.co2 ?? null,
         light: r.light ?? null,
       };
@@ -285,7 +296,14 @@ const ZoneDetail = () => {
         {lastData?.humidity != null && (
           <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
             <div className="text-3xl font-bold text-blue-400">{lastData.humidity.toFixed(1)}%</div>
-            <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')}</div>
+            <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')} (STCC4)</div>
+          </div>
+        )}
+
+        {lastData?.humidity_sht45 != null && (
+          <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+            <div className="text-3xl font-bold text-cyan-400">{lastData.humidity_sht45.toFixed(1)}%</div>
+            <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')} (SHT45)</div>
           </div>
         )}
 
