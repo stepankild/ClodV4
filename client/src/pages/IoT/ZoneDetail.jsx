@@ -33,6 +33,22 @@ const saveChartPrefs = (zoneId, prefs) => {
   } catch { /* ignore */ }
 };
 
+// VPD: leafTemp (canopy) + airTemp + humidity → kPa
+const calcVpd = (leafTemp, airTemp, rh) => {
+  if (leafTemp == null || airTemp == null || rh == null) return null;
+  const svpLeaf = 0.6108 * Math.exp(17.27 * leafTemp / (leafTemp + 237.3));
+  const svpAir = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
+  return Math.max(0, svpLeaf - svpAir * rh / 100);
+};
+
+const vpdColor = (val) => {
+  if (val < 0.4) return 'text-blue-400';
+  if (val <= 0.8) return 'text-green-400';
+  if (val <= 1.2) return 'text-green-500';
+  if (val <= 1.6) return 'text-yellow-400';
+  return 'text-red-400';
+};
+
 const ZoneDetail = () => {
   const { zoneId } = useParams();
   const { t, i18n } = useTranslation();
@@ -152,6 +168,23 @@ const ZoneDetail = () => {
       });
     }
 
+    // VPD (computed from canopy temp + air temp + humidity)
+    const hasVpdData = readings.some(r => {
+      const canopy = r.temperatures?.find(t => t.location === 'canopy')?.value;
+      const airT = r.temperature;
+      const rh = r.humidity_sht45 ?? r.humidity;
+      return canopy != null && airT != null && rh != null;
+    });
+    if (hasVpdData) {
+      series.push({
+        key: 'vpd',
+        label: 'VPD',
+        color: '#8b5cf6', // purple
+        yAxisId: 'right',
+        unit: ' kPa',
+      });
+    }
+
     if (readings.some(r => r.light != null)) {
       series.push({
         key: 'light',
@@ -204,6 +237,11 @@ const ZoneDetail = () => {
           point[`temp-${temp.sensorId}`] = temp.value;
         });
       }
+      // Compute VPD from canopy + air temp + humidity
+      const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
+      const airT = r.temperature;
+      const rh = r.humidity_sht45 ?? r.humidity;
+      point.vpd = calcVpd(canopyT, airT, rh);
       return point;
     });
   }, [readings]);
@@ -322,6 +360,20 @@ const ZoneDetail = () => {
             <div className="text-xs text-dark-500 mt-1">{t('iot.light')} lux</div>
           </div>
         )}
+
+        {(() => {
+          const canopyT = lastData?.temperatures?.find(t => t.location === 'canopy')?.value;
+          const airT = lastData?.temperature;
+          const rh = lastData?.humidity_sht45 ?? lastData?.humidity;
+          const vpd = calcVpd(canopyT, airT, rh);
+          if (vpd == null) return null;
+          return (
+            <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+              <div className={`text-3xl font-bold ${vpdColor(vpd)}`}>{vpd.toFixed(2)}</div>
+              <div className="text-xs text-dark-500 mt-1">VPD kPa</div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Chart */}

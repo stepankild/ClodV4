@@ -87,6 +87,31 @@ const IoTOverview = () => {
     return 'text-green-400';
   };
 
+  // VPD calculation: leaf temp (canopy DS18B20) + humidity
+  // SVP = 0.6108 * exp(17.27 * T / (T + 237.3)) kPa
+  // VPD = SVP(leaf) - SVP(air) * RH/100
+  const calcVpd = (zone) => {
+    const data = getData(zone);
+    if (!data) return null;
+    const rh = data.humidity_sht45 ?? data.humidity;
+    if (rh == null) return null;
+    // Leaf temp = canopy DS18B20, air temp = ambient (SHT45 or STCC4)
+    const leafTemp = data.temperatures?.find(t => t.location === 'canopy')?.value;
+    const airTemp = data.temperature ?? data.temperatures?.find(t => t.sensorId === 'sht45')?.value;
+    if (leafTemp == null || airTemp == null) return null;
+    const svpLeaf = 0.6108 * Math.exp(17.27 * leafTemp / (leafTemp + 237.3));
+    const svpAir = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
+    return Math.max(0, svpLeaf - svpAir * rh / 100);
+  };
+
+  const vpdColor = (val) => {
+    if (val < 0.4) return 'text-blue-400';     // too low
+    if (val <= 0.8) return 'text-green-400';    // seedling/clone
+    if (val <= 1.2) return 'text-green-500';    // veg ideal
+    if (val <= 1.6) return 'text-yellow-400';   // flower
+    return 'text-red-400';                       // too high
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -124,6 +149,7 @@ const IoTOverview = () => {
             const humidity = data?.humidity ?? null;
             const humiditySht45 = data?.humidity_sht45 ?? null;
             const co2 = data?.co2 ?? null;
+            const vpd = calcVpd(zone);
             const online = isOnline(zone);
 
             return (
@@ -182,11 +208,21 @@ const IoTOverview = () => {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-sm text-dark-400">CO₂</span>
-                    <span className={`text-base font-semibold ml-1 ${co2 != null ? co2Color(co2) : 'text-dark-400'}`}>
-                      {co2 != null ? `${co2.toFixed(0)} ppm` : '—'}
-                    </span>
+                  <div className="flex flex-col gap-1 items-end">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm text-dark-400">CO₂</span>
+                      <span className={`text-sm font-semibold ${co2 != null ? co2Color(co2) : 'text-dark-400'}`}>
+                        {co2 != null ? `${co2.toFixed(0)}` : '—'}
+                      </span>
+                    </div>
+                    {vpd != null && (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm text-dark-400">VPD</span>
+                        <span className={`text-sm font-semibold ${vpdColor(vpd)}`}>
+                          {vpd.toFixed(2)}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
