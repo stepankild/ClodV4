@@ -246,6 +246,28 @@ const ZoneDetail = () => {
     });
   }, [readings]);
 
+  // Light cycle stats (day/night hours) from last 24h readings
+  const lightCycle = useMemo(() => {
+    if (!readings.length) return null;
+    const LIGHT_THRESHOLD = 10; // lux — below = night
+    const withLight = readings.filter(r => r.light != null);
+    if (withLight.length < 2) return null;
+
+    let dayCount = 0;
+    let nightCount = 0;
+    withLight.forEach(r => {
+      if (r.light > LIGHT_THRESHOLD) dayCount++;
+      else nightCount++;
+    });
+
+    const total = dayCount + nightCount;
+    const rangeH = RANGES.find(r => r.key === range)?.hours || 24;
+    const dayHours = (dayCount / total) * rangeH;
+    const nightHours = (nightCount / total) * rangeH;
+
+    return { dayHours, nightHours, dayPct: (dayCount / total) * 100 };
+  }, [readings, range]);
+
   // Check if right Y-axis is needed
   const hasRightAxis = useMemo(() => {
     return availableSeries.some(s => s.yAxisId === 'right' && visibleSeries[s.key]);
@@ -375,6 +397,39 @@ const ZoneDetail = () => {
           );
         })()}
       </div>
+
+      {/* Light cycle (photoperiod) */}
+      {lightCycle && (
+        <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 mb-6">
+          <h2 className="text-lg font-semibold text-dark-200 mb-3">☀️ Фотопериод ({range})</h2>
+          <div className="flex items-center gap-4">
+            {/* Day/Night bar */}
+            <div className="flex-1">
+              <div className="flex h-6 rounded-full overflow-hidden bg-dark-700">
+                <div
+                  className="bg-yellow-400 flex items-center justify-center text-xs font-bold text-dark-900 transition-all"
+                  style={{ width: `${lightCycle.dayPct}%`, minWidth: lightCycle.dayPct > 5 ? 'auto' : '0' }}
+                >
+                  {lightCycle.dayPct > 10 ? `${lightCycle.dayHours.toFixed(1)}ч` : ''}
+                </div>
+                <div
+                  className="bg-indigo-900 flex items-center justify-center text-xs font-bold text-indigo-300 transition-all"
+                  style={{ width: `${100 - lightCycle.dayPct}%`, minWidth: (100 - lightCycle.dayPct) > 5 ? 'auto' : '0' }}
+                >
+                  {(100 - lightCycle.dayPct) > 10 ? `${lightCycle.nightHours.toFixed(1)}ч` : ''}
+                </div>
+              </div>
+            </div>
+            {/* Summary */}
+            <div className="text-sm text-dark-300 whitespace-nowrap">
+              <span className="text-yellow-400 font-bold">{lightCycle.dayHours.toFixed(1)}</span>
+              <span className="text-dark-500">/</span>
+              <span className="text-indigo-400 font-bold">{lightCycle.nightHours.toFixed(1)}</span>
+              <span className="text-dark-500 ml-1">ч</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Chart */}
       <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 mb-6">
