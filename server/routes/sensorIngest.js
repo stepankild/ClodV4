@@ -36,11 +36,52 @@ router.post('/', requireApiKey, async (req, res) => {
         humidifierState: data.humidifierState ?? null,
       });
 
-      // Update zone status
-      await Zone.updateOne(
-        { zoneId: data.zoneId },
-        { $set: { 'piStatus.online': true, 'piStatus.lastSeen': new Date() } }
-      );
+      // Update zone status + auto-register new sensors
+      const sensorUpdates = [];
+      if (data.temperatures?.length) {
+        for (const t of data.temperatures) {
+          sensorUpdates.push({
+            type: t.sensorId === 'sht45' ? 'sht45' : 'ds18b20',
+            sensorId: t.sensorId,
+            location: t.location || 'unknown',
+            enabled: true,
+          });
+        }
+      }
+      if (data.co2 != null) {
+        sensorUpdates.push({ type: 'stcc4', sensorId: 'stcc4', location: 'co2', enabled: true });
+      }
+      if (data.light != null) {
+        sensorUpdates.push({ type: 'bh1750', sensorId: 'bh1750', location: 'light', enabled: true });
+      }
+
+      // Add sensors that don't already exist in zone.sensors
+      if (sensorUpdates.length) {
+        const zone = await Zone.findOne({ zoneId: data.zoneId });
+        if (zone) {
+          const existingIds = new Set(zone.sensors.map(s => s.sensorId));
+          const newSensors = sensorUpdates.filter(s => !existingIds.has(s.sensorId));
+          if (newSensors.length) {
+            await Zone.updateOne(
+              { zoneId: data.zoneId },
+              {
+                $push: { sensors: { $each: newSensors } },
+                $set: { 'piStatus.online': true, 'piStatus.lastSeen': new Date() },
+              }
+            );
+          } else {
+            await Zone.updateOne(
+              { zoneId: data.zoneId },
+              { $set: { 'piStatus.online': true, 'piStatus.lastSeen': new Date() } }
+            );
+          }
+        }
+      } else {
+        await Zone.updateOne(
+          { zoneId: data.zoneId },
+          { $set: { 'piStatus.online': true, 'piStatus.lastSeen': new Date() } }
+        );
+      }
 
       // Broadcast to browsers via Socket.io
       if (io) {
