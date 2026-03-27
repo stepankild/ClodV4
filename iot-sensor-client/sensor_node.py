@@ -2,12 +2,15 @@
 """
 TRUE GROW IoT — Sensor Node
 Reads DS18B20 (1-Wire) and STCC4 (I2C CO2/T/RH) sensors, publishes to MQTT.
+Buffers readings to SQLite when MQTT is unavailable.
 """
 
 import json
 import time
 import signal
 import sys
+import sqlite3
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,11 +19,93 @@ import paho.mqtt.client as mqtt
 
 # ── Load config ──
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
+BUFFER_DB_PATH = Path(__file__).parent / "sensor_buffer.db"
+MAX_BUFFER_SIZE = 10000  # ~83 hours at 30s interval
 
 
 def load_config():
     with open(CONFIG_PATH) as f:
         return yaml.safe_load(f)
+
+
+# ── SQLite offline buffer ──
+class SensorBuffer:
+    """Persistent FIFO queue for sensor readings when MQTT is down.
+    SQLite WAL mode minimizes SD card wear."""
+
+    def __init__(self, db_path=None):
+        self.db_path = str(db_path or BUFFER_DB_PATH)
+        self._lock = threading.Lock()
+        self._init_db()
+
+    def _init_db(self):
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            conn.execute('PRAGMA journal_mode=WAL')
+            conn.execute('''
+                CREATE TABLE IF NOT EXISTS sensor_queue (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topic TEXT NOT NULL,
+                    payload TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                )
+            ''')
+            conn.commit()
+            conn.close()
+
+    def push(self, topic, payload_json):
+        """Add a reading to the buffer. Returns current size."""
+        with self._lock:
+            try:
+                conn = sqlite3.connect(self.db_path)
+                conn.execute(
+                    'INSERT INTO sensor_queue (topic, payload, created_at) VALUES (?, ?, ?)',
+                    (topic, payload_json, time.time())
+                )
+                count = conn.execute('SELECT COUNT(*) FROM sensor_queue').fetchone()[0]
+                if count > MAX_BUFFER_SIZE:
+                    excess = count - MAX_BUFFER_SIZE
+                    conn.execute('''
+                        DELETE FROM sensor_queue WHERE id IN (
+                            SELECT id FROM sensor_queue ORDER BY id ASC LIMIT ?
+                        )
+                    ''', (excess,))
+                    print(f'[Buffer] Dropped {excess} oldest reading(s) — buffer full ({MAX_BUFFER_SIZE})')
+                conn.commit()
+                size = conn.execute('SELECT COUNT(*) FROM sensor_queue').fetchone()[0]
+                conn.close()
+                return size
+            except Exception as e:
+                print(f'[Buffer] Write error: {e}')
+                return -1
+
+    def peek_batch(self, limit=50):
+        """Get oldest readings. Returns [(id, topic, payload_json), ...]."""
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            rows = conn.execute(
+                'SELECT id, topic, payload FROM sensor_queue ORDER BY id ASC LIMIT ?',
+                (limit,)
+            ).fetchall()
+            conn.close()
+            return rows
+
+    def remove_batch(self, row_ids):
+        """Remove successfully sent readings."""
+        if not row_ids:
+            return
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            conn.executemany('DELETE FROM sensor_queue WHERE id = ?', [(rid,) for rid in row_ids])
+            conn.commit()
+            conn.close()
+
+    def size(self):
+        with self._lock:
+            conn = sqlite3.connect(self.db_path)
+            count = conn.execute('SELECT COUNT(*) FROM sensor_queue').fetchone()[0]
+            conn.close()
+            return count
 
 
 # ── DS18B20 (1-Wire) ──
@@ -196,8 +281,12 @@ def read_stcc4():
 
 
 # ── MQTT ──
+mqtt_connected = False
+
+
 def create_mqtt_client(config):
     """Create and connect MQTT client with LWT."""
+    global mqtt_connected
     mqtt_conf = config["mqtt"]
     zone_id = config["zone_id"]
 
@@ -218,7 +307,9 @@ def create_mqtt_client(config):
     )
 
     def on_connect(client, userdata, flags, rc):
+        global mqtt_connected
         if rc == 0:
+            mqtt_connected = True
             print(f"[MQTT] Connected to {mqtt_conf['broker']}:{mqtt_conf.get('port', 1883)}")
             # Publish online status
             client.publish(
@@ -231,6 +322,8 @@ def create_mqtt_client(config):
             print(f"[MQTT] Connection failed: rc={rc}")
 
     def on_disconnect(client, userdata, rc):
+        global mqtt_connected
+        mqtt_connected = False
         print(f"[MQTT] Disconnected (rc={rc})")
 
     client.on_connect = on_connect
@@ -249,6 +342,33 @@ def create_mqtt_client(config):
         return None
 
 
+def flush_buffer(mqtt_client, buffer):
+    """Send buffered readings when MQTT reconnects."""
+    sent = 0
+    while True:
+        batch = buffer.peek_batch(20)
+        if not batch:
+            break
+        sent_ids = []
+        for row_id, topic, payload_json in batch:
+            try:
+                result = mqtt_client.publish(topic, payload_json, qos=1)
+                if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                    sent_ids.append(row_id)
+                    sent += 1
+                else:
+                    break  # MQTT busy, retry later
+            except Exception:
+                break
+            time.sleep(0.05)  # 50ms between messages
+        buffer.remove_batch(sent_ids)
+        if len(sent_ids) < len(batch):
+            break  # not all sent, retry next cycle
+    if sent > 0:
+        remaining = buffer.size()
+        print(f"[Buffer] Flushed {sent} buffered reading(s), {remaining} remaining")
+
+
 # ── Main loop ──
 def main():
     config = load_config()
@@ -258,6 +378,12 @@ def main():
     print(f"=== TRUE GROW IoT Sensor Node ===")
     print(f"Zone: {zone_id} ({config.get('zone_name', '')})")
     print(f"Interval: {interval}s")
+
+    # Initialize offline buffer
+    buffer = SensorBuffer()
+    buffered = buffer.size()
+    if buffered > 0:
+        print(f"[Buffer] {buffered} reading(s) pending from previous session")
 
     # Initialize STCC4 CO2 sensor if configured
     co2_conf = config.get("sensors", {}).get("stcc4") or config.get("sensors", {}).get("scd41")
@@ -299,14 +425,26 @@ def main():
             if scd_rh is not None:
                 payload["humidity"] = round(scd_rh, 1)
 
-            # Publish
             topic = f"grow/zone/{zone_id}/sensors"
             msg = json.dumps(payload)
-            if mqtt_client and mqtt_client.is_connected():
-                mqtt_client.publish(topic, msg, qos=0)
-                print(f"[PUB] {topic}: {msg[:120]}...")
+
+            if mqtt_client and mqtt_connected:
+                # Flush buffer first (send old readings before new ones)
+                if buffer.size() > 0:
+                    flush_buffer(mqtt_client, buffer)
+
+                # Publish current reading
+                result = mqtt_client.publish(topic, msg, qos=1)
+                if result.rc == mqtt.MQTT_ERR_SUCCESS:
+                    print(f"[PUB] {topic}: {msg[:120]}...")
+                else:
+                    # Publish failed, buffer it
+                    size = buffer.push(topic, msg)
+                    print(f"[BUFFERED] Publish failed (rc={result.rc}), buffered ({size} total)")
             else:
-                print(f"[LOCAL] {msg[:120]}...")
+                # MQTT disconnected — buffer locally
+                size = buffer.push(topic, msg)
+                print(f"[BUFFERED] MQTT offline, saved to buffer ({size} total)")
 
             time.sleep(interval)
 
@@ -325,6 +463,9 @@ def main():
         mqtt_client.loop_stop()
         mqtt_client.disconnect()
 
+    remaining = buffer.size()
+    if remaining > 0:
+        print(f"[Buffer] {remaining} reading(s) saved for next session")
     print("[SHUTDOWN] Done.")
 
 
