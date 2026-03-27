@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """
 TRUE GROW IoT — Sensor Node
-Reads DS18B20 (1-Wire) and STCC4 (I2C CO2/T/RH) sensors, publishes to MQTT.
+Reads DS18B20 (1-Wire), STCC4 (I2C CO2/T/RH), SHT45 (I2C T/RH),
+and BH1750 (I2C light) sensors, publishes to MQTT.
 Buffers readings to SQLite when MQTT is unavailable.
 """
 
@@ -280,6 +281,155 @@ def read_stcc4():
     return stcc4_device.read_measurement()
 
 
+# ── SHT45 (I2C Temperature + Humidity) ──
+# Sensirion SHT45 — high-accuracy T/RH sensor
+# I2C address: 0x44, uses same CRC-8 as STCC4
+
+class SHT45:
+    """SHT45 Temperature/Humidity sensor via raw I2C (smbus2).
+    Uses i2c_rdwr for raw I2C transactions (SHT45 doesn't support SMBus register reads)."""
+
+    ADDR = 0x44
+    # High precision, no heater
+    CMD_MEASURE_HIGH = 0xFD
+
+    def __init__(self, bus_num=1, address=None):
+        import smbus2
+        self.smbus2 = smbus2
+        self.bus = smbus2.SMBus(bus_num)
+        self.addr = address or self.ADDR
+
+    def read(self):
+        """Read temperature (C) and humidity (%).
+        Returns (temp, rh) or (None, None) on error."""
+        try:
+            # Write command
+            msg_w = self.smbus2.i2c_msg.write(self.addr, [self.CMD_MEASURE_HIGH])
+            self.bus.i2c_rdwr(msg_w)
+            time.sleep(0.02)  # 8.2ms max for high precision
+
+            # Read 6 bytes: temp(2) + crc(1) + rh(2) + crc(1)
+            msg_r = self.smbus2.i2c_msg.read(self.addr, 6)
+            self.bus.i2c_rdwr(msg_r)
+            raw = list(msg_r)
+
+            # Verify CRC
+            if _sensirion_crc(raw[0:2]) != raw[2]:
+                raise ValueError("CRC mismatch on temperature")
+            if _sensirion_crc(raw[3:5]) != raw[5]:
+                raise ValueError("CRC mismatch on humidity")
+
+            temp_raw = (raw[0] << 8) | raw[1]
+            rh_raw = (raw[3] << 8) | raw[4]
+
+            temp = -45.0 + 175.0 * temp_raw / 65535.0
+            rh = -6.0 + 125.0 * rh_raw / 65535.0
+            rh = max(0.0, min(100.0, rh))
+
+            return round(temp, 1), round(rh, 1)
+        except Exception as e:
+            print(f"[SHT45] Read error: {e}")
+            return None, None
+
+
+sht45_device = None
+
+
+def init_sht45(i2c_address=0x44):
+    """Initialize SHT45 sensor."""
+    global sht45_device
+    try:
+        sht45_device = SHT45(bus_num=1, address=i2c_address)
+        # Test read
+        temp, rh = sht45_device.read()
+        if temp is not None:
+            print(f"[SHT45] Initialized on 0x{i2c_address:02x} (T={temp}°C, RH={rh}%)")
+            return True
+        sht45_device = None
+        return False
+    except Exception as e:
+        print(f"[SHT45] Init error: {e}")
+        sht45_device = None
+        return False
+
+
+def read_sht45():
+    """Read temperature, humidity from SHT45."""
+    if sht45_device is None:
+        return None, None
+    return sht45_device.read()
+
+
+# ── BH1750 (I2C Light Sensor) ──
+# ROHM BH1750FVI — ambient light sensor
+# I2C address: 0x23 (ADDR pin low) or 0x5C (ADDR pin high)
+
+class BH1750:
+    """BH1750 ambient light sensor via raw I2C (smbus2)."""
+
+    ADDR = 0x23
+    CMD_POWER_ON = 0x01
+    CMD_RESET = 0x07
+    # Continuous high-resolution mode: 1 lx resolution, 120ms measurement time
+    CMD_CONT_HIRES = 0x10
+
+    def __init__(self, bus_num=1, address=None):
+        import smbus2
+        self.bus = smbus2.SMBus(bus_num)
+        self.addr = address or self.ADDR
+
+    def start(self):
+        """Power on and start continuous measurement."""
+        try:
+            self.bus.write_byte(self.addr, self.CMD_POWER_ON)
+            time.sleep(0.01)
+            self.bus.write_byte(self.addr, self.CMD_CONT_HIRES)
+            time.sleep(0.18)  # first measurement takes ~180ms
+            print(f"[BH1750] Initialized on 0x{self.addr:02x}")
+            return True
+        except Exception as e:
+            print(f"[BH1750] Start error: {e}")
+            return False
+
+    def read(self):
+        """Read light level in lux. Returns float or None on error."""
+        try:
+            raw = self.bus.read_i2c_block_data(self.addr, 0x00, 2)
+            lux = ((raw[0] << 8) | raw[1]) / 1.2
+            return round(lux, 0)
+        except Exception as e:
+            print(f"[BH1750] Read error: {e}")
+            return None
+
+
+bh1750_device = None
+
+
+def init_bh1750(i2c_address=0x23):
+    """Initialize BH1750 light sensor."""
+    global bh1750_device
+    try:
+        bh1750_device = BH1750(bus_num=1, address=i2c_address)
+        if bh1750_device.start():
+            lux = bh1750_device.read()
+            if lux is not None:
+                print(f"[BH1750] First reading: {lux} lux")
+                return True
+        bh1750_device = None
+        return False
+    except Exception as e:
+        print(f"[BH1750] Init error: {e}")
+        bh1750_device = None
+        return False
+
+
+def read_bh1750():
+    """Read light level from BH1750."""
+    if bh1750_device is None:
+        return None
+    return bh1750_device.read()
+
+
 # ── MQTT ──
 mqtt_connected = False
 
@@ -385,10 +535,20 @@ def main():
     if buffered > 0:
         print(f"[Buffer] {buffered} reading(s) pending from previous session")
 
-    # Initialize STCC4 CO2 sensor if configured
-    co2_conf = config.get("sensors", {}).get("stcc4") or config.get("sensors", {}).get("scd41")
+    # Initialize I2C sensors
+    sensors_conf = config.get("sensors", {})
+
+    co2_conf = sensors_conf.get("stcc4") or sensors_conf.get("scd41")
     if co2_conf and co2_conf.get("enabled", True):
         init_stcc4(co2_conf.get("address", 0x64))
+
+    sht45_conf = sensors_conf.get("sht45")
+    if sht45_conf and sht45_conf.get("enabled", True):
+        init_sht45(sht45_conf.get("address", 0x44))
+
+    bh1750_conf = sensors_conf.get("bh1750")
+    if bh1750_conf and bh1750_conf.get("enabled", True):
+        init_bh1750(bh1750_conf.get("address", 0x23))
 
     # Connect MQTT
     mqtt_client = create_mqtt_client(config)
@@ -424,6 +584,23 @@ def main():
                 payload["temperature"] = round(scd_temp, 1)
             if scd_rh is not None:
                 payload["humidity"] = round(scd_rh, 1)
+
+            # Read SHT45 (T + RH) — higher accuracy than STCC4's built-in SHT40
+            sht_temp, sht_rh = read_sht45()
+            if sht_temp is not None:
+                payload.setdefault("temperatures", []).append({
+                    "sensorId": "sht45",
+                    "location": sensors_conf.get("sht45", {}).get("location", "ambient-sht45"),
+                    "value": sht_temp,
+                })
+            if sht_rh is not None:
+                # SHT45 is more accurate — override STCC4's humidity
+                payload["humidity"] = sht_rh
+
+            # Read BH1750 (Light)
+            lux = read_bh1750()
+            if lux is not None:
+                payload["light"] = lux
 
             topic = f"grow/zone/{zone_id}/sensors"
             msg = json.dumps(payload)
