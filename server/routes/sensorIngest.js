@@ -160,6 +160,36 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
       vpd = Math.round(Math.max(0, svpL - svpA * rh / 100) * 100) / 100;
     }
 
+    // Sparkline history: last 6h, 30 points (every 12 min)
+    const since6h = new Date(Date.now() - 6 * 3600 * 1000);
+    const histPipeline = [
+      { $match: { zoneId, timestamp: { $gte: since6h } } },
+      { $sort: { timestamp: 1 } },
+      { $group: {
+        _id: { $toDate: { $subtract: [{ $toLong: '$timestamp' }, { $mod: [{ $toLong: '$timestamp' }, 12 * 60 * 1000] }] } },
+        t: { $avg: '$temperature' },
+        rh: { $avg: { $ifNull: ['$humidity_sht45', '$humidity'] } },
+        co2: { $avg: '$co2' },
+      }},
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, t: { $round: ['$t', 1] }, rh: { $round: ['$rh', 0] }, co2: { $round: ['$co2', 0] } } },
+    ];
+    const hist = await SensorReading.aggregate(histPipeline);
+
+    // Also get canopy temps for VPD sparkline
+    const canopyPipeline = [
+      { $match: { zoneId, timestamp: { $gte: since6h } } },
+      { $unwind: '$temperatures' },
+      { $match: { 'temperatures.location': 'canopy' } },
+      { $group: {
+        _id: { $toDate: { $subtract: [{ $toLong: '$timestamp' }, { $mod: [{ $toLong: '$timestamp' }, 12 * 60 * 1000] }] } },
+        ct: { $avg: '$temperatures.value' },
+      }},
+      { $sort: { _id: 1 } },
+      { $project: { _id: 0, ct: { $round: ['$ct', 1] } } },
+    ];
+    const canopyHist = await SensorReading.aggregate(canopyPipeline);
+
     res.json({
       zone: zone.name,
       online: true,
@@ -174,6 +204,9 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
       lux: lastReading.light != null ? Math.round(lastReading.light) : null,
       vpd,
       photo: dayH != null ? { day: dayH, night: Math.round((24 - dayH) * 10) / 10 } : null,
+      // Sparkline arrays (last 6h, ~30 points)
+      hist: hist.map(h => ({ t: h.t, rh: h.rh, co2: h.co2 })),
+      canopyHist: canopyHist.map(h => h.ct),
     });
   } catch (error) {
     console.error('Display data error:', error);
