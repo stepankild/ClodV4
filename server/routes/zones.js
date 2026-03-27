@@ -6,7 +6,8 @@ import {
   updateZone,
   deleteZone,
   getReadings,
-  getLatestReading
+  getLatestReading,
+  getDisplayData
 } from '../controllers/zoneController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -20,6 +21,7 @@ router.get('/', checkPermission('iot:view'), getZones);
 router.get('/:zoneId', checkPermission('iot:view'), getZone);
 router.get('/:zoneId/readings', checkPermission('iot:view'), getReadings);
 router.get('/:zoneId/readings/latest', checkPermission('iot:view'), getLatestReading);
+router.get('/:zoneId/display', checkPermission('iot:view'), getDisplayData);
 
 // Write — iot:manage
 router.post('/', checkPermission('iot:manage'), createZone);

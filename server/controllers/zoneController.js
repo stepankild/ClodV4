@@ -249,3 +249,65 @@ export const getLatestReading = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+// @desc    Get compact display data for e-ink screen
+// @route   GET /api/zones/:zoneId/display
+export const getDisplayData = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const zone = await Zone.findOne({ zoneId }).lean();
+    if (!zone) return res.status(404).json({ message: 'Zone not found' });
+
+    // Get live state or last reading
+    const live = getZoneState(zoneId);
+    const lastReading = await SensorReading.findOne({ zoneId })
+      .sort({ timestamp: -1 }).lean();
+    const data = live?.lastData ?? lastReading;
+
+    // Calculate light cycle from last 24h
+    const since24h = new Date(Date.now() - 24 * 3600 * 1000);
+    const dayReadings = await SensorReading.countDocuments({
+      zoneId, timestamp: { $gte: since24h }, light: { $gt: 10 }
+    });
+    const totalReadings = await SensorReading.countDocuments({
+      zoneId, timestamp: { $gte: since24h }, light: { $ne: null }
+    });
+    const dayHours = totalReadings > 0 ? (dayReadings / totalReadings) * 24 : null;
+    const nightHours = dayHours != null ? 24 - dayHours : null;
+
+    // VPD calculation
+    let vpd = null;
+    if (data) {
+      const canopyT = data.temperatures?.find(t => t.location === 'canopy')?.value;
+      const airT = data.temperature;
+      const rh = data.humidity_sht45 ?? data.humidity;
+      if (canopyT != null && airT != null && rh != null) {
+        const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
+        const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+        vpd = Math.max(0, svpLeaf - svpAir * rh / 100);
+        vpd = Math.round(vpd * 100) / 100;
+      }
+    }
+
+    // Compact response for e-ink
+    res.json({
+      zone: zone.name,
+      online: live?.online ?? zone.piStatus?.online ?? false,
+      ts: data?.timestamp ?? lastReading?.timestamp ?? null,
+      temps: (data?.temperatures || []).map(t => ({
+        loc: t.location || '',
+        v: t.value != null ? Math.round(t.value * 10) / 10 : null,
+      })),
+      airT: data?.temperature != null ? Math.round(data.temperature * 10) / 10 : null,
+      rh: data?.humidity != null ? Math.round(data.humidity * 10) / 10 : null,
+      rh2: data?.humidity_sht45 != null ? Math.round(data.humidity_sht45 * 10) / 10 : null,
+      co2: data?.co2 != null ? Math.round(data.co2) : null,
+      lux: data?.light != null ? Math.round(data.light) : null,
+      vpd,
+      photo: dayHours != null ? { day: Math.round(dayHours * 10) / 10, night: Math.round(nightHours * 10) / 10 } : null,
+    });
+  } catch (error) {
+    console.error('Get display data error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

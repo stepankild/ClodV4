@@ -130,4 +130,55 @@ router.post('/status', requireApiKey, async (req, res) => {
   }
 });
 
+// GET /api/sensor-data/display/:zoneId — compact data for e-ink display (API key auth)
+router.get('/display/:zoneId', requireApiKey, async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const zone = await Zone.findOne({ zoneId }).lean();
+    if (!zone) return res.status(404).json({ message: 'Zone not found' });
+
+    const lastReading = await SensorReading.findOne({ zoneId })
+      .sort({ timestamp: -1 }).lean();
+    if (!lastReading) return res.json({ zone: zone.name, online: false });
+
+    // Light cycle from last 24h
+    const since24h = new Date(Date.now() - 24 * 3600 * 1000);
+    const [dayCount, totalCount] = await Promise.all([
+      SensorReading.countDocuments({ zoneId, timestamp: { $gte: since24h }, light: { $gt: 10 } }),
+      SensorReading.countDocuments({ zoneId, timestamp: { $gte: since24h }, light: { $ne: null } }),
+    ]);
+    const dayH = totalCount > 0 ? Math.round((dayCount / totalCount) * 240) / 10 : null;
+
+    // VPD
+    let vpd = null;
+    const canopyT = lastReading.temperatures?.find(t => t.location === 'canopy')?.value;
+    const airT = lastReading.temperature;
+    const rh = lastReading.humidity_sht45 ?? lastReading.humidity;
+    if (canopyT != null && airT != null && rh != null) {
+      const svpL = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
+      const svpA = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+      vpd = Math.round(Math.max(0, svpL - svpA * rh / 100) * 100) / 100;
+    }
+
+    res.json({
+      zone: zone.name,
+      online: true,
+      ts: lastReading.timestamp,
+      temps: (lastReading.temperatures || []).map(t => ({
+        loc: t.location || '', v: Math.round(t.value * 10) / 10,
+      })),
+      airT: lastReading.temperature != null ? Math.round(lastReading.temperature * 10) / 10 : null,
+      rh: lastReading.humidity != null ? Math.round(lastReading.humidity * 10) / 10 : null,
+      rh2: lastReading.humidity_sht45 != null ? Math.round(lastReading.humidity_sht45 * 10) / 10 : null,
+      co2: lastReading.co2 != null ? Math.round(lastReading.co2) : null,
+      lux: lastReading.light != null ? Math.round(lastReading.light) : null,
+      vpd,
+      photo: dayH != null ? { day: dayH, night: Math.round((24 - dayH) * 10) / 10 } : null,
+    });
+  } catch (error) {
+    console.error('Display data error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 export default router;
