@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 TRUE GROW IoT — Sensor Node
-Reads DS18B20 (1-Wire) and SCD41 (I2C) sensors, publishes to MQTT.
+Reads DS18B20 (1-Wire) and STCC4 (I2C CO2/T/RH) sensors, publishes to MQTT.
 """
 
 import json
@@ -52,52 +52,147 @@ def read_ds18b20_sensors(sensor_config):
     return results
 
 
-# ── SCD41 (I2C CO2 + T + RH) ──
-SCD41_AVAILABLE = False
-try:
-    from sensirion_i2c_driver import I2cConnection, LinuxI2cTransceiver
-    from sensirion_i2c_scd import Scd4xI2cDevice
-    SCD41_AVAILABLE = True
-except ImportError:
-    print("[SCD41] sensirion-i2c-scd not installed, skipping CO2 sensor")
+# ── STCC4 (I2C CO2 + T + RH) ──
+# Sensirion STCC4 — CO2 sensor with integrated SHT40 for T/RH
+# I2C address: 0x64, protocol based on Sensirion arduino-i2c-stcc4 library
+# Commands are 2-byte (MSB, LSB), responses use Sensirion CRC-8
 
-scd41_device = None
+import struct
 
 
-def init_scd41(i2c_address=0x62):
-    """Initialize SCD41 sensor."""
-    global scd41_device
-    if not SCD41_AVAILABLE:
-        return False
+def _sensirion_crc(data):
+    """Sensirion CRC-8: polynomial 0x31, init 0xFF."""
+    crc = 0xFF
+    for byte in data:
+        crc ^= byte
+        for _ in range(8):
+            if crc & 0x80:
+                crc = (crc << 1) ^ 0x31
+            else:
+                crc = crc << 1
+            crc &= 0xFF
+    return crc
+
+
+class STCC4:
+    """STCC4 CO2/Temp/RH sensor via raw I2C (smbus2)."""
+
+    ADDR = 0x64
+
+    # I2C command codes (from Sensirion arduino-i2c-stcc4)
+    CMD_START_CONTINUOUS  = (0x21, 0x8B)
+    CMD_STOP_CONTINUOUS   = (0x3F, 0x86)
+    CMD_READ_MEASUREMENT  = (0xEC, 0x05)
+    CMD_EXIT_SLEEP        = (0x00, 0x00)
+    CMD_ENTER_SLEEP       = (0x36, 0x50)
+
+    def __init__(self, bus_num=1, address=None):
+        import smbus2
+        self.bus = smbus2.SMBus(bus_num)
+        self.addr = address or self.ADDR
+        self.ready = False
+
+    def _cmd(self, cmd_tuple):
+        """Send a 2-byte command."""
+        self.bus.write_i2c_block_data(self.addr, cmd_tuple[0], [cmd_tuple[1]])
+
+    def _read_words(self, n_words):
+        """Read n words (each word = 2 data bytes + 1 CRC byte)."""
+        n_bytes = n_words * 3
+        raw = self.bus.read_i2c_block_data(self.addr, 0x00, n_bytes)
+        words = []
+        for i in range(n_words):
+            offset = i * 3
+            msb, lsb, crc = raw[offset], raw[offset + 1], raw[offset + 2]
+            if _sensirion_crc([msb, lsb]) != crc:
+                raise ValueError(f"CRC mismatch at word {i}: got 0x{crc:02x}, "
+                                 f"expected 0x{_sensirion_crc([msb, lsb]):02x}")
+            words.append((msb << 8) | lsb)
+        return words
+
+    def start(self):
+        """Start continuous measurement mode."""
+        try:
+            self._cmd(self.CMD_EXIT_SLEEP)
+            time.sleep(0.02)
+        except Exception:
+            pass
+
+        try:
+            self._cmd(self.CMD_STOP_CONTINUOUS)
+            time.sleep(0.5)
+        except Exception:
+            pass
+
+        try:
+            self._cmd(self.CMD_START_CONTINUOUS)
+            time.sleep(1)  # first measurement available after ~1s
+            self.ready = True
+            print(f"[STCC4] Continuous measurement started on 0x{self.addr:02x}")
+            return True
+        except Exception as e:
+            print(f"[STCC4] Start error: {e}")
+            return False
+
+    def read_measurement(self):
+        """Read CO2 (ppm), temperature (C), humidity (%).
+        Returns (co2, temp, rh) or (None, None, None) on error."""
+        try:
+            self._cmd(self.CMD_READ_MEASUREMENT)
+            time.sleep(0.005)  # small delay before reading
+            # Response: CO2(u16) + CRC, TempRaw(u16) + CRC, RHRaw(u16) + CRC, Status(u16) + CRC
+            words = self._read_words(4)
+            co2_raw, temp_raw, rh_raw, status = words
+
+            # CO2 is signed int16 in ppm
+            co2 = struct.unpack('>h', struct.pack('>H', co2_raw))[0]
+            # Temperature: -45 + 175 * raw / 65535
+            temp = -45.0 + 175.0 * temp_raw / 65535.0
+            # Humidity: -6 + 125 * raw / 65535
+            rh = -6.0 + 125.0 * rh_raw / 65535.0
+            rh = max(0.0, min(100.0, rh))  # clamp
+
+            if co2 < 0 or co2 > 10000:
+                return None, None, None
+
+            return co2, round(temp, 1), round(rh, 1)
+        except Exception as e:
+            print(f"[STCC4] Read error: {e}")
+            return None, None, None
+
+    def stop(self):
+        """Stop continuous measurement and enter sleep."""
+        try:
+            self._cmd(self.CMD_STOP_CONTINUOUS)
+            time.sleep(0.5)
+            self._cmd(self.CMD_ENTER_SLEEP)
+        except Exception:
+            pass
+
+
+stcc4_device = None
+
+
+def init_stcc4(i2c_address=0x64):
+    """Initialize STCC4 sensor via smbus2."""
+    global stcc4_device
     try:
-        i2c = LinuxI2cTransceiver("/dev/i2c-1")
-        connection = I2cConnection(i2c)
-        scd41_device = Scd4xI2cDevice(connection)
-        scd41_device.stop_periodic_measurement()
-        time.sleep(0.5)
-        scd41_device.start_periodic_measurement()
-        print(f"[SCD41] Initialized on I2C address 0x{i2c_address:02x}")
-        return True
+        stcc4_device = STCC4(bus_num=1, address=i2c_address)
+        if stcc4_device.start():
+            return True
+        stcc4_device = None
+        return False
     except Exception as e:
-        print(f"[SCD41] Init error: {e}")
+        print(f"[STCC4] Init error: {e}")
+        stcc4_device = None
         return False
 
 
-def read_scd41():
-    """Read CO2, temperature, humidity from SCD41."""
-    if scd41_device is None:
+def read_stcc4():
+    """Read CO2, temperature, humidity from STCC4."""
+    if stcc4_device is None or not stcc4_device.ready:
         return None, None, None
-    try:
-        if scd41_device.get_data_ready_status():
-            co2, temp, rh = scd41_device.read_measurement()
-            return (
-                co2.co2 if hasattr(co2, 'co2') else float(co2),
-                temp.degrees_celsius if hasattr(temp, 'degrees_celsius') else float(temp),
-                rh.percent_rh if hasattr(rh, 'percent_rh') else float(rh)
-            )
-    except Exception as e:
-        print(f"[SCD41] Read error: {e}")
-    return None, None, None
+    return stcc4_device.read_measurement()
 
 
 # ── MQTT ──
@@ -164,10 +259,10 @@ def main():
     print(f"Zone: {zone_id} ({config.get('zone_name', '')})")
     print(f"Interval: {interval}s")
 
-    # Initialize SCD41 if configured
-    scd41_conf = config.get("sensors", {}).get("scd41")
-    if scd41_conf and scd41_conf.get("enabled", True):
-        init_scd41(scd41_conf.get("address", 0x62))
+    # Initialize STCC4 CO2 sensor if configured
+    co2_conf = config.get("sensors", {}).get("stcc4") or config.get("sensors", {}).get("scd41")
+    if co2_conf and co2_conf.get("enabled", True):
+        init_stcc4(co2_conf.get("address", 0x64))
 
     # Connect MQTT
     mqtt_client = create_mqtt_client(config)
@@ -195,8 +290,8 @@ def main():
             if temps:
                 payload["temperatures"] = temps
 
-            # Read SCD41 (CO2 + T + RH)
-            co2, scd_temp, scd_rh = read_scd41()
+            # Read STCC4 (CO2 + T + RH)
+            co2, scd_temp, scd_rh = read_stcc4()
             if co2 is not None:
                 payload["co2"] = round(co2, 0)
             if scd_temp is not None:
