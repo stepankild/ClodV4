@@ -5,8 +5,10 @@
 #define WIFI_PASS     "2rBTjt4gm532yr47"
 
 // ===== API =====
-#define API_HOST      "clodv4-production.up.railway.app"
-#define API_PATH      "/api/sensor-data/display/zone-1"
+// Go through main Pi proxy (HTTP, no SSL needed)
+#define API_HOST      "192.168.0.210"
+#define API_PORT      8080
+#define API_PATH      "/display"
 #define API_KEY       "truegrow-sensor-key-2026"
 
 // ===== Timing =====

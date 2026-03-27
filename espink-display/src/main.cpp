@@ -48,14 +48,21 @@ float calcVPD(float lf, float at, float rh) {
 }
 
 bool fetchData() {
-  WiFiClientSecure client; client.setInsecure();
+  // Use plain HTTP to local Pi proxy (no SSL needed on LAN)
+  WiFiClient client;
   HTTPClient http;
-  http.begin(client, String("https://") + API_HOST + API_PATH);
+  http.begin(client, String("http://") + API_HOST + ":" + String(API_PORT) + API_PATH);
   http.addHeader("X-API-KEY", API_KEY);
   http.setTimeout(10000);
   int code = http.GET();
-  if (code != 200) { http.end(); return false; }
+  Serial.printf("HTTP %d\n", code);
+  if (code != 200) {
+    Serial.println(http.getString());
+    http.end();
+    return false;
+  }
   String payload = http.getString(); http.end();
+  Serial.printf("Payload: %d bytes\n", payload.length());
 
   JsonDocument doc;
   if (deserializeJson(doc, payload)) return false;
@@ -501,7 +508,10 @@ void goToSleep() {
 }
 
 void setup() {
-  Serial.begin(115200); delay(100);
+  Serial.begin(115200);
+  // Wait for USB CDC to initialize on ESP32-S3
+  delay(2000);
+  Serial.println("\n\n=== ESPink v4 ===");
 
   pinMode(EPD_POWER, OUTPUT); digitalWrite(EPD_POWER, HIGH); delay(50);
   SPI.begin(EPD_SCK, EPD_MISO, EPD_MOSI, SS);
@@ -509,10 +519,36 @@ void setup() {
   display.setRotation(0); display.setTextWrap(false);
   u8g2Fonts.begin(display);
 
-  if (!connectWiFi()) { drawError("WiFi failed"); goToSleep(); return; }
-  if (!fetchData()) { drawError("API failed"); goToSleep(); return; }
+  Serial.print("WiFi...");
+  if (!connectWiFi()) {
+    Serial.println("FAIL");
+    drawError("WiFi failed");
+    delay(60000); // wait 1 min instead of sleep for debug
+    ESP.restart();
+    return;
+  }
+  Serial.printf("OK %s RSSI=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
 
+  // Retry API up to 3 times (SSL can be flaky)
+  bool ok = false;
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    Serial.printf("API attempt %d...", attempt);
+    if (fetchData()) { ok = true; break; }
+    Serial.println("FAIL");
+    delay(2000);
+  }
+  if (!ok) {
+    drawError("API failed");
+    delay(30000);
+    ESP.restart();
+    return;
+  }
+  Serial.printf("OK hist=%d\n", D.histCount);
+
+  Serial.print("Draw...");
   drawDisplay();
+  Serial.println("OK");
   display.hibernate();
   goToSleep();
 }
