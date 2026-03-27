@@ -28,30 +28,37 @@ const IoTOverview = () => {
     }
   };
 
-  const getTemperature = (zone) => {
+  const getData = (zone) => {
     const live = liveData[zone.zoneId];
-    const data = live?.lastData || zone.lastData;
-    if (!data) return null;
+    return live?.lastData || zone.lastData;
+  };
 
-    // From DS18B20 temperatures array
+  const getAllTemperatures = (zone) => {
+    const data = getData(zone);
+    if (!data) return [];
+    const temps = [];
+
+    // DS18B20 sensors from temperatures array
     if (data.temperatures?.length > 0) {
-      return data.temperatures[0].value;
+      data.temperatures.forEach(temp => {
+        temps.push({
+          label: temp.location ? t(`iot.${temp.location}`, temp.location) : `DS18B20`,
+          value: temp.value,
+          sensorId: temp.sensorId,
+        });
+      });
     }
-    // From SHT/SCD temperature
-    if (data.temperature != null) return data.temperature;
-    return null;
-  };
 
-  const getHumidity = (zone) => {
-    const live = liveData[zone.zoneId];
-    const data = live?.lastData || zone.lastData;
-    return data?.humidity ?? null;
-  };
+    // Ambient temperature from STCC4/SCD41/SHT (if not already in DS18B20 list)
+    if (data.temperature != null) {
+      temps.push({
+        label: t('iot.ambient'),
+        value: data.temperature,
+        sensorId: '_ambient',
+      });
+    }
 
-  const getCo2 = (zone) => {
-    const live = liveData[zone.zoneId];
-    const data = live?.lastData || zone.lastData;
-    return data?.co2 ?? null;
+    return temps;
   };
 
   const isOnline = (zone) => {
@@ -72,6 +79,12 @@ const IoTOverview = () => {
     const diffH = Math.floor(diffMin / 60);
     if (diffH < 24) return `${diffH} ${t('iot.hAgo')}`;
     return d.toLocaleDateString();
+  };
+
+  const co2Color = (val) => {
+    if (val > 1500) return 'text-red-400';
+    if (val > 1000) return 'text-yellow-400';
+    return 'text-green-400';
   };
 
   if (loading) {
@@ -105,56 +118,75 @@ const IoTOverview = () => {
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {zones.map(zone => (
-            <Link
-              key={zone.zoneId}
-              to={`/iot/${zone.zoneId}`}
-              className="bg-dark-800 border border-dark-700 rounded-lg p-5 hover:border-dark-500 transition-colors"
-            >
-              {/* Header */}
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-dark-100">{zone.name}</h3>
-                <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${isOnline(zone) ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-                  <span className={`text-xs ${isOnline(zone) ? 'text-green-400' : 'text-red-400'}`}>
-                    {isOnline(zone) ? t('iot.online') : t('iot.offline')}
-                  </span>
-                </div>
-              </div>
+          {zones.map(zone => {
+            const data = getData(zone);
+            const temps = getAllTemperatures(zone);
+            const humidity = data?.humidity ?? null;
+            const co2 = data?.co2 ?? null;
+            const online = isOnline(zone);
 
-              {/* Values */}
-              <div className="grid grid-cols-3 gap-3">
-                {/* Temperature */}
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-dark-100">
-                    {getTemperature(zone) != null ? `${getTemperature(zone).toFixed(1)}°` : '—'}
+            return (
+              <Link
+                key={zone.zoneId}
+                to={`/iot/${zone.zoneId}`}
+                className="bg-dark-800 border border-dark-700 rounded-lg p-5 hover:border-dark-500 transition-colors"
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-lg font-semibold text-dark-100">{zone.name}</h3>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2.5 h-2.5 rounded-full ${online ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+                    <span className={`text-xs ${online ? 'text-green-400' : 'text-red-400'}`}>
+                      {online ? t('iot.online') : t('iot.offline')}
+                    </span>
                   </div>
-                  <div className="text-xs text-dark-500 mt-1">{t('iot.temperature')}</div>
                 </div>
 
-                {/* Humidity */}
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-dark-100">
-                    {getHumidity(zone) != null ? `${getHumidity(zone).toFixed(0)}%` : '—'}
+                {/* Temperature sensors */}
+                {temps.length > 0 && (
+                  <div className="space-y-1.5 mb-3">
+                    {temps.map((temp) => (
+                      <div key={temp.sensorId} className="flex items-center justify-between">
+                        <span className="text-sm text-dark-400 flex items-center gap-1.5">
+                          <svg className="w-3.5 h-3.5 text-amber-500" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M10 2a3 3 0 00-3 3v5.268a4 4 0 106 0V5a3 3 0 00-3-3zm0 14a2 2 0 100-4 2 2 0 000 4z" />
+                          </svg>
+                          {temp.label}
+                        </span>
+                        <span className="text-lg font-bold text-dark-100">
+                          {temp.value != null ? `${temp.value.toFixed(1)}°` : '—'}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                  <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')}</div>
-                </div>
+                )}
 
-                {/* CO2 */}
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-dark-100">
-                    {getCo2(zone) != null ? getCo2(zone).toFixed(0) : '—'}
+                {/* Humidity + CO2 row */}
+                <div className="flex items-center justify-between pt-2 border-t border-dark-700">
+                  <div className="flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm0-2a6 6 0 100-12 6 6 0 000 12z" clipRule="evenodd" />
+                    </svg>
+                    <span className="text-sm text-dark-400">{t('iot.humidity')}</span>
+                    <span className="text-base font-semibold text-blue-400 ml-1">
+                      {humidity != null ? `${humidity.toFixed(0)}%` : '—'}
+                    </span>
                   </div>
-                  <div className="text-xs text-dark-500 mt-1">CO₂ ppm</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm text-dark-400">CO₂</span>
+                    <span className={`text-base font-semibold ml-1 ${co2 != null ? co2Color(co2) : 'text-dark-400'}`}>
+                      {co2 != null ? `${co2.toFixed(0)} ppm` : '—'}
+                    </span>
+                  </div>
                 </div>
-              </div>
 
-              {/* Last seen */}
-              <div className="mt-4 text-xs text-dark-500">
-                {getLastSeen(zone) ? `${t('iot.lastUpdate')}: ${getLastSeen(zone)}` : t('iot.noData')}
-              </div>
-            </Link>
-          ))}
+                {/* Last seen */}
+                <div className="mt-3 text-xs text-dark-500">
+                  {getLastSeen(zone) ? `${t('iot.lastUpdate')}: ${getLastSeen(zone)}` : t('iot.noData')}
+                </div>
+              </Link>
+            );
+          })}
         </div>
       )}
     </div>

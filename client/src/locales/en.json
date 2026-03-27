@@ -90,7 +90,8 @@
     "chart30d": "30d",
     "canopy": "Canopy",
     "substrate": "Substrate",
-    "ambient": "Ambient"
+    "ambient": "Ambient",
+    "editSensorName": "Edit name"
   },
   "sidebar": {
     "piOnline": "Pi online",

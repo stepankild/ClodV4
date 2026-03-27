@@ -145,25 +145,25 @@ export const getReadings = async (req, res) => {
     }
 
     if (intervalMinutes) {
-      // Aggregated query
-      const pipeline = [
+      const bucketExpr = {
+        $toDate: {
+          $subtract: [
+            { $toLong: '$timestamp' },
+            { $mod: [{ $toLong: '$timestamp' }, intervalMinutes * 60 * 1000] }
+          ]
+        }
+      };
+
+      // Pipeline 1: scalar fields (temperature, humidity, co2, light)
+      const scalarPipeline = [
         { $match: match },
-        { $sort: { timestamp: 1 } },
         {
           $group: {
-            _id: {
-              $toDate: {
-                $subtract: [
-                  { $toLong: '$timestamp' },
-                  { $mod: [{ $toLong: '$timestamp' }, intervalMinutes * 60 * 1000] }
-                ]
-              }
-            },
+            _id: bucketExpr,
             temperature: { $avg: '$temperature' },
             humidity: { $avg: '$humidity' },
             co2: { $avg: '$co2' },
             light: { $avg: '$light' },
-            temperatures: { $first: '$temperatures' },
             count: { $sum: 1 },
           }
         },
@@ -176,12 +176,49 @@ export const getReadings = async (req, res) => {
             humidity: { $round: ['$humidity', 1] },
             co2: { $round: ['$co2', 0] },
             light: { $round: ['$light', 0] },
-            temperatures: 1,
             count: 1,
           }
         }
       ];
-      const readings = await SensorReading.aggregate(pipeline);
+
+      // Pipeline 2: per-sensor temperature averages
+      const tempPipeline = [
+        { $match: match },
+        { $unwind: '$temperatures' },
+        {
+          $group: {
+            _id: { bucket: bucketExpr, sensorId: '$temperatures.sensorId' },
+            value: { $avg: '$temperatures.value' },
+            location: { $first: '$temperatures.location' },
+          }
+        },
+        {
+          $group: {
+            _id: '$_id.bucket',
+            temperatures: {
+              $push: {
+                sensorId: '$_id.sensorId',
+                location: '$location',
+                value: { $round: ['$value', 1] },
+              }
+            }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ];
+
+      const [scalarReadings, tempReadings] = await Promise.all([
+        SensorReading.aggregate(scalarPipeline),
+        SensorReading.aggregate(tempPipeline),
+      ]);
+
+      // Merge: attach per-sensor temperatures to each scalar bucket
+      const tempMap = new Map(tempReadings.map(t => [t._id.getTime(), t.temperatures]));
+      const readings = scalarReadings.map(r => ({
+        ...r,
+        temperatures: tempMap.get(new Date(r.timestamp).getTime()) || [],
+      }));
+
       res.json(readings);
     } else {
       // Raw query

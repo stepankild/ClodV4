@@ -90,7 +90,8 @@
     "chart30d": "30д",
     "canopy": "Верхушка",
     "substrate": "Субстрат",
-    "ambient": "Воздух"
+    "ambient": "Воздух",
+    "editSensorName": "Изменить название"
   },
   "sidebar": {
     "piOnline": "Pi онлайн",

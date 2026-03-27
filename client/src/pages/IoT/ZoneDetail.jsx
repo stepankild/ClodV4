@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -12,6 +12,27 @@ const RANGES = [
   { key: '30d', hours: 24 * 30 },
 ];
 
+const TEMP_COLORS = ['#ef4444', '#f97316', '#a855f7', '#ec4899', '#14b8a6'];
+const SERIES_COLORS = {
+  temperature: '#f59e0b',
+  humidity: '#3b82f6',
+  co2: '#10b981',
+  light: '#eab308',
+};
+
+const loadChartPrefs = (zoneId) => {
+  try {
+    const saved = localStorage.getItem(`iot-chart-${zoneId}`);
+    return saved ? JSON.parse(saved) : null;
+  } catch { return null; }
+};
+
+const saveChartPrefs = (zoneId, prefs) => {
+  try {
+    localStorage.setItem(`iot-chart-${zoneId}`, JSON.stringify(prefs));
+  } catch { /* ignore */ }
+};
+
 const ZoneDetail = () => {
   const { zoneId } = useParams();
   const { t, i18n } = useTranslation();
@@ -20,6 +41,10 @@ const ZoneDetail = () => {
   const [range, setRange] = useState('24h');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [visibleSeries, setVisibleSeries] = useState({});
+  const [editingSensor, setEditingSensor] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [savingName, setSavingName] = useState(false);
   const liveData = useSensors();
 
   useEffect(() => {
@@ -63,14 +88,119 @@ const ZoneDetail = () => {
     return lastData.temperatures;
   }, [lastData]);
 
+  // Build list of all available chart series from readings
+  const availableSeries = useMemo(() => {
+    const series = [];
+    const sensorIds = new Set();
+
+    // Scan readings for available per-sensor temperatures
+    readings.forEach(r => {
+      if (r.temperatures?.length) {
+        r.temperatures.forEach(temp => {
+          if (!sensorIds.has(temp.sensorId)) {
+            sensorIds.add(temp.sensorId);
+            series.push({
+              key: `temp-${temp.sensorId}`,
+              label: temp.location ? t(`iot.${temp.location}`, temp.location) : `DS18B20`,
+              color: TEMP_COLORS[sensorIds.size - 1] || TEMP_COLORS[0],
+              yAxisId: 'left',
+              unit: '°C',
+            });
+          }
+        });
+      }
+    });
+
+    // Ambient temperature (STCC4/SCD41/SHT)
+    if (readings.some(r => r.temperature != null)) {
+      series.push({
+        key: 'temperature',
+        label: t('iot.ambient'),
+        color: SERIES_COLORS.temperature,
+        yAxisId: 'left',
+        unit: '°C',
+      });
+    }
+
+    if (readings.some(r => r.humidity != null)) {
+      series.push({
+        key: 'humidity',
+        label: t('iot.humidity'),
+        color: SERIES_COLORS.humidity,
+        yAxisId: 'left',
+        unit: '%',
+      });
+    }
+
+    if (readings.some(r => r.co2 != null)) {
+      series.push({
+        key: 'co2',
+        label: 'CO₂',
+        color: SERIES_COLORS.co2,
+        yAxisId: 'right',
+        unit: ' ppm',
+      });
+    }
+
+    if (readings.some(r => r.light != null)) {
+      series.push({
+        key: 'light',
+        label: t('iot.light'),
+        color: SERIES_COLORS.light,
+        yAxisId: 'right',
+        unit: ' lux',
+      });
+    }
+
+    return series;
+  }, [readings, t]);
+
+  // Initialize visible series from localStorage or defaults
+  useEffect(() => {
+    if (availableSeries.length === 0) return;
+    const saved = loadChartPrefs(zoneId);
+    if (saved) {
+      setVisibleSeries(saved);
+    } else {
+      // Default: all visible
+      const defaults = {};
+      availableSeries.forEach(s => { defaults[s.key] = true; });
+      setVisibleSeries(defaults);
+    }
+  }, [availableSeries, zoneId]);
+
+  const toggleSeries = useCallback((key) => {
+    setVisibleSeries(prev => {
+      const next = { ...prev, [key]: !prev[key] };
+      saveChartPrefs(zoneId, next);
+      return next;
+    });
+  }, [zoneId]);
+
+  // Build chart data with per-sensor columns
   const chartData = useMemo(() => {
-    return readings.map(r => ({
-      time: new Date(r.timestamp).getTime(),
-      temperature: r.temperatures?.[0]?.value ?? r.temperature ?? null,
-      humidity: r.humidity,
-      co2: r.co2,
-    }));
+    return readings.map(r => {
+      const point = {
+        time: new Date(r.timestamp).getTime(),
+        temperature: r.temperature ?? null,
+        humidity: r.humidity ?? null,
+        co2: r.co2 ?? null,
+        light: r.light ?? null,
+      };
+      // Per-sensor temperatures
+      if (r.temperatures?.length) {
+        r.temperatures.forEach(temp => {
+          point[`temp-${temp.sensorId}`] = temp.value;
+        });
+      }
+      return point;
+    });
   }, [readings]);
+
+  // Check if right Y-axis is needed
+  const hasRightAxis = useMemo(() => {
+    return availableSeries.some(s => s.yAxisId === 'right' && visibleSeries[s.key]);
+  }, [availableSeries, visibleSeries]);
 
   const formatTime = (ts) => {
     const d = new Date(ts);
@@ -78,6 +208,24 @@ const ZoneDetail = () => {
       return d.toLocaleTimeString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { hour: '2-digit', minute: '2-digit' });
     }
     return d.toLocaleDateString(i18n.language === 'en' ? 'en-US' : 'ru-RU', { day: '2-digit', month: '2-digit' });
+  };
+
+  const handleSaveSensorName = async (sensorIndex) => {
+    if (!editName.trim() || !zone) return;
+    setSavingName(true);
+    try {
+      const updatedSensors = zone.sensors.map((s, i) =>
+        i === sensorIndex ? { ...s, location: editName.trim() } : s
+      );
+      const updated = await iotService.updateZone(zoneId, { sensors: updatedSensors });
+      setZone(updated);
+      setEditingSensor(null);
+      setEditName('');
+    } catch (err) {
+      console.error('Save sensor name error:', err);
+    } finally {
+      setSavingName(false);
+    }
   };
 
   if (error) {
@@ -116,7 +264,7 @@ const ZoneDetail = () => {
       {/* Live values */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {currentTemps.map((temp, i) => (
-          <div key={i} className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+          <div key={temp.sensorId || i} className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
             <div className="text-3xl font-bold text-dark-100">
               {temp.value != null ? `${temp.value.toFixed(1)}°C` : '—'}
             </div>
@@ -125,6 +273,14 @@ const ZoneDetail = () => {
             </div>
           </div>
         ))}
+
+        {/* Ambient temperature from STCC4/SCD41 */}
+        {lastData?.temperature != null && (
+          <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+            <div className="text-3xl font-bold text-amber-400">{lastData.temperature.toFixed(1)}°C</div>
+            <div className="text-xs text-dark-500 mt-1">{t('iot.ambient')}</div>
+          </div>
+        )}
 
         {lastData?.humidity != null && (
           <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
@@ -171,6 +327,27 @@ const ZoneDetail = () => {
           </div>
         </div>
 
+        {/* Series toggles */}
+        {availableSeries.length > 0 && (
+          <div className="flex flex-wrap gap-2 mb-4">
+            {availableSeries.map(s => (
+              <button
+                key={s.key}
+                onClick={() => toggleSeries(s.key)}
+                className={`px-3 py-1 text-xs rounded-full border transition-colors ${
+                  visibleSeries[s.key]
+                    ? 'border-transparent text-white'
+                    : 'border-dark-600 text-dark-500 bg-transparent'
+                }`}
+                style={visibleSeries[s.key] ? { backgroundColor: s.color + '33', borderColor: s.color, color: s.color } : {}}
+              >
+                <span className="inline-block w-2 h-2 rounded-full mr-1.5" style={{ backgroundColor: s.color, opacity: visibleSeries[s.key] ? 1 : 0.3 }} />
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-500"></div>
@@ -189,58 +366,89 @@ const ZoneDetail = () => {
                 stroke="#6B7280"
                 fontSize={11}
               />
-              <YAxis stroke="#6B7280" fontSize={11} />
+              <YAxis yAxisId="left" stroke="#6B7280" fontSize={11} />
+              {hasRightAxis && (
+                <YAxis yAxisId="right" orientation="right" stroke="#6B7280" fontSize={11} />
+              )}
               <Tooltip
                 contentStyle={{ backgroundColor: '#1e1e2e', border: '1px solid #374151', borderRadius: '8px' }}
                 labelFormatter={(v) => new Date(v).toLocaleString(i18n.language === 'en' ? 'en-US' : 'ru-RU')}
+                formatter={(value, name) => {
+                  const s = availableSeries.find(s => s.label === name);
+                  return [value != null ? `${value}${s?.unit || ''}` : '—', name];
+                }}
               />
               <Legend />
-              <Line
-                type="monotone"
-                dataKey="temperature"
-                name={t('iot.temperature')}
-                stroke="#f59e0b"
-                dot={false}
-                strokeWidth={2}
-              />
-              {chartData.some(d => d.humidity != null) && (
+              {availableSeries.filter(s => visibleSeries[s.key]).map(s => (
                 <Line
+                  key={s.key}
                   type="monotone"
-                  dataKey="humidity"
-                  name={t('iot.humidity')}
-                  stroke="#3b82f6"
+                  dataKey={s.key}
+                  name={s.label}
+                  stroke={s.color}
+                  yAxisId={s.yAxisId}
                   dot={false}
                   strokeWidth={2}
+                  connectNulls
                 />
-              )}
-              {chartData.some(d => d.co2 != null) && (
-                <Line
-                  type="monotone"
-                  dataKey="co2"
-                  name="CO₂"
-                  stroke="#10b981"
-                  dot={false}
-                  strokeWidth={2}
-                  yAxisId="right"
-                />
-              )}
+              ))}
             </LineChart>
           </ResponsiveContainer>
         )}
       </div>
 
-      {/* Sensors list */}
+      {/* Sensors list with inline editing */}
       {zone.sensors?.length > 0 && (
         <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
           <h2 className="text-lg font-semibold text-dark-200 mb-3">{t('iot.sensors')}</h2>
           <div className="space-y-2">
             {zone.sensors.map((s, i) => (
               <div key={i} className="flex items-center justify-between py-2 border-b border-dark-700 last:border-0">
-                <div>
+                <div className="flex items-center gap-2">
                   <span className="text-dark-200 font-medium">{s.type}</span>
-                  {s.location && <span className="text-dark-500 ml-2">({s.location})</span>}
+                  {editingSensor === i ? (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') handleSaveSensorName(i);
+                          if (e.key === 'Escape') { setEditingSensor(null); setEditName(''); }
+                        }}
+                        className="bg-dark-700 border border-dark-600 rounded px-2 py-1 text-sm text-dark-200 focus:outline-none focus:border-primary-500 w-32"
+                        autoFocus
+                      />
+                      <button
+                        onClick={() => handleSaveSensorName(i)}
+                        disabled={savingName}
+                        className="text-xs text-primary-400 hover:text-primary-300"
+                      >
+                        {savingName ? '...' : '✓'}
+                      </button>
+                      <button
+                        onClick={() => { setEditingSensor(null); setEditName(''); }}
+                        className="text-xs text-dark-500 hover:text-dark-300"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {s.location && <span className="text-dark-500">({t(`iot.${s.location}`, s.location)})</span>}
+                      <button
+                        onClick={() => { setEditingSensor(i); setEditName(s.location || ''); }}
+                        className="text-dark-600 hover:text-dark-400 ml-1"
+                        title={t('iot.editSensorName')}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                        </svg>
+                      </button>
+                    </>
+                  )}
                 </div>
-                <div className="text-dark-500 text-sm">{s.sensorId}</div>
+                <div className="text-dark-500 text-sm font-mono">{s.sensorId}</div>
               </div>
             ))}
           </div>
