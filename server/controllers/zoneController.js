@@ -1,6 +1,8 @@
 import Zone from '../models/Zone.js';
 import SensorReading from '../models/SensorReading.js';
 import HumidifierLog from '../models/HumidifierLog.js';
+import IrrigationSchedule from '../models/IrrigationSchedule.js';
+import IrrigationLog from '../models/IrrigationLog.js';
 import { getZoneStates, getZoneState } from '../mqtt/index.js';
 
 // @desc    Get all zones with status and latest reading
@@ -453,6 +455,155 @@ export const getHumidifierLog = async (req, res) => {
     });
   } catch (error) {
     console.error('Humidifier log error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// ============================================================
+// Irrigation (Полив)
+// ============================================================
+
+// @desc    Control irrigation: manual on/off or update schedules
+// @route   POST /api/zones/:zoneId/irrigation
+export const controlIrrigation = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const { action, schedules, enabled } = req.body;
+
+    const haUrl = process.env.HA_URL || 'http://localhost:8123';
+    const haToken = process.env.HA_TOKEN;
+
+    // Get or create irrigation config for this zone
+    let config = await IrrigationSchedule.findOne({ zoneId });
+    if (!config) {
+      config = await IrrigationSchedule.create({ zoneId });
+    }
+
+    // Manual on/off
+    if (action === 'on' || action === 'off') {
+      if (!haToken) return res.status(500).json({ message: 'HA_TOKEN not configured' });
+      const entityId = config.entityId || 'switch.cuco_v2eur_f6d3_switch';
+      try {
+        const haResp = await fetch(`${haUrl}/api/services/switch/turn_${action}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${haToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entity_id: entityId })
+        });
+        if (!haResp.ok) {
+          console.error(`HA irrigation error: ${haResp.status}`);
+        }
+      } catch (e) {
+        console.error('HA irrigation request error:', e.message);
+      }
+      await IrrigationLog.create({ zoneId, action, trigger: 'manual' });
+    }
+
+    // Update schedules
+    if (schedules !== undefined) {
+      config.schedules = schedules;
+    }
+    if (enabled !== undefined) {
+      config.enabled = enabled;
+    }
+    await config.save();
+
+    res.json({
+      ok: true,
+      enabled: config.enabled,
+      schedules: config.schedules,
+      entityId: config.entityId
+    });
+  } catch (error) {
+    console.error('Irrigation control error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Get irrigation status (schedules + plug state from HA)
+// @route   GET /api/zones/:zoneId/irrigation/status
+export const getIrrigationStatus = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+
+    let config = await IrrigationSchedule.findOne({ zoneId }).lean();
+    if (!config) {
+      config = { zoneId, name: 'Полив', entityId: 'switch.cuco_v2eur_f6d3_switch', enabled: true, schedules: [] };
+    }
+
+    const haUrl = process.env.HA_URL || 'http://localhost:8123';
+    const haToken = process.env.HA_TOKEN;
+
+    let plugState = null;
+    if (haToken) {
+      const entityId = config.entityId || 'switch.cuco_v2eur_f6d3_switch';
+      try {
+        const haResp = await fetch(`${haUrl}/api/states/${entityId}`, {
+          headers: { 'Authorization': `Bearer ${haToken}` }
+        });
+        if (haResp.ok) {
+          const data = await haResp.json();
+          plugState = data.state; // 'on' or 'off'
+        }
+      } catch (e) {
+        console.error('HA irrigation status fetch error:', e.message);
+      }
+    }
+
+    res.json({
+      enabled: config.enabled,
+      schedules: config.schedules,
+      plugState,
+      entityId: config.entityId
+    });
+  } catch (error) {
+    console.error('Irrigation status error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Get irrigation action log
+// @route   GET /api/zones/:zoneId/irrigation/log
+export const getIrrigationLog = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 7 * 24 * 3600 * 1000);
+
+    const logs = await IrrigationLog.find({ zoneId, timestamp: { $gte: from } })
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .lean();
+
+    // Calculate stats
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayLogs = logs.filter(l => new Date(l.timestamp) >= today);
+    const onCount = todayLogs.filter(l => l.action === 'on').length;
+    const offCount = todayLogs.filter(l => l.action === 'off').length;
+
+    // Calculate total ON time today
+    let totalOnMs = 0;
+    const sortedToday = [...todayLogs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    let lastOn = null;
+    for (const log of sortedToday) {
+      if (log.action === 'on') {
+        lastOn = new Date(log.timestamp);
+      } else if (log.action === 'off' && lastOn) {
+        totalOnMs += new Date(log.timestamp) - lastOn;
+        lastOn = null;
+      }
+    }
+    if (lastOn) totalOnMs += Date.now() - lastOn;
+
+    res.json({
+      logs,
+      stats: {
+        todayOnCount: onCount,
+        todayOffCount: offCount,
+        todayOnMinutes: Math.round(totalOnMs / 60000)
+      }
+    });
+  } catch (error) {
+    console.error('Irrigation log error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

@@ -62,6 +62,8 @@ import './models/MotherRoomMap.js';
 import './models/Zone.js';
 import './models/SensorReading.js';
 import './models/CameraCapture.js';
+import './models/IrrigationSchedule.js';
+import './models/IrrigationLog.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load .env from server folder (Railway uses Variables, so MONGODB_URI must be set there)
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -211,10 +213,16 @@ app.set('io', io);
 import { initializeMqtt } from './mqtt/index.js';
 initializeMqtt(io);
 
+// Initialize irrigation scheduler
+import { initIrrigationScheduler } from './schedulers/irrigation.js';
+
 // Listen first so Railway gets a response (no 502). DB connects after.
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} (frontend: ${hasFrontend ? 'yes' : 'no'})`);
   connectDB().then(async () => {
+    // Start irrigation scheduler after DB is connected
+    initIrrigationScheduler();
+
     // One-time migration: remove test room + cleanup empty archives
     try {
       const FlowerRoom = (await import('./models/FlowerRoom.js')).default;

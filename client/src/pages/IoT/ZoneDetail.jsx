@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { iotService } from '../../services/iotService';
 import { useSensors } from '../../hooks/useSensors';
+import IrrigationPanel from '../../components/IoT/IrrigationPanel';
 
 const RANGES = [
   { key: '6h', hours: 6 },
@@ -716,6 +717,9 @@ const ZoneDetail = () => {
           )}
         </div>
       </div>
+
+      {/* Irrigation schedule */}
+      <IrrigationPanel zoneId={zoneId} />
 
       {/* Sensors list with inline editing */}
       {zone.sensors?.length > 0 && (

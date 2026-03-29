@@ -10,7 +10,10 @@ import {
   getDisplayData,
   controlHumidifier,
   getHumidifierStatus,
-  getHumidifierLog
+  getHumidifierLog,
+  controlIrrigation,
+  getIrrigationStatus,
+  getIrrigationLog
 } from '../controllers/zoneController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -30,6 +33,11 @@ router.get('/:zoneId/display', checkPermission('iot:view'), getDisplayData);
 router.get('/:zoneId/humidifier/status', checkPermission('iot:view'), getHumidifierStatus);
 router.get('/:zoneId/humidifier/log', checkPermission('iot:view'), getHumidifierLog);
 router.post('/:zoneId/humidifier', checkPermission('iot:manage'), controlHumidifier);
+
+// Irrigation control
+router.get('/:zoneId/irrigation/status', checkPermission('iot:view'), getIrrigationStatus);
+router.get('/:zoneId/irrigation/log', checkPermission('iot:view'), getIrrigationLog);
+router.post('/:zoneId/irrigation', checkPermission('iot:manage'), controlIrrigation);
 
 // Write — iot:manage
 router.post('/', checkPermission('iot:manage'), createZone);
