@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { iotService } from '../../services/iotService';
 import { useSensors } from '../../hooks/useSensors';
+import IrrigationPanel from '../../components/IoT/IrrigationPanel';
 
 const IoTOverview = () => {
   const { t } = useTranslation();
@@ -248,6 +249,12 @@ const IoTOverview = () => {
           })}
         </div>
       )}
+
+      {/* Irrigation - separate section (Материнская) */}
+      <div className="mt-8">
+        <h2 className="text-lg font-semibold text-dark-200 mb-4">🌱 Материнская</h2>
+        <IrrigationPanel zoneId="zone-1" />
+      </div>
     </div>
   );
 };
