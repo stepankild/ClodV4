@@ -2,6 +2,7 @@ import express from 'express';
 import SensorReading from '../models/SensorReading.js';
 import Zone from '../models/Zone.js';
 import HumidifierLog from '../models/HumidifierLog.js';
+import { setZoneOnlineFromHttp } from '../mqtt/index.js';
 
 const router = express.Router();
 
@@ -97,6 +98,9 @@ router.post('/', requireApiKey, async (req, res) => {
           { $set: { 'piStatus.online': true, 'piStatus.lastSeen': new Date() } }
         );
       }
+
+      // Update in-memory zone state (so getZones works even without MQTT)
+      setZoneOnlineFromHttp(data.zoneId, data);
 
       // Broadcast to browsers via Socket.io
       if (io) {

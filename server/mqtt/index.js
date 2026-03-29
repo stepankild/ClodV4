@@ -16,6 +16,12 @@ export function getZoneState(zoneId) {
   return zoneStates.get(zoneId) || null;
 }
 
+// Called from HTTP ingest route — keeps in-memory state fresh
+// even when MQTT broker is unreachable
+export function setZoneOnlineFromHttp(zoneId, data) {
+  setZoneOnline(zoneId, data);
+}
+
 function setZoneOnline(zoneId, data) {
   const state = zoneStates.get(zoneId) || { online: false, lastData: null, lastSeen: null };
   state.online = true;
