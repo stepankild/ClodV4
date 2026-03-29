@@ -91,7 +91,17 @@
     "canopy": "Canopy",
     "substrate": "Substrate",
     "ambient": "Ambient",
-    "editSensorName": "Edit name"
+    "editSensorName": "Edit name",
+    "humidifier": "Humidifier",
+    "humidifierAuto": "Auto",
+    "humidifierOn": "On",
+    "humidifierOff": "Off",
+    "rhLow": "ON when RH below",
+    "rhHigh": "OFF when RH above",
+    "plugOn": "On",
+    "plugOff": "Off",
+    "save": "Save",
+    "saving": "Saving..."
   },
   "sidebar": {
     "piOnline": "Pi online",

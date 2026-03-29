@@ -34,5 +34,15 @@ export const iotService = {
   async getLatestReading(zoneId) {
     const response = await api.get(`/zones/${zoneId}/readings/latest`);
     return response.data;
+  },
+
+  async getHumidifierStatus(zoneId) {
+    const response = await api.get(`/zones/${zoneId}/humidifier/status`);
+    return response.data;
+  },
+
+  async controlHumidifier(zoneId, data) {
+    const response = await api.post(`/zones/${zoneId}/humidifier`, data);
+    return response.data;
   }
 };

@@ -215,4 +215,16 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
   }
 });
 
+// GET /api/sensor-data/zone-config/:zoneId — zone config for humidity controller
+router.get('/zone-config/:zoneId', requireApiKey, async (req, res) => {
+  try {
+    const zone = await Zone.findOne({ zoneId: req.params.zoneId }).lean();
+    if (!zone) return res.status(404).json({ message: 'Zone not found' });
+    res.json({ config: zone.config });
+  } catch (error) {
+    console.error('Zone config error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 export default router;

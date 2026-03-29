@@ -311,3 +311,86 @@ export const getDisplayData = async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 };
+
+// @desc    Control humidifier (on/off/auto)
+// @route   POST /api/zones/:zoneId/humidifier
+export const controlHumidifier = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const { action } = req.body; // 'on', 'off', or mode update
+
+    const zone = await Zone.findOne({ zoneId });
+    if (!zone) return res.status(404).json({ message: 'Zone not found' });
+
+    const haUrl = process.env.HA_URL || 'http://localhost:8123';
+    const haToken = process.env.HA_TOKEN;
+    if (!haToken) return res.status(500).json({ message: 'HA_TOKEN not configured' });
+
+    const entityId = zone.config?.humidifierEntityId || 'switch.cuco_v2eur_189e_switch';
+
+    if (action === 'on' || action === 'off') {
+      // Direct on/off command to HA
+      const haResp = await fetch(`${haUrl}/api/services/switch/turn_${action}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${haToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entity_id: entityId })
+      });
+      if (!haResp.ok) {
+        return res.status(502).json({ message: `HA error: ${haResp.status}` });
+      }
+    }
+
+    // Update mode if provided
+    if (req.body.mode) {
+      zone.config.humidifierMode = req.body.mode;
+    }
+    if (req.body.rhLow != null) zone.config.rhLow = req.body.rhLow;
+    if (req.body.rhHigh != null) zone.config.rhHigh = req.body.rhHigh;
+    await zone.save();
+
+    res.json({ ok: true, mode: zone.config.humidifierMode, rhLow: zone.config.rhLow, rhHigh: zone.config.rhHigh });
+  } catch (error) {
+    console.error('Humidifier control error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Get humidifier status from HA
+// @route   GET /api/zones/:zoneId/humidifier/status
+export const getHumidifierStatus = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const zone = await Zone.findOne({ zoneId }).lean();
+    if (!zone) return res.status(404).json({ message: 'Zone not found' });
+
+    const haUrl = process.env.HA_URL || 'http://localhost:8123';
+    const haToken = process.env.HA_TOKEN;
+
+    let plugState = null;
+    if (haToken) {
+      const entityId = zone.config?.humidifierEntityId || 'switch.cuco_v2eur_189e_switch';
+      try {
+        const haResp = await fetch(`${haUrl}/api/states/${entityId}`, {
+          headers: { 'Authorization': `Bearer ${haToken}` }
+        });
+        if (haResp.ok) {
+          const data = await haResp.json();
+          plugState = data.state; // 'on' or 'off'
+        }
+      } catch (e) {
+        console.error('HA status fetch error:', e.message);
+      }
+    }
+
+    res.json({
+      mode: zone.config?.humidifierMode || 'manual_off',
+      rhLow: zone.config?.rhLow ?? 60,
+      rhHigh: zone.config?.rhHigh ?? 70,
+      plugState,
+      entityId: zone.config?.humidifierEntityId || 'switch.cuco_v2eur_189e_switch'
+    });
+  } catch (error) {
+    console.error('Humidifier status error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};

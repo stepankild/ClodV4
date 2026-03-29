@@ -226,8 +226,21 @@ const IoTOverview = () => {
                   </div>
                 </div>
 
+                {/* Humidifier indicator */}
+                {zone.config?.humidifierMode && zone.config.humidifierMode !== 'manual_off' && (
+                  <div className="mt-2 flex items-center gap-1.5 text-xs">
+                    <span>💧</span>
+                    <span className={zone.config.humidifierMode === 'auto' ? 'text-cyan-400' : 'text-green-400'}>
+                      {zone.config.humidifierMode === 'auto' ? t('iot.humidifierAuto') : t('iot.humidifierOn')}
+                    </span>
+                    {zone.config.humidifierMode === 'auto' && (
+                      <span className="text-dark-500">{zone.config.rhLow ?? 60}-{zone.config.rhHigh ?? 70}%</span>
+                    )}
+                  </div>
+                )}
+
                 {/* Last seen */}
-                <div className="mt-3 text-xs text-dark-500">
+                <div className="mt-2 text-xs text-dark-500">
                   {getLastSeen(zone) ? `${t('iot.lastUpdate')}: ${getLastSeen(zone)}` : t('iot.noData')}
                 </div>
               </Link>

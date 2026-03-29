@@ -7,7 +7,9 @@ import {
   deleteZone,
   getReadings,
   getLatestReading,
-  getDisplayData
+  getDisplayData,
+  controlHumidifier,
+  getHumidifierStatus
 } from '../controllers/zoneController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -22,6 +24,10 @@ router.get('/:zoneId', checkPermission('iot:view'), getZone);
 router.get('/:zoneId/readings', checkPermission('iot:view'), getReadings);
 router.get('/:zoneId/readings/latest', checkPermission('iot:view'), getLatestReading);
 router.get('/:zoneId/display', checkPermission('iot:view'), getDisplayData);
+
+// Humidifier control
+router.get('/:zoneId/humidifier/status', checkPermission('iot:view'), getHumidifierStatus);
+router.post('/:zoneId/humidifier', checkPermission('iot:manage'), controlHumidifier);
 
 // Write — iot:manage
 router.post('/', checkPermission('iot:manage'), createZone);

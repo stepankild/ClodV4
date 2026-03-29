@@ -91,7 +91,17 @@
     "canopy": "Верхушка",
     "substrate": "Субстрат",
     "ambient": "Воздух",
-    "editSensorName": "Изменить название"
+    "editSensorName": "Изменить название",
+    "humidifier": "Увлажнитель",
+    "humidifierAuto": "Авто",
+    "humidifierOn": "Вкл",
+    "humidifierOff": "Выкл",
+    "rhLow": "Вкл при RH ниже",
+    "rhHigh": "Выкл при RH выше",
+    "plugOn": "Включен",
+    "plugOff": "Выключен",
+    "save": "Сохранить",
+    "saving": "Сохранение..."
   },
   "sidebar": {
     "piOnline": "Pi онлайн",

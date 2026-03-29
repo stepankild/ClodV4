@@ -61,6 +61,8 @@ const ZoneDetail = () => {
   const [editingSensor, setEditingSensor] = useState(null);
   const [editName, setEditName] = useState('');
   const [savingName, setSavingName] = useState(false);
+  const [humidifier, setHumidifier] = useState({ mode: 'manual_off', rhLow: 60, rhHigh: 70, plugState: null });
+  const [humidifierSaving, setHumidifierSaving] = useState(false);
   const liveData = useSensors();
 
   useEffect(() => {
@@ -71,11 +73,31 @@ const ZoneDetail = () => {
     loadReadings();
   }, [zoneId, range]);
 
+  const loadHumidifierStatus = async () => {
+    try {
+      const status = await iotService.getHumidifierStatus(zoneId);
+      setHumidifier(status);
+    } catch (e) { /* ignore */ }
+  };
+
+  const handleHumidifierSave = async (updates) => {
+    setHumidifierSaving(true);
+    try {
+      const result = await iotService.controlHumidifier(zoneId, updates);
+      setHumidifier(prev => ({ ...prev, ...result }));
+    } catch (e) {
+      console.error('Humidifier save error:', e);
+    } finally {
+      setHumidifierSaving(false);
+    }
+  };
+
   const loadZone = async () => {
     try {
       const data = await iotService.getZone(zoneId);
       setZone(data);
       setError(null);
+      loadHumidifierStatus();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load zone');
     }
@@ -519,6 +541,81 @@ const ZoneDetail = () => {
               ))}
             </LineChart>
           </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* Humidifier control */}
+      <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-dark-200 font-medium flex items-center gap-2">
+            <span className="text-lg">💧</span>
+            {t('iot.humidifier')}
+          </h3>
+          <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${
+            humidifier.plugState === 'on' ? 'bg-green-900/30 text-green-400' : 'bg-dark-700 text-dark-400'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${humidifier.plugState === 'on' ? 'bg-green-400' : 'bg-dark-500'}`}></span>
+            {humidifier.plugState === 'on' ? t('iot.plugOn') : t('iot.plugOff')}
+          </div>
+        </div>
+
+        {/* Mode selector */}
+        <div className="flex gap-1 mb-4 bg-dark-900 rounded-lg p-1">
+          {['auto', 'manual_on', 'manual_off'].map(mode => (
+            <button
+              key={mode}
+              onClick={() => handleHumidifierSave({ mode, action: mode === 'manual_on' ? 'on' : mode === 'manual_off' ? 'off' : undefined })}
+              disabled={humidifierSaving}
+              className={`flex-1 py-1.5 px-3 rounded-md text-sm font-medium transition-colors ${
+                humidifier.mode === mode
+                  ? 'bg-primary-600 text-white'
+                  : 'text-dark-400 hover:text-dark-200 hover:bg-dark-700'
+              }`}
+            >
+              {mode === 'auto' ? t('iot.humidifierAuto') : mode === 'manual_on' ? t('iot.humidifierOn') : t('iot.humidifierOff')}
+            </button>
+          ))}
+        </div>
+
+        {/* Thresholds (only in auto mode) */}
+        {humidifier.mode === 'auto' && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-dark-400 w-36">{t('iot.rhLow')}</label>
+              <input
+                type="number"
+                min="30" max="90" step="1"
+                value={humidifier.rhLow}
+                onChange={e => setHumidifier(prev => ({ ...prev, rhLow: Number(e.target.value) }))}
+                className="bg-dark-900 border border-dark-600 rounded px-2 py-1 text-dark-200 w-20 text-center"
+              />
+              <span className="text-dark-500 text-sm">%</span>
+              <div className="flex-1 h-1.5 bg-dark-700 rounded-full overflow-hidden">
+                <div className="h-full bg-blue-500 rounded-full" style={{ width: `${((humidifier.rhLow - 30) / 60) * 100}%` }}></div>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="text-sm text-dark-400 w-36">{t('iot.rhHigh')}</label>
+              <input
+                type="number"
+                min="30" max="90" step="1"
+                value={humidifier.rhHigh}
+                onChange={e => setHumidifier(prev => ({ ...prev, rhHigh: Number(e.target.value) }))}
+                className="bg-dark-900 border border-dark-600 rounded px-2 py-1 text-dark-200 w-20 text-center"
+              />
+              <span className="text-dark-500 text-sm">%</span>
+              <div className="flex-1 h-1.5 bg-dark-700 rounded-full overflow-hidden">
+                <div className="h-full bg-cyan-500 rounded-full" style={{ width: `${((humidifier.rhHigh - 30) / 60) * 100}%` }}></div>
+              </div>
+            </div>
+            <button
+              onClick={() => handleHumidifierSave({ mode: 'auto', rhLow: humidifier.rhLow, rhHigh: humidifier.rhHigh })}
+              disabled={humidifierSaving}
+              className="w-full mt-2 bg-primary-600 hover:bg-primary-700 text-white py-1.5 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+            >
+              {humidifierSaving ? t('iot.saving') : t('iot.save')}
+            </button>
+          </div>
         )}
       </div>
 
