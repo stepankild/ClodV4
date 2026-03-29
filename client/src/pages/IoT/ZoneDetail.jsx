@@ -131,6 +131,33 @@ const ZoneDetail = () => {
     return lastData.temperatures;
   }, [lastData]);
 
+  // Detect frozen sensors — value unchanged for last N readings
+  const frozenSensors = useMemo(() => {
+    if (!readings || readings.length < 5) return {};
+    const frozen = {};
+    const recent = readings.slice(-20); // last 20 readings
+    // Check each scalar metric
+    const checkFrozen = (key, label) => {
+      const vals = recent.map(r => r[key]).filter(v => v != null);
+      if (vals.length >= 5 && vals.every(v => v === vals[0])) {
+        frozen[label] = true;
+      }
+    };
+    checkFrozen('humidity', 'humidity');
+    checkFrozen('humidity_sht45', 'humidity_sht45');
+    checkFrozen('co2', 'co2');
+    checkFrozen('light', 'light');
+    checkFrozen('temperature', 'temperature');
+    // Check per-sensor temperatures
+    recent[0]?.temperatures?.forEach(t => {
+      const vals = recent.map(r => r.temperatures?.find(x => x.sensorId === t.sensorId)?.value).filter(v => v != null);
+      if (vals.length >= 5 && vals.every(v => v === vals[0])) {
+        frozen[`temp-${t.sensorId}`] = true;
+      }
+    });
+    return frozen;
+  }, [readings]);
+
   // Build list of all available chart series from readings
   const availableSeries = useMemo(() => {
     const series = [];
@@ -380,52 +407,61 @@ const ZoneDetail = () => {
         );
       })()}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        {currentTemps.map((temp, i) => (
-          <div key={temp.sensorId || i} className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
-            <div className="text-3xl font-bold text-dark-100">
-              {temp.value != null ? `${temp.value.toFixed(1)}°C` : '—'}
+        {currentTemps.map((temp, i) => {
+          const isFrozen = frozenSensors[`temp-${temp.sensorId}`];
+          return (
+            <div key={temp.sensorId || i} className={`bg-dark-800 border rounded-lg p-4 text-center ${isFrozen ? 'border-yellow-700' : 'border-dark-700'}`}>
+              <div className="text-3xl font-bold text-dark-100">
+                {temp.value != null ? `${temp.value.toFixed(1)}°C` : '—'}
+              </div>
+              <div className="text-xs text-dark-500 mt-1">
+                {temp.location ? t(`iot.${temp.location}`, temp.location) : `DS18B20 #${i + 1}`}
+              </div>
+              {isFrozen && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
             </div>
-            <div className="text-xs text-dark-500 mt-1">
-              {temp.location ? t(`iot.${temp.location}`, temp.location) : `DS18B20 #${i + 1}`}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {/* Ambient temperature from STCC4/SCD41 */}
         {lastData?.temperature != null && (
-          <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.temperature ? 'border-yellow-700' : 'border-dark-700'}`}>
             <div className="text-3xl font-bold text-amber-400">{lastData.temperature.toFixed(1)}°C</div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.ambient')}</div>
+            {frozenSensors.temperature && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
         )}
 
         {lastData?.humidity != null && (
-          <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.humidity ? 'border-yellow-700' : 'border-dark-700'}`}>
             <div className="text-3xl font-bold text-blue-400">{lastData.humidity.toFixed(1)}%</div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')} (STCC4)</div>
+            {frozenSensors.humidity && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
         )}
 
         {lastData?.humidity_sht45 != null && (
-          <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.humidity_sht45 ? 'border-yellow-700' : 'border-dark-700'}`}>
             <div className="text-3xl font-bold text-cyan-400">{lastData.humidity_sht45.toFixed(1)}%</div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')} (SHT45)</div>
+            {frozenSensors.humidity_sht45 && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
         )}
 
         {lastData?.co2 != null && (
-          <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.co2 ? 'border-yellow-700' : 'border-dark-700'}`}>
             <div className={`text-3xl font-bold ${lastData.co2 > 1500 ? 'text-red-400' : lastData.co2 > 1000 ? 'text-yellow-400' : 'text-green-400'}`}>
               {lastData.co2.toFixed(0)}
             </div>
             <div className="text-xs text-dark-500 mt-1">CO₂ ppm</div>
+            {frozenSensors.co2 && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
         )}
 
         {lastData?.light != null && (
-          <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.light ? 'border-yellow-700' : 'border-dark-700'}`}>
             <div className="text-3xl font-bold text-yellow-400">{lastData.light.toFixed(0)}</div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.light')} lux</div>
+            {frozenSensors.light && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
         )}
 
