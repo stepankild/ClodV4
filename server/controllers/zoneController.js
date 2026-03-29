@@ -324,19 +324,21 @@ export const controlHumidifier = async (req, res) => {
 
     const haUrl = process.env.HA_URL || 'http://localhost:8123';
     const haToken = process.env.HA_TOKEN;
-    if (!haToken) return res.status(500).json({ message: 'HA_TOKEN not configured' });
-
-    const entityId = zone.config?.humidifierEntityId || 'switch.cuco_v2eur_189e_switch';
 
     if (action === 'on' || action === 'off') {
-      // Direct on/off command to HA
-      const haResp = await fetch(`${haUrl}/api/services/switch/turn_${action}`, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${haToken}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ entity_id: entityId })
-      });
-      if (!haResp.ok) {
-        return res.status(502).json({ message: `HA error: ${haResp.status}` });
+      if (!haToken) return res.status(500).json({ message: 'HA_TOKEN not configured' });
+      const entityId = zone.config?.humidifierEntityId || 'switch.cuco_v2eur_189e_switch';
+      try {
+        const haResp = await fetch(`${haUrl}/api/services/switch/turn_${action}`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${haToken}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entity_id: entityId })
+        });
+        if (!haResp.ok) {
+          console.error(`HA error: ${haResp.status}`);
+        }
+      } catch (e) {
+        console.error('HA request error:', e.message);
       }
     }
 
