@@ -63,6 +63,7 @@ const ZoneDetail = () => {
   const [savingName, setSavingName] = useState(false);
   const [humidifier, setHumidifier] = useState({ mode: 'manual_off', rhLow: 60, rhHigh: 70, plugState: null });
   const [humidifierSaving, setHumidifierSaving] = useState(false);
+  const [humidifierLog, setHumidifierLog] = useState({ logs: [], stats: {} });
   const liveData = useSensors();
 
   useEffect(() => {
@@ -77,6 +78,10 @@ const ZoneDetail = () => {
     try {
       const status = await iotService.getHumidifierStatus(zoneId);
       setHumidifier(status);
+    } catch (e) { /* ignore */ }
+    try {
+      const logData = await iotService.getHumidifierLog(zoneId);
+      setHumidifierLog(logData);
     } catch (e) { /* ignore */ }
   };
 
@@ -552,10 +557,10 @@ const ZoneDetail = () => {
             {t('iot.humidifier')}
           </h3>
           <div className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium ${
-            humidifier.plugState === 'on' ? 'bg-green-900/30 text-green-400' : 'bg-dark-700 text-dark-400'
+            (lastData?.humidifierState === 'on' || humidifier.plugState === 'on') ? 'bg-green-900/30 text-green-400' : 'bg-dark-700 text-dark-400'
           }`}>
-            <span className={`w-2 h-2 rounded-full ${humidifier.plugState === 'on' ? 'bg-green-400' : 'bg-dark-500'}`}></span>
-            {humidifier.plugState === 'on' ? t('iot.plugOn') : t('iot.plugOff')}
+            <span className={`w-2 h-2 rounded-full ${(lastData?.humidifierState === 'on' || humidifier.plugState === 'on') ? 'bg-green-400 animate-pulse' : 'bg-dark-500'}`}></span>
+            {(lastData?.humidifierState === 'on' || humidifier.plugState === 'on') ? t('iot.plugOn') : t('iot.plugOff')}
           </div>
         </div>
 
@@ -617,6 +622,44 @@ const ZoneDetail = () => {
             </button>
           </div>
         )}
+
+        {/* Stats + Log */}
+        <div className="mt-4 pt-3 border-t border-dark-700">
+          {/* Today stats */}
+          {humidifierLog.stats?.todayOnCount > 0 && (
+            <div className="flex items-center gap-4 text-xs text-dark-400 mb-3">
+              <span>Сегодня: <span className="text-green-400 font-medium">{humidifierLog.stats.todayOnCount}x вкл</span></span>
+              <span><span className="text-dark-300 font-medium">{humidifierLog.stats.todayOffCount}x выкл</span></span>
+              <span>Всего работал: <span className="text-cyan-400 font-medium">
+                {humidifierLog.stats.todayOnMinutes >= 60
+                  ? `${Math.floor(humidifierLog.stats.todayOnMinutes / 60)}ч ${humidifierLog.stats.todayOnMinutes % 60}м`
+                  : `${humidifierLog.stats.todayOnMinutes}м`}
+              </span></span>
+            </div>
+          )}
+
+          {/* Recent log entries */}
+          {humidifierLog.logs?.length > 0 && (
+            <div className="space-y-1 max-h-32 overflow-y-auto">
+              {humidifierLog.logs.slice(0, 10).map((log, i) => {
+                const d = new Date(log.timestamp);
+                const time = d.toLocaleTimeString(i18n.language === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+                const date = d.toLocaleDateString(i18n.language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' });
+                return (
+                  <div key={log._id || i} className="flex items-center gap-2 text-xs">
+                    <span className={`w-1.5 h-1.5 rounded-full ${log.action === 'on' ? 'bg-green-400' : 'bg-dark-500'}`}></span>
+                    <span className="text-dark-500 w-20">{date} {time}</span>
+                    <span className={log.action === 'on' ? 'text-green-400' : 'text-dark-400'}>
+                      {log.action === 'on' ? 'ВКЛ' : 'ВЫКЛ'}
+                    </span>
+                    <span className="text-dark-600">{log.trigger}</span>
+                    {log.humidity != null && <span className="text-dark-500">{log.humidity.toFixed(0)}%</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Sensors list with inline editing */}

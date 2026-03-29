@@ -1,6 +1,7 @@
 import express from 'express';
 import SensorReading from '../models/SensorReading.js';
 import Zone from '../models/Zone.js';
+import HumidifierLog from '../models/HumidifierLog.js';
 
 const router = express.Router();
 
@@ -35,6 +36,20 @@ router.post('/', requireApiKey, async (req, res) => {
         light: data.light ?? null,
         humidifierState: data.humidifierState ?? null,
       });
+
+      // Log humidifier state changes
+      if (data.humidifierState && (data.humidifierState === 'on' || data.humidifierState === 'off')) {
+        // Check if this is a state change (different from last log)
+        const lastLog = await HumidifierLog.findOne({ zoneId: data.zoneId }).sort({ timestamp: -1 });
+        if (!lastLog || lastLog.action !== data.humidifierState) {
+          await HumidifierLog.create({
+            zoneId: data.zoneId,
+            action: data.humidifierState,
+            trigger: 'auto',
+            humidity: data.humidity ?? data.humidity_sht45 ?? null
+          });
+        }
+      }
 
       // Update zone status + auto-register new sensors
       const sensorUpdates = [];

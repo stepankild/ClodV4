@@ -1,5 +1,6 @@
 import Zone from '../models/Zone.js';
 import SensorReading from '../models/SensorReading.js';
+import HumidifierLog from '../models/HumidifierLog.js';
 import { getZoneStates, getZoneState } from '../mqtt/index.js';
 
 // @desc    Get all zones with status and latest reading
@@ -340,6 +341,8 @@ export const controlHumidifier = async (req, res) => {
       } catch (e) {
         console.error('HA request error:', e.message);
       }
+      // Log manual action
+      await HumidifierLog.create({ zoneId, action, trigger: 'manual' });
     }
 
     // Build update object
@@ -402,6 +405,54 @@ export const getHumidifierStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('Humidifier status error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Get humidifier action log
+// @route   GET /api/zones/:zoneId/humidifier/log
+export const getHumidifierLog = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 7 * 24 * 3600 * 1000);
+
+    const logs = await HumidifierLog.find({ zoneId, timestamp: { $gte: from } })
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .lean();
+
+    // Calculate stats
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayLogs = logs.filter(l => new Date(l.timestamp) >= today);
+    const onCount = todayLogs.filter(l => l.action === 'on').length;
+    const offCount = todayLogs.filter(l => l.action === 'off').length;
+
+    // Calculate total ON time today
+    let totalOnMs = 0;
+    const sortedToday = [...todayLogs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    let lastOn = null;
+    for (const log of sortedToday) {
+      if (log.action === 'on') {
+        lastOn = new Date(log.timestamp);
+      } else if (log.action === 'off' && lastOn) {
+        totalOnMs += new Date(log.timestamp) - lastOn;
+        lastOn = null;
+      }
+    }
+    // If still on, count to now
+    if (lastOn) totalOnMs += Date.now() - lastOn;
+
+    res.json({
+      logs,
+      stats: {
+        todayOnCount: onCount,
+        todayOffCount: offCount,
+        todayOnMinutes: Math.round(totalOnMs / 60000)
+      }
+    });
+  } catch (error) {
+    console.error('Humidifier log error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
