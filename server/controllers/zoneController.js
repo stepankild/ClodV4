@@ -342,18 +342,24 @@ export const controlHumidifier = async (req, res) => {
       }
     }
 
-    // Ensure config object exists
-    if (!zone.config) zone.config = {};
-    // Update mode if provided
-    if (req.body.mode) {
-      zone.config.humidifierMode = req.body.mode;
-    }
-    if (req.body.rhLow != null) zone.config.rhLow = req.body.rhLow;
-    if (req.body.rhHigh != null) zone.config.rhHigh = req.body.rhHigh;
-    zone.markModified('config');
-    await zone.save();
+    // Build update object
+    const update = {};
+    if (req.body.mode) update['config.humidifierMode'] = req.body.mode;
+    if (req.body.rhLow != null) update['config.rhLow'] = req.body.rhLow;
+    if (req.body.rhHigh != null) update['config.rhHigh'] = req.body.rhHigh;
 
-    res.json({ ok: true, mode: zone.config.humidifierMode, rhLow: zone.config.rhLow, rhHigh: zone.config.rhHigh });
+    const updated = await Zone.findOneAndUpdate(
+      { zoneId },
+      { $set: update },
+      { new: true }
+    );
+
+    res.json({
+      ok: true,
+      mode: updated.config?.humidifierMode || 'manual_off',
+      rhLow: updated.config?.rhLow ?? 60,
+      rhHigh: updated.config?.rhHigh ?? 70
+    });
   } catch (error) {
     console.error('Humidifier control error:', error);
     res.status(500).json({ message: 'Server error' });
