@@ -213,15 +213,17 @@ app.set('io', io);
 import { initializeMqtt } from './mqtt/index.js';
 initializeMqtt(io);
 
-// Initialize irrigation scheduler
+// Initialize schedulers
 import { initIrrigationScheduler } from './schedulers/irrigation.js';
+import { initHumidifierScheduler } from './schedulers/humidifier.js';
 
 // Listen first so Railway gets a response (no 502). DB connects after.
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} (frontend: ${hasFrontend ? 'yes' : 'no'})`);
   connectDB().then(async () => {
-    // Start irrigation scheduler after DB is connected
+    // Start schedulers after DB is connected
     initIrrigationScheduler();
+    initHumidifierScheduler();
 
     // One-time migration: remove test room + cleanup empty archives
     try {
