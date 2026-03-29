@@ -144,7 +144,7 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
     // Light cycle from last 24h
     const since24h = new Date(Date.now() - 24 * 3600 * 1000);
     const [dayCount, totalCount] = await Promise.all([
-      SensorReading.countDocuments({ zoneId, timestamp: { $gte: since24h }, light: { $gt: 10 } }),
+      SensorReading.countDocuments({ zoneId, timestamp: { $gte: since24h }, light: { $gt: 50 } }),
       SensorReading.countDocuments({ zoneId, timestamp: { $gte: since24h }, light: { $ne: null } }),
     ]);
     const dayH = totalCount > 0 ? Math.round((dayCount / totalCount) * 240) / 10 : null;

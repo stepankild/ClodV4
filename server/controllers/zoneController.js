@@ -267,7 +267,7 @@ export const getDisplayData = async (req, res) => {
     // Calculate light cycle from last 24h
     const since24h = new Date(Date.now() - 24 * 3600 * 1000);
     const dayReadings = await SensorReading.countDocuments({
-      zoneId, timestamp: { $gte: since24h }, light: { $gt: 10 }
+      zoneId, timestamp: { $gte: since24h }, light: { $gt: 50 }
     });
     const totalReadings = await SensorReading.countDocuments({
       zoneId, timestamp: { $gte: since24h }, light: { $ne: null }
