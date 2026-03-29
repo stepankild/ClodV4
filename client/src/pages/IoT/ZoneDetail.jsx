@@ -360,6 +360,25 @@ const ZoneDetail = () => {
       </div>
 
       {/* Live values */}
+      {(() => {
+        const lastSeen = live?.lastSeen || zone?.piStatus?.lastSeen;
+        if (!lastSeen) return null;
+        const d = new Date(lastSeen);
+        const now = Date.now();
+        const diffSec = Math.floor((now - d.getTime()) / 1000);
+        let ago, stale;
+        if (diffSec < 60) { ago = t('iot.justNow'); stale = false; }
+        else if (diffSec < 3600) { ago = `${Math.floor(diffSec / 60)} ${t('iot.minAgo')}`; stale = diffSec > 300; }
+        else { ago = `${Math.floor(diffSec / 3600)} ${t('iot.hAgo')}`; stale = true; }
+        const timeStr = d.toLocaleTimeString(i18n.language === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return (
+          <div className={`text-xs mb-2 flex items-center gap-2 ${stale ? 'text-yellow-500' : 'text-dark-500'}`}>
+            <span>{t('iot.lastUpdate')}: {timeStr}</span>
+            <span className="text-dark-600">({ago})</span>
+            {stale && <span className="text-yellow-500">⚠</span>}
+          </div>
+        );
+      })()}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         {currentTemps.map((temp, i) => (
           <div key={temp.sensorId || i} className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
