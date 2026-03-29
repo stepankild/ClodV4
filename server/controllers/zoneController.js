@@ -342,12 +342,15 @@ export const controlHumidifier = async (req, res) => {
       }
     }
 
+    // Ensure config object exists
+    if (!zone.config) zone.config = {};
     // Update mode if provided
     if (req.body.mode) {
       zone.config.humidifierMode = req.body.mode;
     }
     if (req.body.rhLow != null) zone.config.rhLow = req.body.rhLow;
     if (req.body.rhHigh != null) zone.config.rhHigh = req.body.rhHigh;
+    zone.markModified('config');
     await zone.save();
 
     res.json({ ok: true, mode: zone.config.humidifierMode, rhLow: zone.config.rhLow, rhHigh: zone.config.rhHigh });
