@@ -166,6 +166,41 @@ const ZoneDetail = () => {
     return <span className={`text-xs ml-1 ${color}`}>{trend.arrow}</span>;
   };
 
+  // Per-sensor last seen timestamps (from readings history)
+  const sensorLastSeen = useMemo(() => {
+    if (!readings.length) return {};
+    const result = {};
+    // Readings are sorted ascending — iterate from end to find most recent
+    const findLast = (key, getter) => {
+      for (let i = readings.length - 1; i >= 0; i--) {
+        if (getter(readings[i]) != null) {
+          result[key] = new Date(readings[i].timestamp).getTime();
+          return;
+        }
+      }
+    };
+    findLast('humidity', r => r.humidity);
+    findLast('humidity_sht45', r => r.humidity_sht45);
+    findLast('co2', r => r.co2);
+    findLast('light', r => r.light);
+    findLast('temperature', r => r.temperature);
+    // Per-sensor temperatures
+    const allSensorIds = new Set();
+    readings.forEach(r => r.temperatures?.forEach(t => allSensorIds.add(t.sensorId)));
+    allSensorIds.forEach(sensorId => {
+      findLast(`temp-${sensorId}`, r => r.temperatures?.find(x => x.sensorId === sensorId)?.value);
+    });
+    return result;
+  }, [readings]);
+
+  const getTimeAgo = (ts) => {
+    if (!ts) return null;
+    const diffSec = Math.floor((Date.now() - ts) / 1000);
+    if (diffSec < 90) return t('iot.justNow');
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)} ${t('iot.minAgo')}`;
+    return `${Math.floor(diffSec / 3600)} ${t('iot.hAgo')}`;
+  };
+
   // Detect frozen sensors — value unchanged for last N readings
   const frozenSensors = useMemo(() => {
     if (!readings || readings.length < 5) return {};
@@ -454,7 +489,10 @@ const ZoneDetail = () => {
               <div className="text-xs text-dark-500 mt-1">
                 {temp.location ? t(`iot.${temp.location}`, temp.location) : `DS18B20 #${i + 1}`}
               </div>
-              {isFrozen && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
+              {isFrozen && <div className="text-xs text-yellow-500 mt-0.5">⚠ не меняется</div>}
+              {sensorLastSeen[`temp-${temp.sensorId}`] && (
+                <div className="text-xs text-dark-600 mt-0.5">{getTimeAgo(sensorLastSeen[`temp-${temp.sensorId}`])}</div>
+              )}
             </div>
           );
         })}
@@ -465,7 +503,8 @@ const ZoneDetail = () => {
             {!frozenSensors.temperature && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
             <div className="text-3xl font-bold text-amber-400">{lastData.temperature.toFixed(1)}°C<TrendArrow sensorKey="temperature" /></div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.ambient')}</div>
-            {frozenSensors.temperature && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
+            {frozenSensors.temperature && <div className="text-xs text-yellow-500 mt-0.5">⚠ не меняется</div>}
+            {sensorLastSeen.temperature && <div className="text-xs text-dark-600 mt-0.5">{getTimeAgo(sensorLastSeen.temperature)}</div>}
           </div>
         )}
 
@@ -474,7 +513,8 @@ const ZoneDetail = () => {
             {!frozenSensors.humidity && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
             <div className="text-3xl font-bold text-blue-400">{lastData.humidity.toFixed(1)}%<TrendArrow sensorKey="humidity" /></div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')} (STCC4)</div>
-            {frozenSensors.humidity && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
+            {frozenSensors.humidity && <div className="text-xs text-yellow-500 mt-0.5">⚠ не меняется</div>}
+            {sensorLastSeen.humidity && <div className="text-xs text-dark-600 mt-0.5">{getTimeAgo(sensorLastSeen.humidity)}</div>}
           </div>
         )}
 
@@ -483,7 +523,8 @@ const ZoneDetail = () => {
             {!frozenSensors.humidity_sht45 && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
             <div className="text-3xl font-bold text-cyan-400">{lastData.humidity_sht45.toFixed(1)}%<TrendArrow sensorKey="humidity_sht45" /></div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')} (SHT45)</div>
-            {frozenSensors.humidity_sht45 && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
+            {frozenSensors.humidity_sht45 && <div className="text-xs text-yellow-500 mt-0.5">⚠ не меняется</div>}
+            {sensorLastSeen.humidity_sht45 && <div className="text-xs text-dark-600 mt-0.5">{getTimeAgo(sensorLastSeen.humidity_sht45)}</div>}
           </div>
         )}
 
@@ -494,7 +535,8 @@ const ZoneDetail = () => {
               {lastData.co2.toFixed(0)}<TrendArrow sensorKey="co2" />
             </div>
             <div className="text-xs text-dark-500 mt-1">CO₂ ppm</div>
-            {frozenSensors.co2 && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
+            {frozenSensors.co2 && <div className="text-xs text-yellow-500 mt-0.5">⚠ не меняется</div>}
+            {sensorLastSeen.co2 && <div className="text-xs text-dark-600 mt-0.5">{getTimeAgo(sensorLastSeen.co2)}</div>}
           </div>
         )}
 
@@ -503,7 +545,8 @@ const ZoneDetail = () => {
             {!frozenSensors.light && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
             <div className="text-3xl font-bold text-yellow-400">{lastData.light.toFixed(0)}<TrendArrow sensorKey="light" /></div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.light')} lux</div>
-            {frozenSensors.light && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
+            {frozenSensors.light && <div className="text-xs text-yellow-500 mt-0.5">⚠ не меняется</div>}
+            {sensorLastSeen.light && <div className="text-xs text-dark-600 mt-0.5">{getTimeAgo(sensorLastSeen.light)}</div>}
           </div>
         )}
 
