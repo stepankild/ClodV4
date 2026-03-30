@@ -392,9 +392,17 @@ class BH1750:
             return False
 
     def read(self):
-        """Read light level in lux. Returns float or None on error."""
+        """Read light level in lux. Returns float or None on error.
+
+        Uses i2c_rdwr for a pure read (no command byte sent).
+        Previously used read_i2c_block_data(addr, 0x00, 2) which sent 0x00
+        (Power Down command!) before each read, freezing the sensor value.
+        """
         try:
-            raw = self.bus.read_i2c_block_data(self.addr, 0x00, 2)
+            from smbus2 import i2c_msg
+            msg = i2c_msg.read(self.addr, 2)
+            self.bus.i2c_rdwr(msg)
+            raw = list(msg)
             lux = ((raw[0] << 8) | raw[1]) / 1.2
             return round(lux, 0)
         except Exception as e:
@@ -406,28 +414,52 @@ bh1750_device = None
 
 
 def init_bh1750(i2c_address=0x23):
-    """Initialize BH1750 light sensor."""
+    """Initialize BH1750 light sensor with retries."""
     global bh1750_device
-    try:
-        bh1750_device = BH1750(bus_num=1, address=i2c_address)
-        if bh1750_device.start():
-            lux = bh1750_device.read()
-            if lux is not None:
-                print(f"[BH1750] First reading: {lux} lux")
-                return True
-        bh1750_device = None
-        return False
-    except Exception as e:
-        print(f"[BH1750] Init error: {e}")
-        bh1750_device = None
-        return False
+    for attempt in range(3):
+        try:
+            bh1750_device = BH1750(bus_num=1, address=i2c_address)
+            if bh1750_device.start():
+                time.sleep(0.5)  # give sensor time to settle
+                lux = bh1750_device.read()
+                if lux is not None:
+                    print(f"[BH1750] Init OK (attempt {attempt+1}): {lux} lux")
+                    return True
+            print(f"[BH1750] Init attempt {attempt+1} failed, retrying...")
+            time.sleep(1)
+        except Exception as e:
+            print(f"[BH1750] Init error (attempt {attempt+1}): {e}")
+            time.sleep(1)
+    print("[BH1750] All init attempts failed")
+    bh1750_device = None
+    return False
 
+
+_bh1750_addr = 0x23
+_bh1750_fail_count = 0
 
 def read_bh1750():
-    """Read light level from BH1750."""
+    """Read light level from BH1750. Auto-reinit on repeated failures."""
+    global bh1750_device, _bh1750_fail_count
     if bh1750_device is None:
-        return None
-    return bh1750_device.read()
+        # Try to reinit every 10 cycles (~5 min at 30s interval)
+        _bh1750_fail_count += 1
+        if _bh1750_fail_count >= 10:
+            _bh1750_fail_count = 0
+            print("[BH1750] Attempting auto-reinit...")
+            init_bh1750(_bh1750_addr)
+        if bh1750_device is None:
+            return None
+    lux = bh1750_device.read()
+    if lux is None:
+        _bh1750_fail_count += 1
+        if _bh1750_fail_count >= 5:
+            print("[BH1750] Too many read failures, will reinit...")
+            bh1750_device = None
+            _bh1750_fail_count = 0
+    else:
+        _bh1750_fail_count = 0
+    return lux
 
 
 # ── MQTT ──
@@ -548,7 +580,9 @@ def main():
 
     bh1750_conf = sensors_conf.get("bh1750")
     if bh1750_conf and bh1750_conf.get("enabled", True):
-        init_bh1750(bh1750_conf.get("address", 0x23))
+        global _bh1750_addr
+        _bh1750_addr = bh1750_conf.get("address", 0x23)
+        init_bh1750(_bh1750_addr)
 
     # Connect MQTT
     mqtt_client = create_mqtt_client(config)
