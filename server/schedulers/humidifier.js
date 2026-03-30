@@ -6,6 +6,26 @@ import HumidifierLog from '../models/HumidifierLog.js';
 const zoneStates = new Map(); // zoneId -> 'on' | 'off' | null
 
 /**
+ * Seed zoneStates from the last log entry for each auto-mode zone.
+ * Prevents phantom OFF commands after Railway restart.
+ */
+async function seedStatesFromLog() {
+  try {
+    const zones = await Zone.find({ 'config.humidifierMode': { $exists: true } }).lean();
+    for (const zone of zones) {
+      const lastLog = await HumidifierLog.findOne({ zoneId: zone.zoneId })
+        .sort({ timestamp: -1 }).lean();
+      if (lastLog) {
+        zoneStates.set(zone.zoneId, lastLog.action); // 'on' or 'off'
+        console.log(`[humidifier] ${zone.zoneId}: restored state="${lastLog.action}" from log`);
+      }
+    }
+  } catch (e) {
+    console.error('[humidifier] seedStatesFromLog error:', e.message);
+  }
+}
+
+/**
  * Turn humidifier on/off via Home Assistant API
  */
 async function haSwitch(entityId, action) {
@@ -94,8 +114,10 @@ async function checkHumidity() {
 /**
  * Initialize the humidifier scheduler (runs every 30 seconds)
  */
-export function initHumidifierScheduler() {
+export async function initHumidifierScheduler() {
+  await seedStatesFromLog();
   console.log('[humidifier] Scheduler started (30s interval, SHT45 preferred)');
   setInterval(checkHumidity, 30 * 1000);
-  checkHumidity();
+  // Small delay before first check so seed has time to complete
+  setTimeout(checkHumidity, 5000);
 }
