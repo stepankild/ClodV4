@@ -767,33 +767,51 @@ const ZoneDetail = () => {
         <div className="mt-4 pt-3 border-t border-dark-700">
           {/* Today stats */}
           {humidifierLog.stats?.todayOnCount > 0 && (
-            <div className="flex items-center gap-4 text-xs text-dark-400 mb-3">
-              <span>Сегодня: <span className="text-green-400 font-medium">{humidifierLog.stats.todayOnCount}x вкл</span></span>
-              <span><span className="text-dark-300 font-medium">{humidifierLog.stats.todayOffCount}x выкл</span></span>
-              <span>Всего работал: <span className="text-cyan-400 font-medium">
+            <div className="flex items-center gap-3 text-xs mb-3">
+              <div className="flex items-center gap-1.5 bg-green-900/20 text-green-400 px-2 py-1 rounded">
+                <span className="w-1.5 h-1.5 rounded-full bg-green-400"></span>
+                {humidifierLog.stats.todayOnCount}x вкл
+              </div>
+              <div className="flex items-center gap-1.5 bg-dark-700/50 text-dark-300 px-2 py-1 rounded">
+                <span className="w-1.5 h-1.5 rounded-full bg-dark-500"></span>
+                {humidifierLog.stats.todayOffCount}x выкл
+              </div>
+              <div className="flex items-center gap-1.5 bg-cyan-900/20 text-cyan-400 px-2 py-1 rounded">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 {humidifierLog.stats.todayOnMinutes >= 60
                   ? `${Math.floor(humidifierLog.stats.todayOnMinutes / 60)}ч ${humidifierLog.stats.todayOnMinutes % 60}м`
                   : `${humidifierLog.stats.todayOnMinutes}м`}
-              </span></span>
+              </div>
             </div>
           )}
 
           {/* Recent log entries */}
           {humidifierLog.logs?.length > 0 && (
-            <div className="space-y-1 max-h-32 overflow-y-auto">
-              {humidifierLog.logs.slice(0, 10).map((log, i) => {
+            <div className="space-y-0 max-h-40 overflow-y-auto rounded border border-dark-700">
+              <div className="grid grid-cols-[44px_36px_auto] gap-x-3 px-3 py-1.5 bg-dark-700/50 text-[10px] text-dark-500 uppercase tracking-wider sticky top-0">
+                <span>Время</span>
+                <span></span>
+                <span>Влажность</span>
+              </div>
+              {humidifierLog.logs.slice(0, 15).map((log, i) => {
                 const d = new Date(log.timestamp);
-                const time = d.toLocaleTimeString(i18n.language === 'ru' ? 'ru-RU' : 'en-US', { hour: '2-digit', minute: '2-digit' });
-                const date = d.toLocaleDateString(i18n.language === 'ru' ? 'ru-RU' : 'en-US', { day: 'numeric', month: 'short' });
+                const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const today = new Date();
+                const isToday = d.toDateString() === today.toDateString();
+                const isYesterday = d.toDateString() === new Date(today - 86400000).toDateString();
+                const dateLabel = isToday ? '' : isYesterday ? 'вчера ' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: '2-digit' }) + ' ';
+                const isOn = log.action === 'on';
                 return (
-                  <div key={log._id || i} className="flex items-center gap-2 text-xs">
-                    <span className={`w-1.5 h-1.5 rounded-full ${log.action === 'on' ? 'bg-green-400' : 'bg-dark-500'}`}></span>
-                    <span className="text-dark-500 w-20">{date} {time}</span>
-                    <span className={log.action === 'on' ? 'text-green-400' : 'text-dark-400'}>
-                      {log.action === 'on' ? 'ВКЛ' : 'ВЫКЛ'}
+                  <div key={log._id || i} className={`grid grid-cols-[44px_36px_auto] gap-x-3 px-3 py-1 text-xs items-center ${i % 2 === 0 ? 'bg-dark-800' : 'bg-dark-800/50'}`}>
+                    <span className="text-dark-400 font-mono tabular-nums">{dateLabel}{time}</span>
+                    <span className={`font-medium ${isOn ? 'text-green-400' : 'text-dark-500'}`}>
+                      {isOn ? 'ON' : 'OFF'}
                     </span>
-                    <span className="text-dark-600">{log.trigger}</span>
-                    {log.humidity != null && <span className="text-dark-500">{log.humidity.toFixed(0)}%</span>}
+                    <span className="text-dark-400">
+                      {log.humidity != null && <span className="text-blue-400">{log.humidity.toFixed(0)}%</span>}
+                      {log.trigger === 'auto' && <span className="text-dark-600 ml-1.5">авто</span>}
+                      {log.trigger === 'manual' && <span className="text-yellow-600 ml-1.5">вручную</span>}
+                    </span>
                   </div>
                 );
               })}
