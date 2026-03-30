@@ -131,6 +131,41 @@ const ZoneDetail = () => {
     return lastData.temperatures;
   }, [lastData]);
 
+  // Per-sensor trend: compare current value vs 5-min-ago value
+  const sensorTrends = useMemo(() => {
+    if (!readings || readings.length < 2) return {};
+    const trends = {};
+    const recent = readings.slice(-10); // ~5 min at 30s interval
+    const old = recent[0];
+    const cur = recent[recent.length - 1];
+    const calcTrend = (curVal, oldVal) => {
+      if (curVal == null || oldVal == null) return null;
+      const diff = curVal - oldVal;
+      if (Math.abs(diff) < 0.05) return '→';
+      return diff > 0 ? '↑' : '↓';
+    };
+    const trendColor = (t) => t === '↑' ? 'text-red-400' : t === '↓' ? 'text-blue-400' : 'text-dark-500';
+    // Scalars
+    trends.humidity = { arrow: calcTrend(cur?.humidity, old?.humidity), color: trendColor };
+    trends.humidity_sht45 = { arrow: calcTrend(cur?.humidity_sht45, old?.humidity_sht45), color: trendColor };
+    trends.co2 = { arrow: calcTrend(cur?.co2, old?.co2), color: trendColor };
+    trends.light = { arrow: calcTrend(cur?.light, old?.light), color: trendColor };
+    trends.temperature = { arrow: calcTrend(cur?.temperature, old?.temperature), color: trendColor };
+    // Per-sensor temps
+    cur?.temperatures?.forEach(t => {
+      const oldT = old?.temperatures?.find(x => x.sensorId === t.sensorId)?.value;
+      trends[`temp-${t.sensorId}`] = { arrow: calcTrend(t.value, oldT), color: trendColor };
+    });
+    return trends;
+  }, [readings]);
+
+  const TrendArrow = ({ sensorKey }) => {
+    const trend = sensorTrends[sensorKey];
+    if (!trend?.arrow || trend.arrow === '→') return null;
+    const color = trend.arrow === '↑' ? 'text-red-400' : 'text-blue-400';
+    return <span className={`text-xs ml-1 ${color}`}>{trend.arrow}</span>;
+  };
+
   // Detect frozen sensors — value unchanged for last N readings
   const frozenSensors = useMemo(() => {
     if (!readings || readings.length < 5) return {};
@@ -410,9 +445,11 @@ const ZoneDetail = () => {
         {currentTemps.map((temp, i) => {
           const isFrozen = frozenSensors[`temp-${temp.sensorId}`];
           return (
-            <div key={temp.sensorId || i} className={`bg-dark-800 border rounded-lg p-4 text-center ${isFrozen ? 'border-yellow-700' : 'border-dark-700'}`}>
+            <div key={temp.sensorId || i} className={`bg-dark-800 border rounded-lg p-4 text-center relative ${isFrozen ? 'border-yellow-700' : 'border-dark-700'}`}>
+              {!isFrozen && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
               <div className="text-3xl font-bold text-dark-100">
                 {temp.value != null ? `${temp.value.toFixed(1)}°C` : '—'}
+                <TrendArrow sensorKey={`temp-${temp.sensorId}`} />
               </div>
               <div className="text-xs text-dark-500 mt-1">
                 {temp.location ? t(`iot.${temp.location}`, temp.location) : `DS18B20 #${i + 1}`}
@@ -424,33 +461,37 @@ const ZoneDetail = () => {
 
         {/* Ambient temperature from STCC4/SCD41 */}
         {lastData?.temperature != null && (
-          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.temperature ? 'border-yellow-700' : 'border-dark-700'}`}>
-            <div className="text-3xl font-bold text-amber-400">{lastData.temperature.toFixed(1)}°C</div>
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center relative ${frozenSensors.temperature ? 'border-yellow-700' : 'border-dark-700'}`}>
+            {!frozenSensors.temperature && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+            <div className="text-3xl font-bold text-amber-400">{lastData.temperature.toFixed(1)}°C<TrendArrow sensorKey="temperature" /></div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.ambient')}</div>
             {frozenSensors.temperature && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
         )}
 
         {lastData?.humidity != null && (
-          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.humidity ? 'border-yellow-700' : 'border-dark-700'}`}>
-            <div className="text-3xl font-bold text-blue-400">{lastData.humidity.toFixed(1)}%</div>
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center relative ${frozenSensors.humidity ? 'border-yellow-700' : 'border-dark-700'}`}>
+            {!frozenSensors.humidity && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+            <div className="text-3xl font-bold text-blue-400">{lastData.humidity.toFixed(1)}%<TrendArrow sensorKey="humidity" /></div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')} (STCC4)</div>
             {frozenSensors.humidity && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
         )}
 
         {lastData?.humidity_sht45 != null && (
-          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.humidity_sht45 ? 'border-yellow-700' : 'border-dark-700'}`}>
-            <div className="text-3xl font-bold text-cyan-400">{lastData.humidity_sht45.toFixed(1)}%</div>
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center relative ${frozenSensors.humidity_sht45 ? 'border-yellow-700' : 'border-dark-700'}`}>
+            {!frozenSensors.humidity_sht45 && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+            <div className="text-3xl font-bold text-cyan-400">{lastData.humidity_sht45.toFixed(1)}%<TrendArrow sensorKey="humidity_sht45" /></div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.humidity')} (SHT45)</div>
             {frozenSensors.humidity_sht45 && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
         )}
 
         {lastData?.co2 != null && (
-          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.co2 ? 'border-yellow-700' : 'border-dark-700'}`}>
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center relative ${frozenSensors.co2 ? 'border-yellow-700' : 'border-dark-700'}`}>
+            {!frozenSensors.co2 && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
             <div className={`text-3xl font-bold ${lastData.co2 > 1500 ? 'text-red-400' : lastData.co2 > 1000 ? 'text-yellow-400' : 'text-green-400'}`}>
-              {lastData.co2.toFixed(0)}
+              {lastData.co2.toFixed(0)}<TrendArrow sensorKey="co2" />
             </div>
             <div className="text-xs text-dark-500 mt-1">CO₂ ppm</div>
             {frozenSensors.co2 && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
@@ -458,8 +499,9 @@ const ZoneDetail = () => {
         )}
 
         {lastData?.light != null && (
-          <div className={`bg-dark-800 border rounded-lg p-4 text-center ${frozenSensors.light ? 'border-yellow-700' : 'border-dark-700'}`}>
-            <div className="text-3xl font-bold text-yellow-400">{lastData.light.toFixed(0)}</div>
+          <div className={`bg-dark-800 border rounded-lg p-4 text-center relative ${frozenSensors.light ? 'border-yellow-700' : 'border-dark-700'}`}>
+            {!frozenSensors.light && isOnline && <div className="absolute top-2 right-2 w-2 h-2 rounded-full bg-green-500 animate-pulse" />}
+            <div className="text-3xl font-bold text-yellow-400">{lastData.light.toFixed(0)}<TrendArrow sensorKey="light" /></div>
             <div className="text-xs text-dark-500 mt-1">{t('iot.light')} lux</div>
             {frozenSensors.light && <div className="text-xs text-yellow-500 mt-1">⚠ не меняется</div>}
           </div>
