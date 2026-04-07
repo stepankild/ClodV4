@@ -500,10 +500,35 @@ void drawError(const char* msg) {
   } while (display.nextPage());
 }
 
+bool isNightTime() {
+  if (D.timestamp.length() < 13) return false;
+  int hour = D.timestamp.substring(11, 13).toInt();
+  if (NIGHT_SLEEP_HOUR_START > NIGHT_SLEEP_HOUR_END) {
+    // e.g. 19..8 → night is 19,20,21,...,23,0,1,...,7
+    return hour >= NIGHT_SLEEP_HOUR_START || hour < NIGHT_SLEEP_HOUR_END;
+  }
+  return hour >= NIGHT_SLEEP_HOUR_START && hour < NIGHT_SLEEP_HOUR_END;
+}
+
+uint64_t calcSleepMinutes() {
+  if (!isNightTime()) return SLEEP_MINUTES;
+  // Calculate minutes until NIGHT_SLEEP_HOUR_END
+  if (D.timestamp.length() < 16) return 60;
+  int hour = D.timestamp.substring(11, 13).toInt();
+  int minute = D.timestamp.substring(14, 16).toInt();
+  int wakeMinutes = NIGHT_SLEEP_HOUR_END * 60;
+  int nowMinutes = hour * 60 + minute;
+  int diff = wakeMinutes - nowMinutes;
+  if (diff <= 0) diff += 24 * 60; // wrap around midnight
+  return (uint64_t)diff;
+}
+
 void goToSleep() {
   digitalWrite(EPD_POWER, LOW);
   WiFi.disconnect(true); WiFi.mode(WIFI_OFF);
-  esp_sleep_enable_timer_wakeup((uint64_t)SLEEP_MINUTES * 60ULL * 1000000ULL);
+  uint64_t sleepMin = calcSleepMinutes();
+  Serial.printf("Sleep %llu min%s\n", sleepMin, isNightTime() ? " (night)" : "");
+  esp_sleep_enable_timer_wakeup(sleepMin * 60ULL * 1000000ULL);
   esp_deep_sleep_start();
 }
 
