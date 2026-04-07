@@ -78,6 +78,7 @@ const Harvest = () => {
   const [weighingTip, setWeighingTip] = useState(false);
   const [showExtraNutrition, setShowExtraNutrition] = useState(false);
   const [extraNutritionSaving, setExtraNutritionSaving] = useState(false);
+  const [pendingExtraNutrition, setPendingExtraNutrition] = useState(null);
   const prevScaleConnected = useRef(scaleConnected);
   const piGraceTimerRef = useRef(null);
 
@@ -386,8 +387,6 @@ const Harvest = () => {
   };
 
   // ── Extra nutrition helpers ──
-  const [pendingExtraNutrition, setPendingExtraNutrition] = useState(null);
-
   const extraNutritionSet = new Set(
     showExtraNutrition && pendingExtraNutrition != null
       ? pendingExtraNutrition
