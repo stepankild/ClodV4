@@ -33,6 +33,7 @@ const harvestSessionSchema = new mongoose.Schema({
     recordedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     errorNote: { type: String, default: '' }
   }],
+  extraNutritionPlants: [{ type: Number }],
   startedAt: { type: Date, default: Date.now },
   completedAt: { type: Date, default: null },
   // Данные для инфографики команды (заполняются при завершении)

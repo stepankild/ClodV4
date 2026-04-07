@@ -12,7 +12,7 @@ function getStrainIndex(plantNumber, flowerStrains) {
  * Read-only карта комнаты для страницы сбора урожая.
  * Показывает три состояния: собран (зелёный), не собран (цветной, кликабельный), пусто (серый).
  */
-export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights, onPlantClick }) {
+export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights, onPlantClick, extraNutritionPlants, extraNutritionMode, onExtraNutritionToggle }) {
   const { t } = useTranslation();
   const layout = room?.roomLayout;
   if (!layout?.customRows?.length) return null;
@@ -77,6 +77,7 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
                     const strainIdx = plantNumber ? getStrainIndex(plantNumber, flowerStrains) : -1;
                     const isHarvested = plantNumber ? harvestedPlants.has(plantNumber) : false;
                     const weight = plantNumber && harvestedWeights ? harvestedWeights.get(plantNumber) : null;
+                    const isExtraNutr = plantNumber && extraNutritionPlants?.has(plantNumber);
 
                     // Пустая ячейка
                     if (!plantNumber) {
@@ -90,17 +91,47 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
                       );
                     }
 
+                    // В режиме разметки доп. питания — кликабельный с жёлтой обводкой
+                    if (extraNutritionMode) {
+                      return (
+                        <button
+                          key={posIdx}
+                          type="button"
+                          onClick={() => onExtraNutritionToggle && onExtraNutritionToggle(plantNumber)}
+                          className={`
+                            min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px]
+                            rounded-md flex flex-col items-center justify-center gap-0
+                            transition cursor-pointer hover:scale-105
+                            ${isExtraNutr
+                              ? 'bg-yellow-500/30 border-2 border-yellow-400 ring-1 ring-yellow-400/50'
+                              : 'bg-dark-700/50 border border-dark-600 hover:border-yellow-500/50'}
+                          `}
+                        >
+                          <span className={`text-[10px] font-bold leading-tight ${isExtraNutr ? 'text-yellow-300' : 'text-dark-400'}`}>
+                            {plantNumber}
+                          </span>
+                          {isExtraNutr && <span className="text-[8px] leading-tight">🧪</span>}
+                        </button>
+                      );
+                    }
+
                     // Собранный куст
                     if (isHarvested) {
                       return (
                         <div
                           key={posIdx}
-                          className="min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px] bg-green-500/25 border border-green-500/60 rounded-md flex flex-col items-center justify-center gap-0 transition"
+                          className={`
+                            min-w-[36px] min-h-[36px] sm:min-w-[44px] sm:min-h-[44px]
+                            bg-green-500/25 border border-green-500/60 rounded-md
+                            flex flex-col items-center justify-center gap-0 transition
+                            ${isExtraNutr ? 'ring-1 ring-yellow-400/60' : ''}
+                          `}
                           title={weight != null
                             ? t('roomMap.harvestedWithWeight', { num: plantNumber, weight })
                             : t('roomMap.harvestedNoWeight', { num: plantNumber })}
                         >
                           <span className="text-[10px] font-bold text-green-400 leading-tight flex items-center gap-0.5">
+                            {isExtraNutr && <span className="text-yellow-400 text-[7px]">🧪</span>}
                             <span className="text-green-500 text-[8px]">✓</span>
                             {plantNumber}
                           </span>
@@ -130,11 +161,13 @@ export default function HarvestRoomMap({ room, harvestedPlants, harvestedWeights
                           flex flex-col items-center justify-center gap-0
                           transition cursor-pointer
                           hover:brightness-125 hover:scale-105
+                          ${isExtraNutr ? 'ring-1 ring-yellow-400/60' : ''}
                         `}
                       >
                         <span className={`text-xs font-bold ${color.text} leading-tight`}>
                           {plantNumber}
                         </span>
+                        {isExtraNutr && <span className="text-[7px] leading-tight">🧪</span>}
                       </button>
                     );
                   })

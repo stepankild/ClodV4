@@ -6,6 +6,7 @@ import {
   addPlant,
   removePlant,
   setPlantErrorNote,
+  setExtraNutrition,
   completeSession,
   getSessions,
   getWorkers,
@@ -36,6 +37,7 @@ router.post('/session', checkPermission('harvest:record'), createSession);
 router.post('/session/:sessionId/plant', checkPermission('harvest:record'), addPlant);
 router.delete('/session/:sessionId/plant/:plantNumber', checkPermission('harvest:record'), removePlant);
 router.patch('/session/:sessionId/plant/:plantNumber', checkPermission('harvest:edit_weights'), setPlantErrorNote);
+router.patch('/session/:sessionId/extra-nutrition', checkPermission('harvest:record'), setExtraNutrition);
 router.post('/session/:sessionId/complete', checkPermission('harvest:complete'), completeSession);
 
 export default router;

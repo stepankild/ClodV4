@@ -261,6 +261,35 @@ export const setPlantErrorNote = async (req, res) => {
   }
 };
 
+// @desc    Установить список кустов с доп. питанием
+// @route   PATCH /api/harvest/session/:sessionId/extra-nutrition
+export const setExtraNutrition = async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const { plantNumbers } = req.body;
+
+    if (!Array.isArray(plantNumbers)) {
+      return res.status(400).json({ message: 'plantNumbers must be an array' });
+    }
+
+    const session = await HarvestSession.findByIdAndUpdate(
+      sessionId,
+      { extraNutritionPlants: plantNumbers.map(Number).filter(n => !isNaN(n)) },
+      { new: true }
+    ).populate('plants.recordedBy', 'name')
+     .populate('crew.user', 'name');
+
+    if (!session) {
+      return res.status(404).json({ message: 'Session not found' });
+    }
+
+    res.json(session);
+  } catch (error) {
+    console.error('Set extra nutrition:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 // @desc    Завершить сессию сбора и автоматически архивировать цикл (комната освобождается)
 // @route   POST /api/harvest/session/:sessionId/complete
 export const completeSession = async (req, res) => {

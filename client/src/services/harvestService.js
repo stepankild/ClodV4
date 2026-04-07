@@ -36,6 +36,11 @@ export const harvestService = {
     return response.data;
   },
 
+  async setExtraNutrition(sessionId, plantNumbers) {
+    const response = await api.patch(`/harvest/session/${sessionId}/extra-nutrition`, { plantNumbers });
+    return response.data;
+  },
+
   async completeSession(sessionId, data = {}) {
     const response = await api.post(`/harvest/session/${sessionId}/complete`, data);
     return response.data;

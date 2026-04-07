@@ -76,6 +76,8 @@ const Harvest = () => {
   const [weighingConflict, setWeighingConflict] = useState(null);
   const [piOfflineModal, setPiOfflineModal] = useState(false);
   const [weighingTip, setWeighingTip] = useState(false);
+  const [showExtraNutrition, setShowExtraNutrition] = useState(false);
+  const [extraNutritionSaving, setExtraNutritionSaving] = useState(false);
   const prevScaleConnected = useRef(scaleConnected);
   const piGraceTimerRef = useRef(null);
 
@@ -381,6 +383,50 @@ const Harvest = () => {
     } finally {
       setErrorNoteSaving(false);
     }
+  };
+
+  // ── Extra nutrition helpers ──
+  const [pendingExtraNutrition, setPendingExtraNutrition] = useState(null);
+
+  const extraNutritionSet = new Set(
+    showExtraNutrition && pendingExtraNutrition != null
+      ? pendingExtraNutrition
+      : (session?.extraNutritionPlants || [])
+  );
+
+  const handleToggleExtraNutrition = (plantNumber) => {
+    const current = pendingExtraNutrition != null
+      ? [...pendingExtraNutrition]
+      : [...(session?.extraNutritionPlants || [])];
+    const idx = current.indexOf(plantNumber);
+    if (idx >= 0) current.splice(idx, 1);
+    else current.push(plantNumber);
+    setPendingExtraNutrition(current);
+  };
+
+  const handleSaveExtraNutrition = async () => {
+    if (!session || pendingExtraNutrition == null) return;
+    try {
+      setExtraNutritionSaving(true);
+      const updated = await harvestService.setExtraNutrition(session._id, pendingExtraNutrition);
+      setSession(updated);
+      setPendingExtraNutrition(null);
+      setShowExtraNutrition(false);
+    } catch (err) {
+      console.error('Save extra nutrition:', err);
+    } finally {
+      setExtraNutritionSaving(false);
+    }
+  };
+
+  const handleCancelExtraNutrition = () => {
+    setPendingExtraNutrition(null);
+    setShowExtraNutrition(false);
+  };
+
+  const handleStartExtraNutrition = () => {
+    setPendingExtraNutrition([...(session?.extraNutritionPlants || [])]);
+    setShowExtraNutrition(true);
   };
 
   const handleCompleteSession = () => {
@@ -1199,6 +1245,9 @@ const Harvest = () => {
                 room={selectedRoom}
                 harvestedPlants={harvestedPlants}
                 harvestedWeights={harvestedWeights}
+                extraNutritionPlants={extraNutritionSet}
+                extraNutritionMode={showExtraNutrition}
+                onExtraNutritionToggle={handleToggleExtraNutrition}
                 onPlantClick={(plantNumber) => {
                   if (isWeigher && !harvestedPlants.has(plantNumber)) {
                     setPlantNumber(String(plantNumber));
@@ -1248,6 +1297,94 @@ const Harvest = () => {
               />
             </div>
           </div>
+
+          {/* Extra nutrition toggle */}
+          {isWeigher && hasRoomMap && (
+            <div className="mb-6">
+              {showExtraNutrition ? (
+                <div className="bg-yellow-500/10 rounded-xl p-4 border border-yellow-500/30">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-yellow-300">
+                      🧪 {t('harvest.extraNutrition')}: {t('harvest.extraNutritionSelectOnMap')} ({extraNutritionSet.size} {t('common.pcs')})
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveExtraNutrition}
+                        disabled={extraNutritionSaving}
+                        className="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg text-sm transition disabled:opacity-50"
+                      >
+                        {t('harvest.extraNutritionSave')}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleCancelExtraNutrition}
+                        className="px-3 py-1.5 text-dark-400 hover:text-white transition text-sm"
+                      >
+                        {t('common.cancel')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleStartExtraNutrition}
+                  className={`text-sm transition flex items-center gap-1.5 ${
+                    session?.extraNutritionPlants?.length
+                      ? 'text-yellow-400 hover:text-yellow-300'
+                      : 'text-dark-400 hover:text-yellow-400'
+                  }`}
+                >
+                  <span>🧪</span>
+                  {session?.extraNutritionPlants?.length
+                    ? `${t('harvest.extraNutrition')} (${session.extraNutritionPlants.length} ${t('common.pcs')})`
+                    : t('harvest.extraNutritionMark')
+                  }
+                </button>
+              )}
+            </div>
+          )}
+
+          {/* Extra nutrition comparison stats */}
+          {session?.extraNutritionPlants?.length > 0 && session?.plants?.length > 0 && (() => {
+            const extraSet = new Set(session.extraNutritionPlants);
+            const withNutr = session.plants.filter(p => extraSet.has(p.plantNumber));
+            const withoutNutr = session.plants.filter(p => !extraSet.has(p.plantNumber));
+            const avgWith = withNutr.length > 0 ? Math.round(withNutr.reduce((s, p) => s + p.wetWeight, 0) / withNutr.length) : 0;
+            const avgWithout = withoutNutr.length > 0 ? Math.round(withoutNutr.reduce((s, p) => s + p.wetWeight, 0) / withoutNutr.length) : 0;
+            const totalWith = withNutr.reduce((s, p) => s + p.wetWeight, 0);
+            const totalWithout = withoutNutr.reduce((s, p) => s + p.wetWeight, 0);
+            const diff = avgWith - avgWithout;
+            const diffPct = avgWithout > 0 ? Math.round((diff / avgWithout) * 100) : 0;
+
+            return (
+              <div className="bg-dark-800 rounded-xl p-4 border border-dark-700 mb-6">
+                <div className="text-xs text-dark-500 uppercase tracking-wider mb-3">🧪 {t('harvest.extraNutritionStats')}</div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <div className="text-xs text-dark-400 mb-1">{t('harvest.withNutrition')}</div>
+                    <div className="text-lg font-bold text-green-400">{avgWith} {t('common.grams')}</div>
+                    <div className="text-xs text-dark-500">{withNutr.length} {t('common.pcs')} / {totalWith} {t('common.grams')}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-dark-400 mb-1">{t('harvest.withoutNutrition')}</div>
+                    <div className="text-lg font-bold text-white">{avgWithout} {t('common.grams')}</div>
+                    <div className="text-xs text-dark-500">{withoutNutr.length} {t('common.pcs')} / {totalWithout} {t('common.grams')}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-dark-400 mb-1">{t('harvest.difference')}</div>
+                    <div className={`text-lg font-bold ${diff > 0 ? 'text-green-400' : diff < 0 ? 'text-red-400' : 'text-dark-300'}`}>
+                      {diff > 0 ? '+' : ''}{diff} {t('common.grams')}
+                    </div>
+                    <div className={`text-xs ${diff > 0 ? 'text-green-500' : diff < 0 ? 'text-red-500' : 'text-dark-500'}`}>
+                      {diff > 0 ? '+' : ''}{diffPct}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Record log */}
           <div className="bg-dark-800 rounded-xl p-6 border border-dark-700 mb-6">
