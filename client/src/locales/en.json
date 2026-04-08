@@ -1416,7 +1416,18 @@
     "mediumAeroFull": "Aeroponics",
     "mediumOther": "Other",
     "floweringDays": "Flowering days",
-    "deleteBtn": "Delete"
+    "deleteBtn": "Delete",
+    "nutritionReport": "Report: extra nutrition",
+    "nutritionReportDetailed": "Detailed comparison",
+    "metric": "Metric",
+    "avgWeightLabel": "Avg weight",
+    "medianLabel": "Median",
+    "minWeightLabel": "Min weight",
+    "maxWeightLabel": "Max weight",
+    "totalWeightLabel": "Total weight",
+    "nutritionPositive": "Plants with extra nutrition showed +{{pct}}% (+{{grams}}g) avg wet weight",
+    "nutritionNegative": "Plants with extra nutrition showed −{{pct}}% (−{{grams}}g) avg wet weight",
+    "nutritionNeutral": "No difference between groups detected"
   },
   "stats": {
     "title": "Statistics",

@@ -7,6 +7,262 @@ import { localizeRoomName } from '../../utils/localizeRoomName';
 import ArchiveHeatMap from '../../components/RoomMap/ArchiveHeatMap';
 import CrewInfographic from '../../components/Harvest/CrewInfographic';
 
+// ── Extra Nutrition PDF Report ──────────────────────────────────────
+async function generateNutritionPDF(archive, t, locale) {
+  const [{ jsPDF }, { RobotoRegular }, { RobotoBold }] = await Promise.all([
+    import('jspdf'),
+    import('../../fonts/Roboto-Regular'),
+    import('../../fonts/Roboto-Bold')
+  ]);
+
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+  doc.addFileToVFS('Roboto-Regular.ttf', RobotoRegular);
+  doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
+  doc.addFileToVFS('Roboto-Bold.ttf', RobotoBold);
+  doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
+
+  const pw = 210, ph = 297, mx = 15;
+  const cw = pw - mx * 2; // content width
+  let y = 15;
+
+  const fmtNum = (n) => n != null && Number.isFinite(n) ? Number(n).toLocaleString(locale) : '—';
+  const fmtDate = (d) => d ? new Date(d).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
+
+  // Helpers
+  const drawRect = (x, y, w, h, r, g, b) => { doc.setFillColor(r, g, b); doc.rect(x, y, w, h, 'F'); };
+  const drawLine = (x1, y1, x2, y2, r, g, b) => { doc.setDrawColor(r, g, b); doc.setLineWidth(0.3); doc.line(x1, y1, x2, y2); };
+
+  // ── Data prep ──
+  const extraSet = new Set(archive.extraNutritionPlants);
+  const allPlants = (archive.harvestMapData?.plants || []).filter(p => p.wetWeight > 0);
+  const withNutr = allPlants.filter(p => extraSet.has(p.plantNumber)).sort((a, b) => b.wetWeight - a.wetWeight);
+  const withoutNutr = allPlants.filter(p => !extraSet.has(p.plantNumber)).sort((a, b) => b.wetWeight - a.wetWeight);
+
+  const calcGroup = (arr) => {
+    if (!arr.length) return { avg: 0, median: 0, min: 0, max: 0, total: 0, count: 0 };
+    const w = arr.map(p => p.wetWeight).sort((a, b) => a - b);
+    const total = w.reduce((s, v) => s + v, 0);
+    const median = w.length % 2 === 0
+      ? Math.round((w[w.length / 2 - 1] + w[w.length / 2]) / 2)
+      : w[Math.floor(w.length / 2)];
+    return { avg: Math.round(total / w.length), median, min: w[0], max: w[w.length - 1], total, count: w.length };
+  };
+
+  const sW = calcGroup(withNutr);
+  const sWO = calcGroup(withoutNutr);
+  const diff = sW.avg - sWO.avg;
+  const diffPct = sWO.avg > 0 ? ((diff / sWO.avg) * 100).toFixed(1) : '0.0';
+  const medDiff = sW.median - sWO.median;
+  const medDiffPct = sWO.median > 0 ? ((medDiff / sWO.median) * 100).toFixed(1) : '0.0';
+
+  // ── Page 1: Header ──
+  drawRect(0, 0, pw, 42, 24, 24, 32);
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(255, 255, 255);
+  doc.text(t('archive.nutritionReport'), mx, 18);
+
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(11);
+  doc.setTextColor(180, 180, 200);
+  const roomLabel = archive.roomName || `${t('archive.room')} ${archive.roomNumber}`;
+  doc.text(`${roomLabel}  ·  ${archive.strain || ''}  ·  ${fmtDate(archive.harvestDate)}`, mx, 28);
+  doc.text(`${t('archive.plantsLabel')}: ${archive.plantsCount}  ·  ${t('archive.floweringDays')}: ${archive.actualDays}`, mx, 36);
+
+  y = 52;
+
+  // ── Summary blocks ──
+  const blockW = (cw - 6) / 3;
+
+  // With nutrition block
+  drawRect(mx, y, blockW, 30, 40, 60, 30);
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(180, 210, 150);
+  doc.text(t('harvest.withNutrition'), mx + blockW / 2, y + 8, { align: 'center' });
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(130, 230, 100);
+  doc.text(`${fmtNum(sW.avg)}${t('common.grams')}`, mx + blockW / 2, y + 20, { align: 'center' });
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(140, 160, 130);
+  doc.text(`${sW.count} ${t('common.pcs')}  ·  Σ${fmtNum(sW.total)}${t('common.grams')}`, mx + blockW / 2, y + 27, { align: 'center' });
+
+  // Without nutrition block
+  const bx2 = mx + blockW + 3;
+  drawRect(bx2, y, blockW, 30, 40, 40, 48);
+  doc.setFontSize(8);
+  doc.setTextColor(160, 160, 180);
+  doc.text(t('harvest.withoutNutrition'), bx2 + blockW / 2, y + 8, { align: 'center' });
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(20);
+  doc.setTextColor(200, 200, 220);
+  doc.text(`${fmtNum(sWO.avg)}${t('common.grams')}`, bx2 + blockW / 2, y + 20, { align: 'center' });
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(140, 140, 160);
+  doc.text(`${sWO.count} ${t('common.pcs')}  ·  Σ${fmtNum(sWO.total)}${t('common.grams')}`, bx2 + blockW / 2, y + 27, { align: 'center' });
+
+  // Difference block
+  const bx3 = mx + (blockW + 3) * 2;
+  const diffBg = diff > 0 ? [30, 60, 40] : diff < 0 ? [60, 30, 30] : [40, 40, 48];
+  drawRect(bx3, y, blockW, 30, ...diffBg);
+  doc.setFontSize(8);
+  doc.setTextColor(180, 180, 200);
+  doc.text(t('harvest.difference'), bx3 + blockW / 2, y + 8, { align: 'center' });
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(20);
+  const diffColor = diff > 0 ? [100, 230, 120] : diff < 0 ? [230, 100, 100] : [180, 180, 200];
+  doc.setTextColor(...diffColor);
+  doc.text(`${diff > 0 ? '+' : ''}${fmtNum(diff)}${t('common.grams')}`, bx3 + blockW / 2, y + 20, { align: 'center' });
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(10);
+  doc.text(`${diff > 0 ? '+' : ''}${diffPct}%`, bx3 + blockW / 2, y + 27, { align: 'center' });
+
+  y += 38;
+
+  // ── Metrics table ──
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(255, 255, 255);
+  doc.text(t('archive.nutritionReportDetailed'), mx, y);
+  y += 6;
+
+  // Table header
+  drawRect(mx, y, cw, 8, 35, 35, 45);
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(160, 160, 180);
+  const colX = [mx + 3, mx + 55, mx + 105, mx + 145];
+  doc.text(t('archive.metric'), colX[0], y + 5.5);
+  doc.text(`🧪 ${t('harvest.withNutrition')}`, colX[1], y + 5.5);
+  doc.text(t('harvest.withoutNutrition'), colX[2], y + 5.5);
+  doc.text(t('harvest.difference'), colX[3], y + 5.5);
+  y += 8;
+
+  // Table rows
+  const rows = [
+    [t('archive.plantsLabel'), String(sW.count), String(sWO.count), '—'],
+    [t('archive.avgWeightLabel'), `${fmtNum(sW.avg)}${t('common.grams')}`, `${fmtNum(sWO.avg)}${t('common.grams')}`, `${diff > 0 ? '+' : ''}${fmtNum(diff)}${t('common.grams')} (${diff > 0 ? '+' : ''}${diffPct}%)`],
+    [t('archive.medianLabel'), `${fmtNum(sW.median)}${t('common.grams')}`, `${fmtNum(sWO.median)}${t('common.grams')}`, `${medDiff > 0 ? '+' : ''}${fmtNum(medDiff)}${t('common.grams')} (${medDiff > 0 ? '+' : ''}${medDiffPct}%)`],
+    [t('archive.minWeightLabel'), `${fmtNum(sW.min)}${t('common.grams')}`, `${fmtNum(sWO.min)}${t('common.grams')}`, '—'],
+    [t('archive.maxWeightLabel'), `${fmtNum(sW.max)}${t('common.grams')}`, `${fmtNum(sWO.max)}${t('common.grams')}`, '—'],
+    [t('archive.totalWeightLabel'), `${fmtNum(sW.total)}${t('common.grams')}`, `${fmtNum(sWO.total)}${t('common.grams')}`, `Σ${fmtNum(sW.total + sWO.total)}${t('common.grams')}`],
+  ];
+
+  rows.forEach((row, i) => {
+    const isEven = i % 2 === 0;
+    if (isEven) drawRect(mx, y, cw, 7, 30, 30, 38);
+    doc.setFont('Roboto', 'normal');
+    doc.setFontSize(8);
+    doc.setTextColor(160, 160, 180);
+    doc.text(row[0], colX[0], y + 5);
+    doc.setTextColor(230, 210, 120);
+    doc.text(row[1], colX[1], y + 5);
+    doc.setTextColor(200, 200, 220);
+    doc.text(row[2], colX[2], y + 5);
+    // Diff column color
+    if (row[3] !== '—') {
+      const isDiffRow = i === 1 || i === 2;
+      const val = isDiffRow ? (i === 1 ? diff : medDiff) : 0;
+      doc.setTextColor(val > 0 ? 100 : val < 0 ? 230 : 160, val > 0 ? 230 : val < 0 ? 100 : 160, val > 0 ? 120 : val < 0 ? 100 : 180);
+    } else {
+      doc.setTextColor(100, 100, 120);
+    }
+    doc.text(row[3], colX[3], y + 5);
+    y += 7;
+  });
+
+  y += 6;
+
+  // ── Per-plant lists ──
+  const listH = Math.max(withNutr.length, withoutNutr.length) * 5 + 12;
+  const needsNewPage = y + listH > ph - 25;
+  if (needsNewPage) { doc.addPage(); y = 15; }
+
+  const halfW = (cw - 4) / 2;
+
+  // Left: with nutrition
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(230, 210, 120);
+  doc.text(`🧪 ${t('harvest.withNutrition')} (${sW.count})`, mx, y + 4);
+
+  // Right: without nutrition
+  doc.setTextColor(180, 180, 200);
+  doc.text(`${t('harvest.withoutNutrition')} (${sWO.count})`, mx + halfW + 4, y + 4);
+
+  y += 7;
+  drawLine(mx, y, mx + cw, y, 60, 60, 70);
+  y += 2;
+
+  const startY = y;
+  const maxPlants = Math.min(Math.max(withNutr.length, withoutNutr.length), Math.floor((ph - 30 - y) / 5));
+
+  // With nutrition column
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(7.5);
+  let ly = startY;
+  withNutr.slice(0, maxPlants).forEach((p, i) => {
+    if (i % 2 === 0) drawRect(mx, ly - 0.5, halfW, 5, 30, 35, 28);
+    doc.setTextColor(140, 140, 160);
+    doc.text(`#${p.plantNumber}${p.strain ? `  ${p.strain}` : ''}`, mx + 2, ly + 3);
+    doc.setTextColor(230, 210, 120);
+    doc.text(`${fmtNum(p.wetWeight)}${t('common.grams')}`, mx + halfW - 2, ly + 3, { align: 'right' });
+    ly += 5;
+  });
+  if (withNutr.length > maxPlants) {
+    doc.setTextColor(100, 100, 120);
+    doc.text(`... +${withNutr.length - maxPlants}`, mx + 2, ly + 3);
+  }
+
+  // Without nutrition column
+  ly = startY;
+  const rx = mx + halfW + 4;
+  withoutNutr.slice(0, maxPlants).forEach((p, i) => {
+    if (i % 2 === 0) drawRect(rx, ly - 0.5, halfW, 5, 30, 30, 38);
+    doc.setTextColor(140, 140, 160);
+    doc.text(`#${p.plantNumber}${p.strain ? `  ${p.strain}` : ''}`, rx + 2, ly + 3);
+    doc.setTextColor(200, 200, 220);
+    doc.text(`${fmtNum(p.wetWeight)}${t('common.grams')}`, rx + halfW - 2, ly + 3, { align: 'right' });
+    ly += 5;
+  });
+  if (withoutNutr.length > maxPlants) {
+    doc.setTextColor(100, 100, 120);
+    doc.text(`... +${withoutNutr.length - maxPlants}`, rx + 2, ly + 3);
+  }
+
+  y = Math.max(ly, startY + maxPlants * 5) + 8;
+
+  // ── Conclusion ──
+  if (y + 20 > ph - 20) { doc.addPage(); y = 15; }
+  const concBg = diff > 0 ? [30, 55, 35] : diff < 0 ? [55, 30, 30] : [40, 40, 48];
+  drawRect(mx, y, cw, 16, ...concBg);
+  doc.setFont('Roboto', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(...diffColor);
+  const conclusion = diff > 0
+    ? t('archive.nutritionPositive', { pct: diffPct, grams: diff })
+    : diff < 0
+      ? t('archive.nutritionNegative', { pct: Math.abs(parseFloat(diffPct)).toFixed(1), grams: Math.abs(diff) })
+      : t('archive.nutritionNeutral');
+  const lines = doc.splitTextToSize(conclusion, cw - 10);
+  doc.text(lines, mx + 5, y + (lines.length === 1 ? 10 : 6));
+
+  // ── Footer ──
+  const footerY = ph - 10;
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 100, 120);
+  doc.text('True Source · Extra Nutrition Report', mx, footerY);
+  doc.text(new Date().toLocaleString(locale), pw - mx, footerY, { align: 'right' });
+
+  // ── Save ──
+  const fname = `nutrition-report-${roomLabel}-${fmtDate(archive.harvestDate).replace(/\//g, '-')}.pdf`;
+  doc.save(fname);
+}
+
 const formatDate = (date, locale) => {
   if (!date) return '—';
   return new Date(date).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -88,10 +344,17 @@ export default function ArchiveDetail() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   const canEditWeights = hasPermission?.('harvest:edit_weights') ?? false;
+  const canEdit = hasPermission?.('archive:edit') ?? hasPermission?.('*') ?? false;
   const canDelete = hasPermission?.('archive:delete') ?? hasPermission?.('*') ?? false;
   const [editWeights, setEditWeights] = useState(false);
   const [weightForm, setWeightForm] = useState({ dryWeight: '', wetWeight: '', trimWeight: '' });
   const [saving, setSaving] = useState(false);
+
+  // Extra nutrition marking
+  const [nutritionMode, setNutritionMode] = useState(false);
+  const [pendingNutrition, setPendingNutrition] = useState(null);
+  const [nutritionSaving, setNutritionSaving] = useState(false);
+  const [pdfGenerating, setPdfGenerating] = useState(false);
 
   const qualityLabel = {
     low: t('archive.qualityLow'),
@@ -159,6 +422,50 @@ export default function ArchiveDetail() {
     } catch (err) {
       setError(err.response?.data?.message || t('archive.deleteError'));
     }
+  };
+
+  // Extra nutrition handlers
+  const nutritionSet = new Set(
+    nutritionMode && pendingNutrition != null
+      ? pendingNutrition
+      : (archive?.extraNutritionPlants || [])
+  );
+
+  const handleToggleNutrition = (plantNumber) => {
+    const current = pendingNutrition != null
+      ? [...pendingNutrition]
+      : [...(archive?.extraNutritionPlants || [])];
+    const idx = current.indexOf(plantNumber);
+    if (idx >= 0) current.splice(idx, 1);
+    else current.push(plantNumber);
+    setPendingNutrition(current);
+  };
+
+  const handleSaveNutrition = async () => {
+    if (!archive?._id || pendingNutrition == null) return;
+    setNutritionSaving(true);
+    try {
+      const updated = await archiveService.updateArchive(archive._id, {
+        extraNutritionPlants: pendingNutrition
+      });
+      setArchive(updated);
+      setPendingNutrition(null);
+      setNutritionMode(false);
+    } catch (err) {
+      setError(err.response?.data?.message || t('archive.saveError'));
+    } finally {
+      setNutritionSaving(false);
+    }
+  };
+
+  const handleCancelNutrition = () => {
+    setPendingNutrition(null);
+    setNutritionMode(false);
+  };
+
+  const handleStartNutrition = () => {
+    setPendingNutrition([...(archive?.extraNutritionPlants || [])]);
+    setNutritionMode(true);
   };
 
   if (loading) {
@@ -443,9 +750,236 @@ export default function ArchiveDetail() {
           {/* Карта сбора (тепловая) */}
           {archive?.harvestMapData?.plants?.length > 0 && (
             <Section title={t('archive.harvestMap')} icon="🗺️">
-              <ArchiveHeatMap harvestMapData={archive.harvestMapData} />
+              <ArchiveHeatMap
+                harvestMapData={archive.harvestMapData}
+                extraNutritionPlants={nutritionSet}
+                extraNutritionMode={nutritionMode}
+                onExtraNutritionToggle={handleToggleNutrition}
+              />
+              {/* Nutrition markup controls */}
+              {canEdit && (
+                <div className="mt-4 pt-3 border-t border-dark-700">
+                  {nutritionMode ? (
+                    <div className="flex items-center justify-between bg-yellow-500/10 rounded-lg px-4 py-2 border border-yellow-500/30">
+                      <span className="text-sm font-medium text-yellow-300">
+                        🧪 {t('harvest.extraNutrition')}: {t('harvest.extraNutritionSelectOnMap')} ({nutritionSet.size} {t('common.pcs')})
+                      </span>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveNutrition}
+                          disabled={nutritionSaving}
+                          className="px-4 py-1.5 bg-yellow-600 hover:bg-yellow-500 text-white rounded-lg text-sm transition disabled:opacity-50"
+                        >
+                          {t('harvest.extraNutritionSave')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleCancelNutrition}
+                          className="px-3 py-1.5 text-dark-400 hover:text-white transition text-sm"
+                        >
+                          {t('common.cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleStartNutrition}
+                      className={`text-sm transition flex items-center gap-1.5 ${
+                        archive?.extraNutritionPlants?.length
+                          ? 'text-yellow-400 hover:text-yellow-300'
+                          : 'text-dark-400 hover:text-yellow-400'
+                      }`}
+                    >
+                      <span>🧪</span>
+                      {archive?.extraNutritionPlants?.length
+                        ? `${t('harvest.extraNutrition')} (${archive.extraNutritionPlants.length} ${t('common.pcs')})`
+                        : t('harvest.extraNutritionMark')
+                      }
+                    </button>
+                  )}
+                </div>
+              )}
             </Section>
           )}
+
+          {/* Extra nutrition detailed report */}
+          {archive?.extraNutritionPlants?.length > 0 && archive?.harvestMapData?.plants?.length > 0 && (() => {
+            const extraSet = new Set(archive.extraNutritionPlants);
+            const plantsWithWeight = archive.harvestMapData.plants.filter(p => p.wetWeight > 0);
+            const withNutr = plantsWithWeight.filter(p => extraSet.has(p.plantNumber)).sort((a, b) => b.wetWeight - a.wetWeight);
+            const withoutNutr = plantsWithWeight.filter(p => !extraSet.has(p.plantNumber)).sort((a, b) => b.wetWeight - a.wetWeight);
+
+            const calcGroup = (arr) => {
+              if (!arr.length) return { avg: 0, median: 0, min: 0, max: 0, total: 0, count: 0 };
+              const w = arr.map(p => p.wetWeight).sort((a, b) => a - b);
+              const total = w.reduce((s, v) => s + v, 0);
+              const median = w.length % 2 === 0
+                ? Math.round((w[w.length / 2 - 1] + w[w.length / 2]) / 2)
+                : w[Math.floor(w.length / 2)];
+              return { avg: Math.round(total / w.length), median, min: w[0], max: w[w.length - 1], total, count: w.length };
+            };
+
+            const sWith = calcGroup(withNutr);
+            const sWithout = calcGroup(withoutNutr);
+            const diff = sWith.avg - sWithout.avg;
+            const diffPct = sWithout.avg > 0 ? ((diff / sWithout.avg) * 100).toFixed(1) : '0.0';
+            const diffPositive = diff > 0;
+            const medianDiff = sWith.median - sWithout.median;
+            const medianDiffPct = sWithout.median > 0 ? ((medianDiff / sWithout.median) * 100).toFixed(1) : '0.0';
+
+            return (
+              <Section title={t('archive.nutritionReport')} icon="🧪">
+                <div className="flex justify-end mb-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setPdfGenerating(true);
+                      try {
+                        await generateNutritionPDF(archive, t, locale);
+                      } catch (err) {
+                        setError(err.message);
+                      } finally {
+                        setPdfGenerating(false);
+                      }
+                    }}
+                    disabled={pdfGenerating}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-primary-900/50 text-primary-400 hover:bg-primary-800/50 rounded-lg text-sm transition disabled:opacity-50"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    {pdfGenerating ? t('archive.saving') : 'PDF'}
+                  </button>
+                </div>
+                <div className="space-y-5">
+                  {/* Summary cards */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-yellow-900/20 border border-yellow-700/30 rounded-xl p-4 text-center">
+                      <div className="text-xs text-dark-400 mb-1">{t('harvest.withNutrition')}</div>
+                      <div className="text-2xl font-bold text-yellow-400">{formatNum(sWith.avg, locale)}<span className="text-sm"> {t('common.grams')}</span></div>
+                      <div className="text-xs text-dark-500 mt-0.5">{sWith.count} {t('common.pcs')} · Σ{formatNum(sWith.total, locale)}{t('common.grams')}</div>
+                    </div>
+                    <div className="bg-dark-700/50 border border-dark-600 rounded-xl p-4 text-center">
+                      <div className="text-xs text-dark-400 mb-1">{t('harvest.withoutNutrition')}</div>
+                      <div className="text-2xl font-bold text-dark-200">{formatNum(sWithout.avg, locale)}<span className="text-sm"> {t('common.grams')}</span></div>
+                      <div className="text-xs text-dark-500 mt-0.5">{sWithout.count} {t('common.pcs')} · Σ{formatNum(sWithout.total, locale)}{t('common.grams')}</div>
+                    </div>
+                    <div className={`${diffPositive ? 'bg-green-900/20 border-green-700/30' : diff < 0 ? 'bg-red-900/20 border-red-700/30' : 'bg-dark-700/50 border-dark-600'} border rounded-xl p-4 text-center`}>
+                      <div className="text-xs text-dark-400 mb-1">{t('harvest.difference')}</div>
+                      <div className={`text-2xl font-bold ${diffPositive ? 'text-green-400' : diff < 0 ? 'text-red-400' : 'text-dark-300'}`}>
+                        {diffPositive ? '+' : ''}{formatNum(diff, locale)}<span className="text-sm"> {t('common.grams')}</span>
+                      </div>
+                      <div className={`text-sm font-medium mt-0.5 ${diffPositive ? 'text-green-500' : diff < 0 ? 'text-red-500' : 'text-dark-500'}`}>
+                        {diffPositive ? '+' : ''}{diffPct}%
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Detailed metrics table */}
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-dark-400 border-b border-dark-700">
+                          <th className="text-left py-2 pr-3 font-medium">{t('archive.metric')}</th>
+                          <th className="text-right py-2 px-3 font-medium text-yellow-400">🧪 {t('harvest.withNutrition')}</th>
+                          <th className="text-right py-2 px-3 font-medium">{t('harvest.withoutNutrition')}</th>
+                          <th className="text-right py-2 pl-3 font-medium">{t('harvest.difference')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="text-dark-200">
+                        <tr className="border-b border-dark-700/50">
+                          <td className="py-2 pr-3 text-dark-400">{t('archive.plantsLabel')}</td>
+                          <td className="text-right py-2 px-3 text-yellow-300 font-medium">{sWith.count}</td>
+                          <td className="text-right py-2 px-3">{sWithout.count}</td>
+                          <td className="text-right py-2 pl-3 text-dark-500">—</td>
+                        </tr>
+                        <tr className="border-b border-dark-700/50">
+                          <td className="py-2 pr-3 text-dark-400">{t('archive.avgWeightLabel')}</td>
+                          <td className="text-right py-2 px-3 text-yellow-300 font-medium">{formatNum(sWith.avg, locale)}{t('common.grams')}</td>
+                          <td className="text-right py-2 px-3">{formatNum(sWithout.avg, locale)}{t('common.grams')}</td>
+                          <td className={`text-right py-2 pl-3 font-medium ${diffPositive ? 'text-green-400' : diff < 0 ? 'text-red-400' : ''}`}>
+                            {diffPositive ? '+' : ''}{formatNum(diff, locale)}{t('common.grams')} ({diffPositive ? '+' : ''}{diffPct}%)
+                          </td>
+                        </tr>
+                        <tr className="border-b border-dark-700/50">
+                          <td className="py-2 pr-3 text-dark-400">{t('archive.medianLabel')}</td>
+                          <td className="text-right py-2 px-3 text-yellow-300">{formatNum(sWith.median, locale)}{t('common.grams')}</td>
+                          <td className="text-right py-2 px-3">{formatNum(sWithout.median, locale)}{t('common.grams')}</td>
+                          <td className={`text-right py-2 pl-3 ${medianDiff > 0 ? 'text-green-400' : medianDiff < 0 ? 'text-red-400' : ''}`}>
+                            {medianDiff > 0 ? '+' : ''}{formatNum(medianDiff, locale)}{t('common.grams')} ({medianDiff > 0 ? '+' : ''}{medianDiffPct}%)
+                          </td>
+                        </tr>
+                        <tr className="border-b border-dark-700/50">
+                          <td className="py-2 pr-3 text-dark-400">{t('archive.minWeightLabel')}</td>
+                          <td className="text-right py-2 px-3 text-yellow-300">{formatNum(sWith.min, locale)}{t('common.grams')}</td>
+                          <td className="text-right py-2 px-3">{formatNum(sWithout.min, locale)}{t('common.grams')}</td>
+                          <td className="text-right py-2 pl-3 text-dark-500">—</td>
+                        </tr>
+                        <tr className="border-b border-dark-700/50">
+                          <td className="py-2 pr-3 text-dark-400">{t('archive.maxWeightLabel')}</td>
+                          <td className="text-right py-2 px-3 text-yellow-300">{formatNum(sWith.max, locale)}{t('common.grams')}</td>
+                          <td className="text-right py-2 px-3">{formatNum(sWithout.max, locale)}{t('common.grams')}</td>
+                          <td className="text-right py-2 pl-3 text-dark-500">—</td>
+                        </tr>
+                        <tr>
+                          <td className="py-2 pr-3 text-dark-400 font-medium">{t('archive.totalWeightLabel')}</td>
+                          <td className="text-right py-2 px-3 text-yellow-300 font-medium">{formatNum(sWith.total, locale)}{t('common.grams')}</td>
+                          <td className="text-right py-2 px-3 font-medium">{formatNum(sWithout.total, locale)}{t('common.grams')}</td>
+                          <td className={`text-right py-2 pl-3 font-medium ${sWith.total - sWithout.total > 0 ? 'text-green-400' : ''}`}>
+                            Σ{formatNum(sWith.total + sWithout.total, locale)}{t('common.grams')}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Per-plant weight lists */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <h4 className="text-xs text-yellow-400 font-medium uppercase tracking-wider mb-2">
+                        🧪 {t('harvest.withNutrition')} ({sWith.count})
+                      </h4>
+                      <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                        {withNutr.map((p, i) => (
+                          <div key={i} className="flex justify-between text-xs py-1 px-2 rounded hover:bg-dark-700/30">
+                            <span className="text-dark-400">#{p.plantNumber}{p.strain ? ` · ${p.strain}` : ''}</span>
+                            <span className="text-yellow-300 font-medium">{formatNum(p.wetWeight, locale)}{t('common.grams')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h4 className="text-xs text-dark-400 font-medium uppercase tracking-wider mb-2">
+                        {t('harvest.withoutNutrition')} ({sWithout.count})
+                      </h4>
+                      <div className="space-y-0.5 max-h-48 overflow-y-auto">
+                        {withoutNutr.map((p, i) => (
+                          <div key={i} className="flex justify-between text-xs py-1 px-2 rounded hover:bg-dark-700/30">
+                            <span className="text-dark-400">#{p.plantNumber}{p.strain ? ` · ${p.strain}` : ''}</span>
+                            <span className="text-dark-200">{formatNum(p.wetWeight, locale)}{t('common.grams')}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Conclusion */}
+                  <div className={`rounded-lg px-4 py-3 ${diffPositive ? 'bg-green-900/20 border border-green-700/30' : diff < 0 ? 'bg-red-900/20 border border-red-700/30' : 'bg-dark-700/50 border border-dark-600'}`}>
+                    <p className={`text-sm ${diffPositive ? 'text-green-300' : diff < 0 ? 'text-red-300' : 'text-dark-300'}`}>
+                      {diffPositive
+                        ? t('archive.nutritionPositive', { pct: diffPct, grams: diff })
+                        : diff < 0
+                          ? t('archive.nutritionNegative', { pct: Math.abs(parseFloat(diffPct)).toFixed(1), grams: Math.abs(diff) })
+                          : t('archive.nutritionNeutral')
+                      }
+                    </p>
+                  </div>
+                </div>
+              </Section>
+            );
+          })()}
 
           {/* Команда сбора */}
           {archive?.crewData?.members?.length > 0 && (

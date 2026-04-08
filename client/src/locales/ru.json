@@ -1415,7 +1415,18 @@
     "mediumAeroFull": "Аэропоника",
     "mediumOther": "Другое",
     "floweringDays": "Дней цветения",
-    "deleteBtn": "Удалить"
+    "deleteBtn": "Удалить",
+    "nutritionReport": "Отчёт: доп. питание",
+    "nutritionReportDetailed": "Детальное сравнение",
+    "metric": "Показатель",
+    "avgWeightLabel": "Средний вес",
+    "medianLabel": "Медиана",
+    "minWeightLabel": "Мин. вес",
+    "maxWeightLabel": "Макс. вес",
+    "totalWeightLabel": "Общий вес",
+    "nutritionPositive": "Кусты с доп. питанием показали +{{pct}}% (+{{grams}}г) по среднему мокрому весу",
+    "nutritionNegative": "Кусты с доп. питанием показали −{{pct}}% (−{{grams}}г) по среднему мокрому весу",
+    "nutritionNeutral": "Разницы между группами не обнаружено"
   },
   "stats": {
     "title": "Статистика",

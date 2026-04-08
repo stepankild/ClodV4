@@ -241,7 +241,7 @@ function StatCard({ label, value, highlight, color }) {
 
 // ── Main component ───────────────────────────────────────────────────
 
-export default function ArchiveHeatMap({ harvestMapData }) {
+export default function ArchiveHeatMap({ harvestMapData, extraNutritionPlants, extraNutritionMode, onExtraNutritionToggle }) {
   const { t } = useTranslation();
   const { customRows = [], plants = [] } = harvestMapData || {};
 
@@ -416,20 +416,55 @@ export default function ArchiveHeatMap({ harvestMapData }) {
                       );
                     }
 
+                    const isExtraNutr = extraNutritionPlants?.has?.(plant.plantNumber);
                     const color = getCellColor(plant.wetWeight, rowIdx);
+                    const cellTitle = plant.strain
+                      ? t('roomMap.cellTitleWithStrain', { num: plant.plantNumber, weight: plant.wetWeight, strain: plant.strain })
+                      : t('roomMap.cellTitle', { num: plant.plantNumber, weight: plant.wetWeight });
+
+                    // Nutrition markup mode: clickable cells
+                    if (extraNutritionMode) {
+                      return (
+                        <button
+                          key={posIdx}
+                          type="button"
+                          onClick={() => onExtraNutritionToggle?.(plant.plantNumber)}
+                          className={`min-w-[40px] min-h-[40px] sm:min-w-[48px] sm:min-h-[48px] rounded-md flex flex-col items-center justify-center transition cursor-pointer hover:scale-105 ${
+                            isExtraNutr
+                              ? 'bg-yellow-500/30 border-2 border-yellow-400 ring-1 ring-yellow-400/50'
+                              : 'border border-dark-600 hover:border-yellow-500/50'
+                          }`}
+                          style={!isExtraNutr ? { backgroundColor: color.bg } : undefined}
+                          title={cellTitle}
+                        >
+                          <span className={`text-[10px] font-bold leading-tight ${isExtraNutr ? 'text-yellow-300' : ''}`}
+                            style={!isExtraNutr ? { color: color.text } : undefined}
+                          >
+                            {plant.plantNumber}
+                          </span>
+                          <span className={`text-[8px] leading-tight ${isExtraNutr ? 'text-yellow-300/80' : ''}`}
+                            style={!isExtraNutr ? { color: color.text, opacity: 0.8 } : undefined}
+                          >
+                            {plant.wetWeight}{t('common.grams')}
+                          </span>
+                          {isExtraNutr && <span className="text-[7px] leading-tight">🧪</span>}
+                        </button>
+                      );
+                    }
+
                     return (
                       <div
                         key={posIdx}
-                        className="min-w-[40px] min-h-[40px] sm:min-w-[48px] sm:min-h-[48px] rounded-md flex flex-col items-center justify-center transition"
+                        className={`min-w-[40px] min-h-[40px] sm:min-w-[48px] sm:min-h-[48px] rounded-md flex flex-col items-center justify-center transition ${
+                          isExtraNutr ? 'ring-2 ring-yellow-400/60' : ''
+                        }`}
                         style={{
                           backgroundColor: color.bg,
                           borderWidth: '1px',
                           borderStyle: 'solid',
-                          borderColor: color.border,
+                          borderColor: isExtraNutr ? 'hsl(45, 90%, 50%)' : color.border,
                         }}
-                        title={plant.strain
-                          ? t('roomMap.cellTitleWithStrain', { num: plant.plantNumber, weight: plant.wetWeight, strain: plant.strain })
-                          : t('roomMap.cellTitle', { num: plant.plantNumber, weight: plant.wetWeight })}
+                        title={cellTitle}
                       >
                         <span
                           className="text-[10px] font-bold leading-tight"
@@ -443,6 +478,7 @@ export default function ArchiveHeatMap({ harvestMapData }) {
                         >
                           {plant.wetWeight}{t('common.grams')}
                         </span>
+                        {isExtraNutr && <span className="text-[6px] leading-tight">🧪</span>}
                       </div>
                     );
                   })

@@ -211,6 +211,8 @@ const cycleArchiveSchema = new mongoose.Schema({
     lampType: { type: String, default: null },
     totalWatts: { type: Number, default: null }
   },
+  // Кусты с доп. питанием (номера кустов из HarvestSession)
+  extraNutritionPlants: [{ type: Number }],
   // Снимок карты комнаты на момент сбора (позиции + веса каждого куста)
   harvestMapData: {
     customRows: [{

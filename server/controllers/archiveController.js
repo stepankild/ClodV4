@@ -533,7 +533,7 @@ export const harvestAndArchive = async (req, res) => {
 // @route   PUT /api/archive/:id
 export const updateArchive = async (req, res) => {
   try {
-    const { harvestData, cloneData, issues, notes } = req.body;
+    const { harvestData, cloneData, issues, notes, extraNutritionPlants } = req.body;
 
     const archive = await CycleArchive.findOne({ _id: req.params.id, ...notDeleted });
 
@@ -570,6 +570,9 @@ export const updateArchive = async (req, res) => {
           ? Math.round(harvestData.dryWeight / archive.lighting.totalWatts * 100) / 100
           : 0;
       }
+    }
+    if (Array.isArray(extraNutritionPlants)) {
+      archive.extraNutritionPlants = extraNutritionPlants.map(Number).filter(n => !isNaN(n));
     }
     if (issues) archive.issues = issues;
     if (notes !== undefined) archive.notes = notes;

@@ -616,7 +616,8 @@ export const completeSession = async (req, res) => {
           feedDosage: t.feedDosage
         })),
         harvestMapData,
-        crewData
+        crewData,
+        extraNutritionPlants: session.extraNutritionPlants || []
       });
 
       await RoomLog.create({
