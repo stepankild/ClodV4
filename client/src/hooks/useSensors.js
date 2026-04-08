@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { connectScale, onScaleEvent } from '../services/scaleSocket';
+import api from '../services/api';
 
 /**
  * Module-level cache — survives component unmount/remount and page navigation.
@@ -8,6 +9,7 @@ import { connectScale, onScaleEvent } from '../services/scaleSocket';
 let _cache = {};
 let _subscribers = new Set();
 let _listenerAttached = false;
+let _fetchingRest = false;
 
 function _updateCache(updater) {
   const next = typeof updater === 'function' ? updater(_cache) : updater;
@@ -15,11 +17,50 @@ function _updateCache(updater) {
   _subscribers.forEach(cb => cb(next));
 }
 
+/**
+ * Fetch zone data via REST API (fallback when socket has no data)
+ */
+async function _fetchZonesViaRest() {
+  if (_fetchingRest) return;
+  _fetchingRest = true;
+  try {
+    const token = localStorage.getItem('accessToken');
+    if (!token) return;
+    const resp = await api.get('/zones');
+    const zones = resp.data;
+    if (!zones?.length) return;
+
+    _updateCache(prev => {
+      const merged = { ...prev };
+      for (const zone of zones) {
+        const existing = prev[zone.zoneId];
+        // Only fill in if we don't already have fresh socket data
+        if (!existing?.lastData || !existing?.online) {
+          merged[zone.zoneId] = {
+            ...existing,
+            online: zone.piStatus?.online ?? false,
+            lastData: zone.lastData || existing?.lastData || null,
+            lastSeen: zone.piStatus?.lastSeen || existing?.lastSeen || null,
+          };
+        }
+      }
+      return merged;
+    });
+  } catch (e) {
+    // Ignore — REST fetch is best-effort fallback
+  } finally {
+    _fetchingRest = false;
+  }
+}
+
 function _attachListener() {
   if (_listenerAttached) return;
   _listenerAttached = true;
 
   connectScale();
+
+  // Immediately fetch via REST so cards appear before socket delivers data
+  _fetchZonesViaRest();
 
   onScaleEvent((event, data) => {
     switch (event) {
@@ -77,6 +118,16 @@ function _attachListener() {
           }
         }));
         break;
+
+      case 'socketConnected':
+        // Socket reconnected — fetch latest from REST in case we missed data
+        _fetchZonesViaRest();
+        break;
+
+      case 'socketDisconnected':
+        // Socket lost — refetch via REST after short delay (server might still be up)
+        setTimeout(_fetchZonesViaRest, 3000);
+        break;
     }
   });
 }
@@ -84,6 +135,7 @@ function _attachListener() {
 /**
  * React hook для получения live-данных с IoT сенсоров через Socket.io.
  * Uses a shared module-level cache so data persists across page navigation.
+ * Falls back to REST API when socket has no data or disconnects.
  *
  * @returns {Object} zones — { 'zone-1': { online, lastData, lastSeen }, ... }
  */
