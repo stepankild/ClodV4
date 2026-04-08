@@ -124,11 +124,12 @@ async function checkAlerts() {
       if (offlineRule) {
         const liveState = getZoneState(zoneId);
         const key = `${zoneId}:offline`;
+        const offlineMinutes = offlineRule.max || 5; // configurable, default 5 min
         const isOffline = !liveState?.online ||
-          (liveState.lastSeen && Date.now() - new Date(liveState.lastSeen).getTime() > 5 * 60 * 1000);
+          (liveState.lastSeen && Date.now() - new Date(liveState.lastSeen).getTime() > offlineMinutes * 60 * 1000);
 
         if (isOffline && !activeAlerts.get(key) && cooldownPassed(key, offlineRule.cooldownMin)) {
-          const msg = `🔴 <b>Зона: ${zoneName}</b>\nДатчики не отвечают >5 минут\n🕐 ${formatTime()}`;
+          const msg = `🔴 <b>Зона: ${zoneName}</b>\nДатчики не отвечают >${offlineMinutes} мин\n🕐 ${formatTime()}`;
           const ok = await sendTelegram(chatId, msg);
           if (ok) {
             lastAlertTime.set(key, Date.now());

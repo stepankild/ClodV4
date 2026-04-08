@@ -953,7 +953,17 @@ const ZoneDetail = () => {
                           </div>
                         )}
                         {isOffline && rule.enabled && (
-                          <span className="text-xs text-dark-500">срабатывает если данных нет >5 мин</span>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-dark-500">нет данных</span>
+                            <input
+                              type="number"
+                              min="1" max="60" step="1"
+                              value={rule.max ?? 5}
+                              onChange={e => updateAlertRule('offline', 'max', Number(e.target.value))}
+                              className="bg-dark-900 border border-dark-600 rounded px-1.5 py-0.5 text-dark-200 w-14 text-center text-xs"
+                            />
+                            <span className="text-dark-500">мин</span>
+                          </div>
                         )}
                       </div>
                     );
