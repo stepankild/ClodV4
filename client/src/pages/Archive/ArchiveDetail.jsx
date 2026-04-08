@@ -145,34 +145,55 @@ async function generateNutritionPDF(archive, t, locale) {
     const posMap = {};
     plants.forEach(p => { posMap[`${p.row}:${p.position}`] = p; });
 
-    // Calculate cell size to fit in available width
-    const totalCols = customRows.reduce((max, r) => Math.max(max, r.cols || 1), 0);
-    const numRows = customRows.length;
-    const gapBetweenRows = 3;
-    const mapWidth = cw;
-    const rowNameW = 18;
-    const availW = mapWidth - rowNameW;
+    // Layout: rows side by side horizontally (like the browser heat map)
     const cellGap = 0.8;
-    const cellSize = Math.min((availW - (totalCols - 1) * cellGap) / totalCols, 10);
-    const mapAvailH = ph - y - 20; // leave room for footer
-    const totalGridRows = customRows.reduce((sum, r) => sum + (r.rows || 1), 0);
-    const cellH = Math.min(cellSize, (mapAvailH - (numRows - 1) * gapBetweenRows - numRows * 5) / totalGridRows);
-    const cs = Math.min(cellSize, cellH, 10);
+    const rowGap = 4; // gap between row groups
+    const labelH = 5; // height for row name above grid
+
+    // Calculate cell size to fit all rows horizontally
+    const totalColsAll = customRows.reduce((sum, r) => sum + (r.cols || 1), 0);
+    const totalGaps = customRows.length - 1;
+    const availW = cw - totalGaps * rowGap;
+    const maxCellFromWidth = (availW - (totalColsAll - 1) * cellGap) / totalColsAll;
+
+    // Also limit by height: tallest row determines max rows
+    const maxRowRows = Math.max(...customRows.map(r => r.rows || 1));
+    const mapAvailH = ph - y - 25;
+    const maxCellFromHeight = (mapAvailH - labelH) / (maxRowRows + (maxRowRows - 1) * (cellGap / 10));
+
+    const cs = Math.min(maxCellFromWidth, maxCellFromHeight, 11);
+
+    // Calculate x offset for each row group
+    let curX = mx;
+    const rowPositions = customRows.map((row) => {
+      const cols = row.cols || 1;
+      const x = curX;
+      curX += cols * (cs + cellGap) - cellGap + rowGap;
+      return x;
+    });
+
+    // Draw all rows at the same y
+    const mapStartY = y;
 
     customRows.forEach((row, rowIdx) => {
       const cols = row.cols || 1;
       const rowRows = row.rows || 1;
+      const rx = rowPositions[rowIdx];
 
-      // Row label
-      doc.setFont('Roboto', 'bold'); doc.setFontSize(6.5); doc.setTextColor(100, 100, 130);
-      doc.text(row.name || `${t('roomMap.rowDefault', { num: rowIdx + 1 })}`, mx, y + cs * 0.6);
+      // Row label above
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(5.5); doc.setTextColor(100, 100, 130);
+      const rowW = cols * (cs + cellGap) - cellGap;
+      doc.text(
+        row.name || `${t('roomMap.rowDefault', { num: rowIdx + 1 })}`,
+        rx + rowW / 2, mapStartY + 3, { align: 'center' }
+      );
 
       for (let rr = 0; rr < rowRows; rr++) {
         for (let cc = 0; cc < cols; cc++) {
           const posIdx = rr * cols + cc;
           const plant = posMap[`${rowIdx}:${posIdx}`];
-          const cx = mx + rowNameW + cc * (cs + cellGap);
-          const cy = y + rr * (cs + cellGap);
+          const cx = rx + cc * (cs + cellGap);
+          const cy = mapStartY + labelH + rr * (cs + cellGap);
 
           if (!plant || !plant.wetWeight) {
             roundRect(cx, cy, cs, cs, 1, [28, 28, 36]);
@@ -185,28 +206,25 @@ async function generateNutritionPDF(archive, t, locale) {
 
           roundRect(cx, cy, cs, cs, 1, bgColor);
 
-          // Yellow border for nutrition plants
           if (isNutr) {
             doc.setDrawColor(210, 180, 50);
             doc.setLineWidth(0.6);
             doc.roundedRect(cx, cy, cs, cs, 1, 1, 'S');
           }
 
-          // Plant number
           doc.setFont('Roboto', 'bold'); doc.setFontSize(cs > 7 ? 5.5 : 4.5);
           doc.setTextColor(...txtColor);
           doc.text(String(plant.plantNumber), cx + cs / 2, cy + cs * 0.38, { align: 'center' });
 
-          // Weight
           doc.setFont('Roboto', 'normal'); doc.setFontSize(cs > 7 ? 4.5 : 3.8);
           doc.text(`${plant.wetWeight}`, cx + cs / 2, cy + cs * 0.7, { align: 'center' });
         }
       }
-
-      y += rowRows * (cs + cellGap) + gapBetweenRows;
     });
 
-    y += 2;
+    // Advance y past the tallest row
+    const maxRowHeight = Math.max(...customRows.map(r => (r.rows || 1))) * (cs + cellGap) - cellGap;
+    y = mapStartY + labelH + maxRowHeight + 4;
   }
 
   // Legend gradient bar
