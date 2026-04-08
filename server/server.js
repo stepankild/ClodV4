@@ -216,6 +216,7 @@ initializeMqtt(io);
 // Initialize schedulers
 import { initIrrigationScheduler } from './schedulers/irrigation.js';
 import { initHumidifierScheduler } from './schedulers/humidifier.js';
+import { initAlertScheduler } from './schedulers/alerts.js';
 
 // Listen first so Railway gets a response (no 502). DB connects after.
 server.listen(PORT, '0.0.0.0', () => {
@@ -224,6 +225,7 @@ server.listen(PORT, '0.0.0.0', () => {
     // Start schedulers after DB is connected
     initIrrigationScheduler();
     initHumidifierScheduler();
+    initAlertScheduler();
 
     // One-time migration: remove test room + cleanup empty archives
     try {

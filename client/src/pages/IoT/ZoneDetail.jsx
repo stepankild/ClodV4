@@ -64,6 +64,11 @@ const ZoneDetail = () => {
   const [humidifier, setHumidifier] = useState({ mode: 'manual_off', rhLow: 60, rhHigh: 70, plugState: null });
   const [humidifierSaving, setHumidifierSaving] = useState(false);
   const [humidifierLog, setHumidifierLog] = useState({ logs: [], stats: {} });
+  const [alertConfig, setAlertConfig] = useState(null);
+  const [alertLog, setAlertLog] = useState([]);
+  const [alertSaving, setAlertSaving] = useState(false);
+  const [alertTestResult, setAlertTestResult] = useState(null);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const liveData = useSensors();
 
   useEffect(() => {
@@ -85,6 +90,54 @@ const ZoneDetail = () => {
     } catch (e) { /* ignore */ }
   };
 
+  const loadAlertConfig = async () => {
+    try {
+      const config = await iotService.getAlertConfig(zoneId);
+      setAlertConfig(config);
+    } catch (e) { /* ignore */ }
+    try {
+      const { logs } = await iotService.getAlertLog(zoneId, { limit: 20 });
+      setAlertLog(logs || []);
+    } catch (e) { /* ignore */ }
+  };
+
+  const handleAlertSave = async () => {
+    if (!alertConfig) return;
+    setAlertSaving(true);
+    try {
+      const result = await iotService.updateAlertConfig(zoneId, {
+        enabled: alertConfig.enabled,
+        telegramChatId: alertConfig.telegramChatId,
+        rules: alertConfig.rules
+      });
+      setAlertConfig(result);
+    } catch (e) {
+      console.error('Alert save error:', e);
+    } finally {
+      setAlertSaving(false);
+    }
+  };
+
+  const handleAlertTest = async () => {
+    setAlertTestResult(null);
+    try {
+      const result = await iotService.testAlert(alertConfig?.telegramChatId);
+      setAlertTestResult(result.ok ? 'ok' : 'error');
+    } catch (e) {
+      setAlertTestResult('error');
+    }
+    setTimeout(() => setAlertTestResult(null), 5000);
+  };
+
+  const updateAlertRule = (metric, field, value) => {
+    setAlertConfig(prev => ({
+      ...prev,
+      rules: prev.rules.map(r =>
+        r.metric === metric ? { ...r, [field]: value } : r
+      )
+    }));
+  };
+
   const handleHumidifierSave = async (updates) => {
     setHumidifierSaving(true);
     try {
@@ -103,6 +156,7 @@ const ZoneDetail = () => {
       setZone(data);
       setError(null);
       loadHumidifierStatus();
+      loadAlertConfig();
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to load zone');
     }
@@ -818,6 +872,140 @@ const ZoneDetail = () => {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Alert settings */}
+      <div className="bg-dark-800 border border-dark-700 rounded-lg">
+        <button
+          onClick={() => setAlertsOpen(!alertsOpen)}
+          className="w-full flex items-center justify-between p-4 text-left"
+        >
+          <h2 className="text-lg font-semibold text-dark-200 flex items-center gap-2">
+            <span className="text-lg">🔔</span> Оповещения Telegram
+            {alertConfig?.enabled && alertConfig?.rules?.some(r => r.enabled) && (
+              <span className="text-xs bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full font-normal">
+                {alertConfig.rules.filter(r => r.enabled).length} активных
+              </span>
+            )}
+          </h2>
+          <svg className={`w-5 h-5 text-dark-400 transition-transform ${alertsOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+
+        {alertsOpen && alertConfig && (
+          <div className="px-4 pb-4 space-y-4 border-t border-dark-700 pt-3">
+            {/* Global toggle */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-dark-300">Алерты включены</span>
+              <button
+                onClick={() => setAlertConfig(prev => ({ ...prev, enabled: !prev.enabled }))}
+                className={`w-11 h-6 rounded-full transition-colors relative ${alertConfig.enabled ? 'bg-green-500' : 'bg-dark-600'}`}
+              >
+                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-transform ${alertConfig.enabled ? 'left-[22px]' : 'left-0.5'}`} />
+              </button>
+            </div>
+
+            {alertConfig.enabled && (
+              <>
+                {/* Per-metric rules */}
+                <div className="space-y-2">
+                  {alertConfig.rules.map(rule => {
+                    const labels = {
+                      temperature: { icon: '🌡', name: 'Температура', unit: '°C' },
+                      humidity: { icon: '💧', name: 'Влажность', unit: '%' },
+                      co2: { icon: '🫧', name: 'CO2', unit: 'ppm' },
+                      light: { icon: '☀️', name: 'Свет', unit: 'lux' },
+                      vpd: { icon: '🌱', name: 'VPD', unit: 'kPa' },
+                      offline: { icon: '🔌', name: 'Офлайн', unit: '' }
+                    };
+                    const l = labels[rule.metric] || { icon: '', name: rule.metric, unit: '' };
+                    const isOffline = rule.metric === 'offline';
+
+                    return (
+                      <div key={rule.metric} className={`flex items-center gap-3 p-2 rounded-md ${rule.enabled ? 'bg-dark-700/50' : ''}`}>
+                        <button
+                          onClick={() => updateAlertRule(rule.metric, 'enabled', !rule.enabled)}
+                          className={`w-9 h-5 rounded-full transition-colors relative flex-shrink-0 ${rule.enabled ? 'bg-green-500' : 'bg-dark-600'}`}
+                        >
+                          <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${rule.enabled ? 'left-[18px]' : 'left-0.5'}`} />
+                        </button>
+                        <span className="text-sm w-28 flex-shrink-0">{l.icon} {l.name}</span>
+                        {!isOffline && rule.enabled && (
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-dark-500">мин</span>
+                            <input
+                              type="number"
+                              value={rule.min ?? ''}
+                              onChange={e => updateAlertRule(rule.metric, 'min', e.target.value === '' ? null : Number(e.target.value))}
+                              placeholder="—"
+                              className="bg-dark-900 border border-dark-600 rounded px-1.5 py-0.5 text-dark-200 w-16 text-center text-xs"
+                            />
+                            <span className="text-dark-500">макс</span>
+                            <input
+                              type="number"
+                              value={rule.max ?? ''}
+                              onChange={e => updateAlertRule(rule.metric, 'max', e.target.value === '' ? null : Number(e.target.value))}
+                              placeholder="—"
+                              className="bg-dark-900 border border-dark-600 rounded px-1.5 py-0.5 text-dark-200 w-16 text-center text-xs"
+                            />
+                            <span className="text-dark-600 text-[10px]">{l.unit}</span>
+                          </div>
+                        )}
+                        {isOffline && rule.enabled && (
+                          <span className="text-xs text-dark-500">срабатывает если данных нет >5 мин</span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Save + Test */}
+                <div className="flex items-center gap-3 pt-2">
+                  <button
+                    onClick={handleAlertSave}
+                    disabled={alertSaving}
+                    className="bg-primary-600 hover:bg-primary-700 text-white py-1.5 px-4 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+                  >
+                    {alertSaving ? 'Сохранение...' : 'Сохранить'}
+                  </button>
+                  <button
+                    onClick={handleAlertTest}
+                    className="bg-dark-700 hover:bg-dark-600 text-dark-300 py-1.5 px-4 rounded-md text-sm transition-colors"
+                  >
+                    Тест
+                  </button>
+                  {alertTestResult === 'ok' && <span className="text-green-400 text-sm">✓ Отправлено</span>}
+                  {alertTestResult === 'error' && <span className="text-red-400 text-sm">✕ Ошибка (проверь токен)</span>}
+                </div>
+
+                {/* Alert log */}
+                {alertLog.length > 0 && (
+                  <div className="pt-2 border-t border-dark-700">
+                    <h3 className="text-xs text-dark-500 uppercase mb-2">Последние оповещения</h3>
+                    <div className="space-y-0 max-h-32 overflow-y-auto rounded border border-dark-700">
+                      {alertLog.map((log, i) => {
+                        const d = new Date(log.timestamp);
+                        const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false });
+                        const today = new Date();
+                        const isToday = d.toDateString() === today.toDateString();
+                        const dateLabel = isToday ? '' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: '2-digit' }) + ' ';
+                        const isAlert = log.type === 'alert';
+                        return (
+                          <div key={log._id || i} className={`flex items-center gap-2 px-3 py-1 text-xs ${i % 2 === 0 ? 'bg-dark-800' : 'bg-dark-800/50'}`}>
+                            <span className={isAlert ? 'text-yellow-400' : 'text-green-400'}>{isAlert ? '⚠️' : '✅'}</span>
+                            <span className="text-dark-400 font-mono tabular-nums w-24">{dateLabel}{time}</span>
+                            <span className="text-dark-300 truncate">{log.metric}{log.value != null ? `: ${log.value}` : ''} {log.threshold || ''}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Sensors list with inline editing */}

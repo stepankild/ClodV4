@@ -13,7 +13,11 @@ import {
   getHumidifierLog,
   controlIrrigation,
   getIrrigationStatus,
-  getIrrigationLog
+  getIrrigationLog,
+  getAlertConfig,
+  updateAlertConfig,
+  getAlertLog,
+  testTelegramAlert
 } from '../controllers/zoneController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -38,6 +42,12 @@ router.post('/:zoneId/humidifier', checkPermission('iot:manage'), controlHumidif
 router.get('/:zoneId/irrigation/status', checkPermission('iot:view'), getIrrigationStatus);
 router.get('/:zoneId/irrigation/log', checkPermission('iot:view'), getIrrigationLog);
 router.post('/:zoneId/irrigation', checkPermission('iot:manage'), controlIrrigation);
+
+// Alert config
+router.get('/:zoneId/alerts', checkPermission('iot:view'), getAlertConfig);
+router.get('/:zoneId/alerts/log', checkPermission('iot:view'), getAlertLog);
+router.put('/:zoneId/alerts', checkPermission('iot:manage'), updateAlertConfig);
+router.post('/alerts/test', checkPermission('iot:manage'), testTelegramAlert);
 
 // Write — iot:manage
 router.post('/', checkPermission('iot:manage'), createZone);

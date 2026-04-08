@@ -3,6 +3,9 @@ import SensorReading from '../models/SensorReading.js';
 import HumidifierLog from '../models/HumidifierLog.js';
 import IrrigationSchedule from '../models/IrrigationSchedule.js';
 import IrrigationLog from '../models/IrrigationLog.js';
+import AlertConfig from '../models/AlertConfig.js';
+import AlertLog from '../models/AlertLog.js';
+import { sendTestAlert } from '../schedulers/alerts.js';
 import { getZoneStates, getZoneState } from '../mqtt/index.js';
 
 // @desc    Get all zones with status and latest reading
@@ -604,6 +607,89 @@ export const getIrrigationLog = async (req, res) => {
     });
   } catch (error) {
     console.error('Irrigation log error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// ── Alert Config ──
+
+// @desc    Get alert config for zone
+// @route   GET /api/zones/:zoneId/alerts
+export const getAlertConfig = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    let config = await AlertConfig.findOne({ zoneId }).lean();
+    if (!config) {
+      // Return defaults
+      config = { zoneId, enabled: true, telegramChatId: null, rules: [
+        { metric: 'temperature', enabled: false, min: 18, max: 32, cooldownMin: 30 },
+        { metric: 'humidity', enabled: false, min: 40, max: 80, cooldownMin: 30 },
+        { metric: 'co2', enabled: false, min: null, max: 1500, cooldownMin: 30 },
+        { metric: 'light', enabled: false, min: null, max: null, cooldownMin: 30 },
+        { metric: 'vpd', enabled: false, min: 0.4, max: 1.6, cooldownMin: 30 },
+        { metric: 'offline', enabled: false, min: null, max: null, cooldownMin: 30 }
+      ]};
+    }
+    res.json(config);
+  } catch (error) {
+    console.error('Get alert config error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Update alert config for zone
+// @route   PUT /api/zones/:zoneId/alerts
+export const updateAlertConfig = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const { enabled, telegramChatId, rules } = req.body;
+
+    const update = {};
+    if (enabled !== undefined) update.enabled = enabled;
+    if (telegramChatId !== undefined) update.telegramChatId = telegramChatId;
+    if (rules) update.rules = rules;
+
+    const config = await AlertConfig.findOneAndUpdate(
+      { zoneId },
+      { $set: { zoneId, ...update } },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    res.json(config);
+  } catch (error) {
+    console.error('Update alert config error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Get alert log for zone
+// @route   GET /api/zones/:zoneId/alerts/log
+export const getAlertLog = async (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+
+    const logs = await AlertLog.find({ zoneId })
+      .sort({ timestamp: -1 })
+      .limit(limit)
+      .lean();
+
+    res.json({ logs });
+  } catch (error) {
+    console.error('Alert log error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Send test Telegram alert
+// @route   POST /api/alerts/test
+export const testTelegramAlert = async (req, res) => {
+  try {
+    const { chatId } = req.body;
+    const result = await sendTestAlert(chatId);
+    res.json(result);
+  } catch (error) {
+    console.error('Test alert error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };

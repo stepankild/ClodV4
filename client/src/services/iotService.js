@@ -65,5 +65,26 @@ export const iotService = {
   async getIrrigationLog(zoneId, params = {}) {
     const response = await api.get(`/zones/${zoneId}/irrigation/log`, { params });
     return response.data;
+  },
+
+  // Alerts
+  async getAlertConfig(zoneId) {
+    const response = await api.get(`/zones/${zoneId}/alerts`);
+    return response.data;
+  },
+
+  async updateAlertConfig(zoneId, data) {
+    const response = await api.put(`/zones/${zoneId}/alerts`, data);
+    return response.data;
+  },
+
+  async getAlertLog(zoneId, params = {}) {
+    const response = await api.get(`/zones/${zoneId}/alerts/log`, { params });
+    return response.data;
+  },
+
+  async testAlert(chatId) {
+    const response = await api.post('/zones/alerts/test', { chatId });
+    return response.data;
   }
 };
