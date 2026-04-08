@@ -618,18 +618,27 @@ export const getIrrigationLog = async (req, res) => {
 export const getAlertConfig = async (req, res) => {
   try {
     const { zoneId } = req.params;
+    const ALL_METRICS = [
+      { metric: 'temperature', enabled: false, min: 18, max: 32, cooldownMin: 30 },
+      { metric: 'humidity', enabled: false, min: 40, max: 80, cooldownMin: 30 },
+      { metric: 'co2', enabled: false, min: null, max: 1500, cooldownMin: 30 },
+      { metric: 'light', enabled: false, min: null, max: null, cooldownMin: 30 },
+      { metric: 'vpd', enabled: false, min: 0.4, max: 1.6, cooldownMin: 30 },
+      { metric: 'offline', enabled: false, min: null, max: 5, cooldownMin: 30 },
+      { metric: 'light_anomaly', enabled: false, min: null, max: null, cooldownMin: 30 }
+    ];
+
     let config = await AlertConfig.findOne({ zoneId }).lean();
     if (!config) {
-      // Return defaults
-      config = { zoneId, enabled: true, telegramChatId: null, rules: [
-        { metric: 'temperature', enabled: false, min: 18, max: 32, cooldownMin: 30 },
-        { metric: 'humidity', enabled: false, min: 40, max: 80, cooldownMin: 30 },
-        { metric: 'co2', enabled: false, min: null, max: 1500, cooldownMin: 30 },
-        { metric: 'light', enabled: false, min: null, max: null, cooldownMin: 30 },
-        { metric: 'vpd', enabled: false, min: 0.4, max: 1.6, cooldownMin: 30 },
-        { metric: 'offline', enabled: false, min: null, max: 5, cooldownMin: 30 },
-        { metric: 'light_anomaly', enabled: false, min: null, max: null, cooldownMin: 30 }
-      ]};
+      config = { zoneId, enabled: true, telegramChatId: null, rules: ALL_METRICS };
+    } else {
+      // Auto-add any new metrics that were added after initial config was saved
+      const existing = new Set(config.rules.map(r => r.metric));
+      for (const def of ALL_METRICS) {
+        if (!existing.has(def.metric)) {
+          config.rules.push(def);
+        }
+      }
     }
     res.json(config);
   } catch (error) {
