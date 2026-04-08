@@ -237,27 +237,18 @@ void drawDisplay() {
       const char* loc = hasVal ? D.tempLocs[i].c_str() : (i == 0 && D.hasAirT ? "ambient" : "---");
       float val = hasVal ? D.temps[i] : (i == 0 && D.hasAirT ? D.airT : 0);
 
-      uint16_t hdrCol = (i == 0) ? RD : (i == 1) ? BK : YL;
+      uint16_t hdrCol = (i == 0) ? RD : BK;  // no yellow headers — hard to read
       cardWithHeader(cx, y, tempW, 64, hdrCol, loc);
 
       if (hasVal || (i == 0 && D.hasAirT)) {
-        // Big temperature number
+        // Big temperature number with C
         u8g2Fonts.setFont(u8g2_font_helvB18_tr);
         u8g2Fonts.setForegroundColor(BK);
         snprintf(buf, sizeof(buf), "%.1f", val);
-        tc(cx + tempW / 2, y + 44, buf);
-
-        // Degree
-        u8g2Fonts.setFont(u8g2_font_helvR10_tr);
-        u8g2Fonts.setForegroundColor(BK);
-        int tw = u8g2Fonts.getUTF8Width(buf);
-        // Using superscript-like smaller font for degree
+        tc(cx + tempW / 2, y + 40, buf);
+        // Unit below
         u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-        u8g2Fonts.setCursor(cx + tempW / 2 + tw / 2 + 2, y + 36);
-        u8g2Fonts.print("o");
-        u8g2Fonts.setCursor(cx + tempW / 2 + tw / 2 + 8, y + 44);
-        u8g2Fonts.setFont(u8g2_font_helvR10_tr);
-        u8g2Fonts.print("C");
+        tc(cx + tempW / 2, y + 54, "C");
       } else {
         u8g2Fonts.setFont(u8g2_font_helvB14_tr);
         u8g2Fonts.setForegroundColor(BK);
@@ -313,17 +304,12 @@ void drawDisplay() {
       u8g2Fonts.setForegroundColor(vc == BK ? BK : vc);
       snprintf(buf, sizeof(buf), "%.2f", D.vpd);
       tc(cx + boxW / 2, y + 40, buf);
-      // Range hint
-      u8g2Fonts.setFont(u8g2_font_micro_tr);
-      u8g2Fonts.setForegroundColor(BK);
-      const char* hint = D.vpd < 0.4f ? "LOW" : D.vpd <= 0.8f ? "CLONE" : D.vpd <= 1.2f ? "VEG" : D.vpd <= 1.6f ? "FLOWER" : "HIGH!";
-      tc(cx + boxW / 2, y + 50, hint);
     }
 
     // Light
     {
       int cx = 4 + 2 * (boxW + gap);
-      cardWithHeader(cx, y, boxW, row2H, YL, "LIGHT");
+      cardWithHeader(cx, y, boxW, row2H, BK, "LIGHT");
       u8g2Fonts.setFont(u8g2_font_helvB14_tr);
       u8g2Fonts.setForegroundColor(BK);
       if (D.hasLux) {
@@ -450,15 +436,21 @@ void drawDisplay() {
     u8g2Fonts.setBackgroundColor(BK);
     u8g2Fonts.setFont(u8g2_font_helvR08_tr);
 
-    // Date
+    // Date (convert UTC -> local time)
     u8g2Fonts.setForegroundColor(WH);
     if (D.timestamp.length() > 16) {
-      String ts = D.timestamp.substring(8, 10) + "." +
-                  D.timestamp.substring(5, 7) + "." +
-                  D.timestamp.substring(2, 4) + " " +
-                  D.timestamp.substring(11, 16);
+      int hh = D.timestamp.substring(11, 13).toInt() + TZ_OFFSET;
+      int dd = D.timestamp.substring(8, 10).toInt();
+      if (hh >= 24) { hh -= 24; dd++; }
+      if (hh < 0) { hh += 24; dd--; }
+      snprintf(buf, sizeof(buf), "%02d.%s.%s %02d:%s",
+        dd,
+        D.timestamp.substring(5, 7).c_str(),
+        D.timestamp.substring(2, 4).c_str(),
+        hh,
+        D.timestamp.substring(14, 16).c_str());
       u8g2Fonts.setCursor(8, y + 13);
-      u8g2Fonts.print(ts.c_str());
+      u8g2Fonts.print(buf);
     }
 
     // All temps compact
@@ -471,13 +463,28 @@ void drawDisplay() {
     if (D.hasAirT) { allT += " | "; allT += String(D.airT, 1); }
     tc(W / 2, y + 13, allT.c_str());
 
-    // Battery
-    u8g2Fonts.setForegroundColor(WH);
+    // Battery icon + voltage
     int batRaw = analogRead(9);
     float batV = batRaw * 2.0f * 3.3f / 4095.0f;
     if (batV > 1.0f) {
+      // Battery percentage (3.0V=0%, 4.2V=100%)
+      int batPct = constrain((int)((batV - 3.0f) / 1.2f * 100), 0, 100);
+
+      // Draw battery icon (right side of footer)
+      int bx = W - 52, by = y + 4, bw = 22, bh = 10;
+      // Battery body outline
+      display.drawRect(bx, by, bw, bh, WH);
+      // Battery tip
+      display.fillRect(bx + bw, by + 3, 2, 4, WH);
+      // Fill level
+      int fillW = (bw - 2) * batPct / 100;
+      uint16_t fillCol = batPct < 20 ? RD : WH;
+      if (fillW > 0) display.fillRect(bx + 1, by + 1, fillW, bh - 2, fillCol);
+
+      // Voltage text
+      u8g2Fonts.setForegroundColor(batPct < 20 ? RD : WH);
       snprintf(buf, sizeof(buf), "%.1fV", batV);
-      tr(W - 8, y + 13, buf);
+      tr(bx - 4, y + 13, buf);
     }
 
     u8g2Fonts.setBackgroundColor(WH);

@@ -202,6 +202,195 @@ async function checkAlerts() {
 }
 
 /**
+ * Generate and send daily summary for all zones at 9:00 Prague time
+ */
+let lastSummaryDate = null;
+
+async function checkDailySummary() {
+  const now = new Date();
+  const pragueTime = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Prague' }));
+  const hour = pragueTime.getHours();
+  const minute = pragueTime.getMinutes();
+  const dateStr = pragueTime.toDateString();
+
+  // Fire between 9:00-9:01, once per day
+  if (hour !== 9 || minute > 1 || lastSummaryDate === dateStr) return;
+  lastSummaryDate = dateStr;
+
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) return;
+
+  try {
+    const zones = await Zone.find().lean();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    for (const zone of zones) {
+      const readings = await SensorReading.find({
+        zoneId: zone.zoneId,
+        timestamp: { $gte: yesterday, $lt: todayStart }
+      }).lean();
+
+      if (!readings.length) continue;
+
+      // Temperature stats
+      const temps = readings.map(r => r.temperature).filter(v => v != null);
+      const avgTemp = temps.length ? (temps.reduce((a, b) => a + b, 0) / temps.length) : null;
+      const minTemp = temps.length ? Math.min(...temps) : null;
+      const maxTemp = temps.length ? Math.max(...temps) : null;
+
+      // Humidity stats (prefer SHT45)
+      const hums = readings.map(r => r.humidity_sht45 ?? r.humidity).filter(v => v != null);
+      const avgHum = hums.length ? (hums.reduce((a, b) => a + b, 0) / hums.length) : null;
+      const minHum = hums.length ? Math.min(...hums) : null;
+      const maxHum = hums.length ? Math.max(...hums) : null;
+
+      // CO2 stats
+      const co2s = readings.map(r => r.co2).filter(v => v != null);
+      const avgCo2 = co2s.length ? (co2s.reduce((a, b) => a + b, 0) / co2s.length) : null;
+      const maxCo2 = co2s.length ? Math.max(...co2s) : null;
+
+      // VPD stats
+      const vpds = readings.map(r => {
+        const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
+        const airT = r.temperature;
+        const rh = r.humidity_sht45 ?? r.humidity;
+        if (canopyT == null || airT == null || rh == null) return null;
+        const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
+        const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+        return Math.max(0, svpLeaf - svpAir * rh / 100);
+      }).filter(v => v != null);
+      const avgVpd = vpds.length ? (vpds.reduce((a, b) => a + b, 0) / vpds.length) : null;
+      const minVpd = vpds.length ? Math.min(...vpds) : null;
+      const maxVpd = vpds.length ? Math.max(...vpds) : null;
+
+      // Light cycle (day = >50 lux)
+      const lightReadings = readings.map(r => r.light).filter(v => v != null);
+      const dayReadings = lightReadings.filter(v => v > 50).length;
+      const totalLightReadings = lightReadings.length;
+      const dayHours = totalLightReadings > 0
+        ? Math.round((dayReadings / totalLightReadings) * 24 * 10) / 10
+        : null;
+      const nightHours = dayHours != null ? Math.round((24 - dayHours) * 10) / 10 : null;
+
+      // Format message
+      const zoneName = zone.name || zone.zoneId;
+      const dateLabel = yesterday.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Prague' });
+      let msg = `📊 <b>Сводка за ${dateLabel}</b>\n<b>Зона: ${zoneName}</b>\n`;
+
+      if (avgTemp != null) {
+        msg += `\n🌡 <b>Температура</b>\n   средняя: ${avgTemp.toFixed(1)}°C (${minTemp.toFixed(1)}–${maxTemp.toFixed(1)})`;
+      }
+      if (avgHum != null) {
+        msg += `\n💧 <b>Влажность</b>\n   средняя: ${avgHum.toFixed(0)}% (${minHum.toFixed(0)}–${maxHum.toFixed(0)})`;
+      }
+      if (avgCo2 != null) {
+        msg += `\n🫧 <b>CO2</b>\n   средний: ${Math.round(avgCo2)} ppm (макс: ${Math.round(maxCo2)})`;
+      }
+      if (avgVpd != null) {
+        msg += `\n🌱 <b>VPD</b>\n   средний: ${avgVpd.toFixed(2)} kPa (${minVpd.toFixed(2)}–${maxVpd.toFixed(2)})`;
+      }
+      if (dayHours != null) {
+        msg += `\n☀️ <b>Фотопериод</b>\n   день: ${dayHours}ч / ночь: ${nightHours}ч`;
+      }
+
+      msg += `\n\n📈 Всего показаний: ${readings.length}`;
+
+      await sendTelegram(chatId, msg);
+    }
+
+    console.log('[alerts] Daily summary sent');
+  } catch (e) {
+    console.error('[alerts] Daily summary error:', e.message);
+  }
+}
+
+/**
+ * Manually trigger daily summary (for testing)
+ */
+export async function sendDailySummaryNow() {
+  const saved = lastSummaryDate;
+  lastSummaryDate = null; // reset to allow sending
+  // Temporarily override time check
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) return { ok: false, error: 'TELEGRAM_CHAT_ID not configured' };
+
+  try {
+    const zones = await Zone.find().lean();
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    for (const zone of zones) {
+      const readings = await SensorReading.find({
+        zoneId: zone.zoneId,
+        timestamp: { $gte: yesterday, $lt: todayStart }
+      }).lean();
+
+      if (!readings.length) continue;
+
+      const temps = readings.map(r => r.temperature).filter(v => v != null);
+      const avgTemp = temps.length ? (temps.reduce((a, b) => a + b, 0) / temps.length) : null;
+      const minTemp = temps.length ? Math.min(...temps) : null;
+      const maxTemp = temps.length ? Math.max(...temps) : null;
+
+      const hums = readings.map(r => r.humidity_sht45 ?? r.humidity).filter(v => v != null);
+      const avgHum = hums.length ? (hums.reduce((a, b) => a + b, 0) / hums.length) : null;
+      const minHum = hums.length ? Math.min(...hums) : null;
+      const maxHum = hums.length ? Math.max(...hums) : null;
+
+      const co2s = readings.map(r => r.co2).filter(v => v != null);
+      const avgCo2 = co2s.length ? (co2s.reduce((a, b) => a + b, 0) / co2s.length) : null;
+      const maxCo2 = co2s.length ? Math.max(...co2s) : null;
+
+      const vpds = readings.map(r => {
+        const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
+        const airT = r.temperature;
+        const rh = r.humidity_sht45 ?? r.humidity;
+        if (canopyT == null || airT == null || rh == null) return null;
+        const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
+        const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+        return Math.max(0, svpLeaf - svpAir * rh / 100);
+      }).filter(v => v != null);
+      const avgVpd = vpds.length ? (vpds.reduce((a, b) => a + b, 0) / vpds.length) : null;
+      const minVpd = vpds.length ? Math.min(...vpds) : null;
+      const maxVpd = vpds.length ? Math.max(...vpds) : null;
+
+      const lightReadings = readings.map(r => r.light).filter(v => v != null);
+      const dayReadings = lightReadings.filter(v => v > 50).length;
+      const totalLightReadings = lightReadings.length;
+      const dayHours = totalLightReadings > 0
+        ? Math.round((dayReadings / totalLightReadings) * 24 * 10) / 10
+        : null;
+      const nightHours = dayHours != null ? Math.round((24 - dayHours) * 10) / 10 : null;
+
+      const zoneName = zone.name || zone.zoneId;
+      const dateLabel = yesterday.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Prague' });
+      let msg = `📊 <b>Сводка за ${dateLabel}</b>\n<b>Зона: ${zoneName}</b>\n`;
+
+      if (avgTemp != null) msg += `\n🌡 <b>Температура</b>\n   средняя: ${avgTemp.toFixed(1)}°C (${minTemp.toFixed(1)}–${maxTemp.toFixed(1)})`;
+      if (avgHum != null) msg += `\n💧 <b>Влажность</b>\n   средняя: ${avgHum.toFixed(0)}% (${minHum.toFixed(0)}–${maxHum.toFixed(0)})`;
+      if (avgCo2 != null) msg += `\n🫧 <b>CO2</b>\n   средний: ${Math.round(avgCo2)} ppm (макс: ${Math.round(maxCo2)})`;
+      if (avgVpd != null) msg += `\n🌱 <b>VPD</b>\n   средний: ${avgVpd.toFixed(2)} kPa (${minVpd.toFixed(2)}–${maxVpd.toFixed(2)})`;
+      if (dayHours != null) msg += `\n☀️ <b>Фотопериод</b>\n   день: ${dayHours}ч / ночь: ${nightHours}ч`;
+      msg += `\n\n📈 Всего показаний: ${readings.length}`;
+
+      await sendTelegram(chatId, msg);
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error('[alerts] Manual summary error:', e.message);
+    return { ok: false, error: e.message };
+  }
+}
+
+/**
  * Send a test message to verify Telegram is configured
  */
 export async function sendTestAlert(chatId) {
@@ -215,7 +404,8 @@ export async function sendTestAlert(chatId) {
  * Initialize alert scheduler (runs every 30 seconds)
  */
 export function initAlertScheduler() {
-  console.log('[alerts] Scheduler started (30s interval)');
+  console.log('[alerts] Scheduler started (30s interval, daily summary at 9:00 Prague)');
   setInterval(checkAlerts, 30 * 1000);
+  setInterval(checkDailySummary, 30 * 1000);
   setTimeout(checkAlerts, 10000); // first check after 10s
 }

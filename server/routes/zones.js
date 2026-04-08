@@ -17,7 +17,8 @@ import {
   getAlertConfig,
   updateAlertConfig,
   getAlertLog,
-  testTelegramAlert
+  testTelegramAlert,
+  triggerDailySummary
 } from '../controllers/zoneController.js';
 import { protect } from '../middleware/auth.js';
 import { checkPermission } from '../middleware/rbac.js';
@@ -48,6 +49,7 @@ router.get('/:zoneId/alerts', checkPermission('iot:view'), getAlertConfig);
 router.get('/:zoneId/alerts/log', checkPermission('iot:view'), getAlertLog);
 router.put('/:zoneId/alerts', checkPermission('iot:manage'), updateAlertConfig);
 router.post('/alerts/test', checkPermission('iot:manage'), testTelegramAlert);
+router.post('/alerts/summary', checkPermission('iot:manage'), triggerDailySummary);
 
 // Write — iot:manage
 router.post('/', checkPermission('iot:manage'), createZone);

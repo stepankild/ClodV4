@@ -12,9 +12,8 @@
 #define API_KEY       "truegrow-sensor-key-2026"
 
 // ===== Timing =====
-#define SLEEP_MINUTES 5          // Deep sleep between refreshes
-#define NIGHT_SLEEP_HOUR_START 19 // Hour to start long sleep (19:00)
-#define NIGHT_SLEEP_HOUR_END   8  // Hour to wake up (08:00)
+#define SLEEP_MINUTES 2          // Deep sleep between refreshes
+#define TZ_OFFSET     1          // Timezone offset from UTC (CET=+1, CEST=+2)
 #define WIFI_TIMEOUT  15000      // ms to wait for WiFi
 
 // ===== ESPink-42 V3 (ESP32-S3) pinout =====

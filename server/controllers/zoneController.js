@@ -5,7 +5,7 @@ import IrrigationSchedule from '../models/IrrigationSchedule.js';
 import IrrigationLog from '../models/IrrigationLog.js';
 import AlertConfig from '../models/AlertConfig.js';
 import AlertLog from '../models/AlertLog.js';
-import { sendTestAlert } from '../schedulers/alerts.js';
+import { sendTestAlert, sendDailySummaryNow } from '../schedulers/alerts.js';
 import { getZoneStates, getZoneState } from '../mqtt/index.js';
 
 // @desc    Get all zones with status and latest reading
@@ -690,6 +690,18 @@ export const testTelegramAlert = async (req, res) => {
     res.json(result);
   } catch (error) {
     console.error('Test alert error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// @desc    Send daily summary now (for testing)
+// @route   POST /api/alerts/summary
+export const triggerDailySummary = async (req, res) => {
+  try {
+    const result = await sendDailySummaryNow();
+    res.json(result);
+  } catch (error) {
+    console.error('Daily summary error:', error);
     res.status(500).json({ message: 'Server error' });
   }
 };
