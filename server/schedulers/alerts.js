@@ -452,9 +452,14 @@ export async function sendTestAlert(chatId) {
 /**
  * Initialize alert scheduler (runs every 30 seconds)
  */
+const startedAt = Date.now();
+
 export function initAlertScheduler() {
-  console.log('[alerts] Scheduler started (30s interval, daily summary at 9:00 Prague)');
-  setInterval(checkAlerts, 30 * 1000);
+  console.log('[alerts] Scheduler started (30s interval, daily summary at 9:00 Prague, 2min warmup)');
+  setInterval(() => {
+    // Skip alerts for first 2 minutes after server start (deploy restart causes false offline alerts)
+    if (Date.now() - startedAt < 2 * 60 * 1000) return;
+    checkAlerts();
+  }, 30 * 1000);
   setInterval(checkDailySummary, 30 * 1000);
-  setTimeout(checkAlerts, 10000); // first check after 10s
 }
