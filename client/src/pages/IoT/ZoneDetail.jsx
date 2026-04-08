@@ -917,10 +917,13 @@ const ZoneDetail = () => {
                       co2: { icon: '🫧', name: 'CO2', unit: 'ppm' },
                       light: { icon: '☀️', name: 'Свет', unit: 'lux' },
                       vpd: { icon: '🌱', name: 'VPD', unit: 'kPa' },
-                      offline: { icon: '🔌', name: 'Офлайн', unit: '' }
+                      offline: { icon: '🔌', name: 'Офлайн', unit: '' },
+                      light_anomaly: { icon: '💡', name: 'Аномалия света', unit: '' }
                     };
                     const l = labels[rule.metric] || { icon: '', name: rule.metric, unit: '' };
                     const isOffline = rule.metric === 'offline';
+                    const isLightAnomaly = rule.metric === 'light_anomaly';
+                    const isSpecial = isOffline || isLightAnomaly;
 
                     return (
                       <div key={rule.metric} className={`flex items-center gap-3 p-2 rounded-md ${rule.enabled ? 'bg-dark-700/50' : ''}`}>
@@ -931,7 +934,7 @@ const ZoneDetail = () => {
                           <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${rule.enabled ? 'left-[18px]' : 'left-0.5'}`} />
                         </button>
                         <span className="text-sm w-28 flex-shrink-0">{l.icon} {l.name}</span>
-                        {!isOffline && rule.enabled && (
+                        {!isSpecial && rule.enabled && (
                           <div className="flex items-center gap-2 text-xs">
                             <span className="text-dark-500">мин</span>
                             <input
@@ -964,6 +967,9 @@ const ZoneDetail = () => {
                             />
                             <span className="text-dark-500">мин</span>
                           </div>
+                        )}
+                        {isLightAnomaly && rule.enabled && (
+                          <span className="text-xs text-dark-500">алерт если лампы вкл ночью или выкл днём</span>
                         )}
                       </div>
                     );

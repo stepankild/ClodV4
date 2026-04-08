@@ -1,6 +1,7 @@
 import AlertConfig from '../models/AlertConfig.js';
 import AlertLog from '../models/AlertLog.js';
 import SensorReading from '../models/SensorReading.js';
+import IrrigationLog from '../models/IrrigationLog.js';
 import Zone from '../models/Zone.js';
 import { getZoneState } from '../mqtt/index.js';
 
@@ -8,6 +9,10 @@ import { getZoneState } from '../mqtt/index.js';
 const lastAlertTime = new Map();
 // Track which metrics are currently in alert state (for recovery messages)
 const activeAlerts = new Map(); // "zoneId:metric" → true
+// Track light state for anomaly detection: zoneId → { isDay, stableSince }
+const lightState = new Map();
+
+const LIGHT_THRESHOLD = 50; // lux — above = day, below = night
 
 const METRIC_LABELS = {
   temperature: '🌡 Температура',
@@ -15,7 +20,8 @@ const METRIC_LABELS = {
   co2: '🫧 CO2',
   light: '☀️ Освещённость',
   vpd: '🌱 VPD',
-  offline: '🔌 Связь'
+  offline: '🔌 Связь',
+  light_anomaly: '💡 Аномалия света'
 };
 
 const METRIC_UNITS = {
@@ -196,10 +202,184 @@ async function checkAlerts() {
           await AlertLog.create({ zoneId, metric: rule.metric, type: 'recovery', value, message: msg });
         }
       }
+
+      // ── Light anomaly detection ──
+      // Detects unexpected light changes: lights ON during expected night, or OFF during expected day
+      const lightAnomalyRule = rules.find(r => r.metric === 'light_anomaly' && r.enabled);
+      if (lightAnomalyRule && reading) {
+        const lux = reading.light;
+        if (lux != null) {
+          const isDay = lux > LIGHT_THRESHOLD;
+          const prev = lightState.get(zoneId);
+          const key = `${zoneId}:light_anomaly`;
+
+          if (!prev) {
+            // First reading — just store state
+            lightState.set(zoneId, { isDay, stableSince: Date.now(), transitionCount: 0 });
+          } else if (isDay !== prev.isDay) {
+            // Light state changed
+            const stableMinutes = (Date.now() - prev.stableSince) / 60000;
+
+            // Only alert if previous state was stable for >30 min (not just a brief flicker)
+            // and the transition is unexpected (short stable period before = anomaly)
+            if (stableMinutes > 30) {
+              // This is a real transition — check if it's anomalous
+              // Night was stable >30min and suddenly lights turned on = anomaly
+              // Day was stable >30min and suddenly lights turned off = anomaly
+              // We track transitions; the user will know from Telegram what happened
+              const eventType = isDay ? 'лампы ВКЛЮЧИЛИСЬ (была ночь)' : 'лампы ВЫКЛЮЧИЛИСЬ (был день)';
+
+              if (cooldownPassed(key, lightAnomalyRule.cooldownMin)) {
+                const msg = `💡 <b>Зона: ${zoneName}</b>\n${eventType}\n☀️ ${lux.toFixed(0)} lux\n🕐 ${formatTime()}`;
+                const ok = await sendTelegram(chatId, msg);
+                if (ok) {
+                  lastAlertTime.set(key, Date.now());
+                  await AlertLog.create({ zoneId, metric: 'light_anomaly', type: 'alert', value: lux, message: msg });
+                }
+              }
+            }
+
+            lightState.set(zoneId, { isDay, stableSince: Date.now(), transitionCount: (prev.transitionCount || 0) + 1 });
+          }
+          // If same state — just keep tracking (stableSince stays)
+        }
+      }
     }
   } catch (e) {
     console.error('[alerts] Scheduler error:', e.message);
   }
+}
+
+/**
+ * Build daily summary message for a zone
+ */
+async function buildZoneSummary(zone, yesterday, todayStart) {
+  const import_HumidifierLog = (await import('../models/HumidifierLog.js')).default;
+
+  const readings = await SensorReading.find({
+    zoneId: zone.zoneId,
+    timestamp: { $gte: yesterday, $lt: todayStart }
+  }).sort({ timestamp: 1 }).lean();
+
+  if (!readings.length) return null;
+
+  const avg = arr => arr.reduce((a, b) => a + b, 0) / arr.length;
+  const fmt = (v, d = 1) => v != null ? v.toFixed(d) : '—';
+  const toPragueTime = (d) => new Date(d).toLocaleTimeString('cs-CZ', { timeZone: 'Europe/Prague', hour: '2-digit', minute: '2-digit', hour12: false });
+
+  // ── Split readings into day (light >50 lux) and night ──
+  const withLight = readings.filter(r => r.light != null);
+  const dayReadings = withLight.filter(r => r.light > LIGHT_THRESHOLD);
+  const nightReadings = withLight.filter(r => r.light <= LIGHT_THRESHOLD);
+
+  // ── Overall stats ──
+  const temps = readings.map(r => r.temperature).filter(v => v != null);
+  const hums = readings.map(r => r.humidity_sht45 ?? r.humidity).filter(v => v != null);
+  const co2s = readings.map(r => r.co2).filter(v => v != null);
+
+  // ── Day/night climate ──
+  const dayTemps = dayReadings.map(r => r.temperature).filter(v => v != null);
+  const nightTemps = nightReadings.map(r => r.temperature).filter(v => v != null);
+  const dayHums = dayReadings.map(r => r.humidity_sht45 ?? r.humidity).filter(v => v != null);
+  const nightHums = nightReadings.map(r => r.humidity_sht45 ?? r.humidity).filter(v => v != null);
+
+  // ── VPD ──
+  const calcVpd = (r) => {
+    const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
+    const airT = r.temperature;
+    const rh = r.humidity_sht45 ?? r.humidity;
+    if (canopyT == null || airT == null || rh == null) return null;
+    const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
+    const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+    return Math.max(0, svpLeaf - svpAir * rh / 100);
+  };
+  const vpds = readings.map(calcVpd).filter(v => v != null);
+
+  // ── Light transitions: find when lights turned on/off ──
+  let lightsOnTime = null, lightsOffTime = null;
+  const lightTransitions = [];
+  for (let i = 1; i < withLight.length; i++) {
+    const prevDay = withLight[i - 1].light > LIGHT_THRESHOLD;
+    const curDay = withLight[i].light > LIGHT_THRESHOLD;
+    if (!prevDay && curDay) {
+      lightTransitions.push({ type: 'on', time: withLight[i].timestamp });
+      if (!lightsOnTime) lightsOnTime = withLight[i].timestamp;
+    } else if (prevDay && !curDay) {
+      lightTransitions.push({ type: 'off', time: withLight[i].timestamp });
+      if (!lightsOffTime) lightsOffTime = withLight[i].timestamp;
+    }
+  }
+  // Also detect initial state
+  if (withLight.length > 0 && withLight[0].light > LIGHT_THRESHOLD && !lightsOnTime) {
+    lightsOnTime = withLight[0].timestamp; // was already on at start
+  }
+
+  const totalLightReadings = withLight.length;
+  const dayCount = dayReadings.length;
+  const dayHours = totalLightReadings > 0 ? Math.round((dayCount / totalLightReadings) * 24 * 10) / 10 : null;
+  const nightHours = dayHours != null ? Math.round((24 - dayHours) * 10) / 10 : null;
+
+  // ── Humidifier stats ──
+  const humLogs = await import_HumidifierLog.find({
+    zoneId: zone.zoneId,
+    timestamp: { $gte: yesterday, $lt: todayStart }
+  }).sort({ timestamp: 1 }).lean();
+
+  const humOnCount = humLogs.filter(l => l.action === 'on').length;
+  const humOffCount = humLogs.filter(l => l.action === 'off').length;
+  let humTotalMs = 0;
+  let lastOn = null;
+  for (const log of humLogs) {
+    if (log.action === 'on') lastOn = new Date(log.timestamp).getTime();
+    else if (log.action === 'off' && lastOn) { humTotalMs += new Date(log.timestamp).getTime() - lastOn; lastOn = null; }
+  }
+  if (lastOn) humTotalMs += todayStart.getTime() - lastOn; // was still on at end of day
+  const humMinutes = Math.round(humTotalMs / 60000);
+
+  // ── Format message ──
+  const zoneName = zone.name || zone.zoneId;
+  const dateLabel = yesterday.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Prague' });
+  let msg = `📊 <b>Сводка за ${dateLabel}</b>\n<b>Зона: ${zoneName}</b>\n`;
+
+  // Temperature day/night
+  if (temps.length) {
+    msg += `\n🌡 <b>Температура</b>`;
+    if (dayTemps.length) msg += `\n   день: ${fmt(avg(dayTemps))}°C (${fmt(Math.min(...dayTemps))}–${fmt(Math.max(...dayTemps))})`;
+    if (nightTemps.length) msg += `\n   ночь: ${fmt(avg(nightTemps))}°C (${fmt(Math.min(...nightTemps))}–${fmt(Math.max(...nightTemps))})`;
+    if (!dayTemps.length && !nightTemps.length) msg += `\n   средняя: ${fmt(avg(temps))}°C`;
+  }
+
+  // Humidity day/night
+  if (hums.length) {
+    msg += `\n💧 <b>Влажность</b>`;
+    if (dayHums.length) msg += `\n   день: ${fmt(avg(dayHums), 0)}% (${fmt(Math.min(...dayHums), 0)}–${fmt(Math.max(...dayHums), 0)})`;
+    if (nightHums.length) msg += `\n   ночь: ${fmt(avg(nightHums), 0)}% (${fmt(Math.min(...nightHums), 0)}–${fmt(Math.max(...nightHums), 0)})`;
+    if (!dayHums.length && !nightHums.length) msg += `\n   средняя: ${fmt(avg(hums), 0)}%`;
+  }
+
+  if (co2s.length) {
+    msg += `\n🫧 <b>CO2</b>\n   средний: ${Math.round(avg(co2s))} ppm (макс: ${Math.round(Math.max(...co2s))})`;
+  }
+  if (vpds.length) {
+    msg += `\n🌱 <b>VPD</b>\n   средний: ${avg(vpds).toFixed(2)} kPa (${Math.min(...vpds).toFixed(2)}–${Math.max(...vpds).toFixed(2)})`;
+  }
+
+  // Light schedule
+  if (dayHours != null) {
+    msg += `\n☀️ <b>Фотопериод</b>\n   день: ${dayHours}ч / ночь: ${nightHours}ч`;
+    if (lightsOnTime) msg += `\n   включение: ${toPragueTime(lightsOnTime)}`;
+    if (lightsOffTime) msg += `\n   выключение: ${toPragueTime(lightsOffTime)}`;
+    if (lightTransitions.length > 2) msg += `\n   ⚠️ ${lightTransitions.length} переключений (аномалия?)`;
+  }
+
+  // Humidifier
+  if (humOnCount > 0) {
+    const humTimeStr = humMinutes >= 60 ? `${Math.floor(humMinutes / 60)}ч ${humMinutes % 60}м` : `${humMinutes}м`;
+    msg += `\n💨 <b>Увлажнитель</b>\n   вкл: ${humOnCount}x / работал: ${humTimeStr}`;
+  }
+
+  msg += `\n\n📈 Показаний: ${readings.length}`;
+  return msg;
 }
 
 /**
@@ -214,7 +394,6 @@ async function checkDailySummary() {
   const minute = pragueTime.getMinutes();
   const dateStr = pragueTime.toDateString();
 
-  // Fire between 9:00-9:01, once per day
   if (hour !== 9 || minute > 1 || lastSummaryDate === dateStr) return;
   lastSummaryDate = dateStr;
 
@@ -223,86 +402,13 @@ async function checkDailySummary() {
 
   try {
     const zones = await Zone.find().lean();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(0, 0, 0, 0);
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
 
     for (const zone of zones) {
-      const readings = await SensorReading.find({
-        zoneId: zone.zoneId,
-        timestamp: { $gte: yesterday, $lt: todayStart }
-      }).lean();
-
-      if (!readings.length) continue;
-
-      // Temperature stats
-      const temps = readings.map(r => r.temperature).filter(v => v != null);
-      const avgTemp = temps.length ? (temps.reduce((a, b) => a + b, 0) / temps.length) : null;
-      const minTemp = temps.length ? Math.min(...temps) : null;
-      const maxTemp = temps.length ? Math.max(...temps) : null;
-
-      // Humidity stats (prefer SHT45)
-      const hums = readings.map(r => r.humidity_sht45 ?? r.humidity).filter(v => v != null);
-      const avgHum = hums.length ? (hums.reduce((a, b) => a + b, 0) / hums.length) : null;
-      const minHum = hums.length ? Math.min(...hums) : null;
-      const maxHum = hums.length ? Math.max(...hums) : null;
-
-      // CO2 stats
-      const co2s = readings.map(r => r.co2).filter(v => v != null);
-      const avgCo2 = co2s.length ? (co2s.reduce((a, b) => a + b, 0) / co2s.length) : null;
-      const maxCo2 = co2s.length ? Math.max(...co2s) : null;
-
-      // VPD stats
-      const vpds = readings.map(r => {
-        const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
-        const airT = r.temperature;
-        const rh = r.humidity_sht45 ?? r.humidity;
-        if (canopyT == null || airT == null || rh == null) return null;
-        const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
-        const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
-        return Math.max(0, svpLeaf - svpAir * rh / 100);
-      }).filter(v => v != null);
-      const avgVpd = vpds.length ? (vpds.reduce((a, b) => a + b, 0) / vpds.length) : null;
-      const minVpd = vpds.length ? Math.min(...vpds) : null;
-      const maxVpd = vpds.length ? Math.max(...vpds) : null;
-
-      // Light cycle (day = >50 lux)
-      const lightReadings = readings.map(r => r.light).filter(v => v != null);
-      const dayReadings = lightReadings.filter(v => v > 50).length;
-      const totalLightReadings = lightReadings.length;
-      const dayHours = totalLightReadings > 0
-        ? Math.round((dayReadings / totalLightReadings) * 24 * 10) / 10
-        : null;
-      const nightHours = dayHours != null ? Math.round((24 - dayHours) * 10) / 10 : null;
-
-      // Format message
-      const zoneName = zone.name || zone.zoneId;
-      const dateLabel = yesterday.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Prague' });
-      let msg = `📊 <b>Сводка за ${dateLabel}</b>\n<b>Зона: ${zoneName}</b>\n`;
-
-      if (avgTemp != null) {
-        msg += `\n🌡 <b>Температура</b>\n   средняя: ${avgTemp.toFixed(1)}°C (${minTemp.toFixed(1)}–${maxTemp.toFixed(1)})`;
-      }
-      if (avgHum != null) {
-        msg += `\n💧 <b>Влажность</b>\n   средняя: ${avgHum.toFixed(0)}% (${minHum.toFixed(0)}–${maxHum.toFixed(0)})`;
-      }
-      if (avgCo2 != null) {
-        msg += `\n🫧 <b>CO2</b>\n   средний: ${Math.round(avgCo2)} ppm (макс: ${Math.round(maxCo2)})`;
-      }
-      if (avgVpd != null) {
-        msg += `\n🌱 <b>VPD</b>\n   средний: ${avgVpd.toFixed(2)} kPa (${minVpd.toFixed(2)}–${maxVpd.toFixed(2)})`;
-      }
-      if (dayHours != null) {
-        msg += `\n☀️ <b>Фотопериод</b>\n   день: ${dayHours}ч / ночь: ${nightHours}ч`;
-      }
-
-      msg += `\n\n📈 Всего показаний: ${readings.length}`;
-
-      await sendTelegram(chatId, msg);
+      const msg = await buildZoneSummary(zone, yesterday, todayStart);
+      if (msg) await sendTelegram(chatId, msg);
     }
-
     console.log('[alerts] Daily summary sent');
   } catch (e) {
     console.error('[alerts] Daily summary error:', e.message);
@@ -313,76 +419,18 @@ async function checkDailySummary() {
  * Manually trigger daily summary (for testing)
  */
 export async function sendDailySummaryNow() {
-  const saved = lastSummaryDate;
-  lastSummaryDate = null; // reset to allow sending
-  // Temporarily override time check
   const chatId = process.env.TELEGRAM_CHAT_ID;
   if (!chatId) return { ok: false, error: 'TELEGRAM_CHAT_ID not configured' };
 
   try {
     const zones = await Zone.find().lean();
     const now = new Date();
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    yesterday.setHours(0, 0, 0, 0);
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
+    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(0, 0, 0, 0);
+    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
 
     for (const zone of zones) {
-      const readings = await SensorReading.find({
-        zoneId: zone.zoneId,
-        timestamp: { $gte: yesterday, $lt: todayStart }
-      }).lean();
-
-      if (!readings.length) continue;
-
-      const temps = readings.map(r => r.temperature).filter(v => v != null);
-      const avgTemp = temps.length ? (temps.reduce((a, b) => a + b, 0) / temps.length) : null;
-      const minTemp = temps.length ? Math.min(...temps) : null;
-      const maxTemp = temps.length ? Math.max(...temps) : null;
-
-      const hums = readings.map(r => r.humidity_sht45 ?? r.humidity).filter(v => v != null);
-      const avgHum = hums.length ? (hums.reduce((a, b) => a + b, 0) / hums.length) : null;
-      const minHum = hums.length ? Math.min(...hums) : null;
-      const maxHum = hums.length ? Math.max(...hums) : null;
-
-      const co2s = readings.map(r => r.co2).filter(v => v != null);
-      const avgCo2 = co2s.length ? (co2s.reduce((a, b) => a + b, 0) / co2s.length) : null;
-      const maxCo2 = co2s.length ? Math.max(...co2s) : null;
-
-      const vpds = readings.map(r => {
-        const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
-        const airT = r.temperature;
-        const rh = r.humidity_sht45 ?? r.humidity;
-        if (canopyT == null || airT == null || rh == null) return null;
-        const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
-        const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
-        return Math.max(0, svpLeaf - svpAir * rh / 100);
-      }).filter(v => v != null);
-      const avgVpd = vpds.length ? (vpds.reduce((a, b) => a + b, 0) / vpds.length) : null;
-      const minVpd = vpds.length ? Math.min(...vpds) : null;
-      const maxVpd = vpds.length ? Math.max(...vpds) : null;
-
-      const lightReadings = readings.map(r => r.light).filter(v => v != null);
-      const dayReadings = lightReadings.filter(v => v > 50).length;
-      const totalLightReadings = lightReadings.length;
-      const dayHours = totalLightReadings > 0
-        ? Math.round((dayReadings / totalLightReadings) * 24 * 10) / 10
-        : null;
-      const nightHours = dayHours != null ? Math.round((24 - dayHours) * 10) / 10 : null;
-
-      const zoneName = zone.name || zone.zoneId;
-      const dateLabel = yesterday.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', timeZone: 'Europe/Prague' });
-      let msg = `📊 <b>Сводка за ${dateLabel}</b>\n<b>Зона: ${zoneName}</b>\n`;
-
-      if (avgTemp != null) msg += `\n🌡 <b>Температура</b>\n   средняя: ${avgTemp.toFixed(1)}°C (${minTemp.toFixed(1)}–${maxTemp.toFixed(1)})`;
-      if (avgHum != null) msg += `\n💧 <b>Влажность</b>\n   средняя: ${avgHum.toFixed(0)}% (${minHum.toFixed(0)}–${maxHum.toFixed(0)})`;
-      if (avgCo2 != null) msg += `\n🫧 <b>CO2</b>\n   средний: ${Math.round(avgCo2)} ppm (макс: ${Math.round(maxCo2)})`;
-      if (avgVpd != null) msg += `\n🌱 <b>VPD</b>\n   средний: ${avgVpd.toFixed(2)} kPa (${minVpd.toFixed(2)}–${maxVpd.toFixed(2)})`;
-      if (dayHours != null) msg += `\n☀️ <b>Фотопериод</b>\n   день: ${dayHours}ч / ночь: ${nightHours}ч`;
-      msg += `\n\n📈 Всего показаний: ${readings.length}`;
-
-      await sendTelegram(chatId, msg);
+      const msg = await buildZoneSummary(zone, yesterday, todayStart);
+      if (msg) await sendTelegram(chatId, msg);
     }
     return { ok: true };
   } catch (e) {
