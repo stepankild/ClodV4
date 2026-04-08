@@ -8,6 +8,59 @@ import ArchiveHeatMap from '../../components/RoomMap/ArchiveHeatMap';
 import CrewInfographic from '../../components/Harvest/CrewInfographic';
 
 // ── Extra Nutrition PDF Report ──────────────────────────────────────
+
+function hslToRgb(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+  return [Math.round(f(0) * 255), Math.round(f(8) * 255), Math.round(f(4) * 255)];
+}
+
+function pdfHeatColor(weight, sortedWeights) {
+  if (!weight || sortedWeights.length < 2) return hslToRgb(120, 70, 22);
+  let below = 0;
+  for (const w of sortedWeights) { if (w < weight) below++; else break; }
+  const pct = below / (sortedWeights.length - 1);
+  const stops = [
+    { p: 0, h: 0, s: 85, l: 20 }, { p: 0.25, h: 25, s: 85, l: 24 },
+    { p: 0.50, h: 50, s: 80, l: 26 }, { p: 0.75, h: 85, s: 75, l: 24 },
+    { p: 1, h: 140, s: 70, l: 22 },
+  ];
+  let lo = stops[0], hi = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (pct >= stops[i].p && pct <= stops[i + 1].p) { lo = stops[i]; hi = stops[i + 1]; break; }
+  }
+  const f = hi.p === lo.p ? 0.5 : (pct - lo.p) / (hi.p - lo.p);
+  return hslToRgb(
+    lo.h + (hi.h - lo.h) * f,
+    lo.s + (hi.s - lo.s) * f,
+    lo.l + (hi.l - lo.l) * f
+  );
+}
+
+function pdfHeatTextColor(weight, sortedWeights) {
+  if (!weight || sortedWeights.length < 2) return hslToRgb(120, 60, 75);
+  let below = 0;
+  for (const w of sortedWeights) { if (w < weight) below++; else break; }
+  const pct = below / (sortedWeights.length - 1);
+  const stops = [
+    { p: 0, h: 0, s: 75, l: 75 }, { p: 0.25, h: 25, s: 75, l: 78 },
+    { p: 0.50, h: 50, s: 70, l: 80 }, { p: 0.75, h: 85, s: 65, l: 78 },
+    { p: 1, h: 140, s: 60, l: 75 },
+  ];
+  let lo = stops[0], hi = stops[stops.length - 1];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (pct >= stops[i].p && pct <= stops[i + 1].p) { lo = stops[i]; hi = stops[i + 1]; break; }
+  }
+  const f = hi.p === lo.p ? 0.5 : (pct - lo.p) / (hi.p - lo.p);
+  return hslToRgb(
+    lo.h + (hi.h - lo.h) * f,
+    lo.s + (hi.s - lo.s) * f,
+    lo.l + (hi.l - lo.l) * f
+  );
+}
+
 async function generateNutritionPDF(archive, t, locale) {
   const [{ jsPDF }, { RobotoRegular }, { RobotoBold }] = await Promise.all([
     import('jspdf'),
@@ -21,154 +74,305 @@ async function generateNutritionPDF(archive, t, locale) {
   doc.addFileToVFS('Roboto-Bold.ttf', RobotoBold);
   doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
 
-  const pw = 210, ph = 297, mx = 15;
-  const cw = pw - mx * 2; // content width
-  let y = 15;
-
+  const pw = 210, ph = 297, mx = 12;
+  const cw = pw - mx * 2;
+  const BG = [18, 18, 24];
   const fmtNum = (n) => n != null && Number.isFinite(n) ? Number(n).toLocaleString(locale) : '—';
   const fmtDate = (d) => d ? new Date(d).toLocaleDateString(locale, { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—';
 
-  // Helpers
-  const drawRect = (x, y, w, h, r, g, b) => { doc.setFillColor(r, g, b); doc.rect(x, y, w, h, 'F'); };
-  const drawLine = (x1, y1, x2, y2, r, g, b) => { doc.setDrawColor(r, g, b); doc.setLineWidth(0.3); doc.line(x1, y1, x2, y2); };
+  const rect = (x, y, w, h, rgb) => { doc.setFillColor(...rgb); doc.rect(x, y, w, h, 'F'); };
+  const roundRect = (x, y, w, h, r, rgb) => { doc.setFillColor(...rgb); doc.roundedRect(x, y, w, h, r, r, 'F'); };
+  const pageBg = () => rect(0, 0, pw, ph, BG);
+  const footer = () => {
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(7); doc.setTextColor(80, 80, 100);
+    doc.text('True Source  ·  Extra Nutrition Report', mx, ph - 8);
+    doc.text(new Date().toLocaleString(locale), pw - mx, ph - 8, { align: 'right' });
+  };
 
   // ── Data prep ──
   const extraSet = new Set(archive.extraNutritionPlants);
   const allPlants = (archive.harvestMapData?.plants || []).filter(p => p.wetWeight > 0);
-  const withNutr = allPlants.filter(p => extraSet.has(p.plantNumber)).sort((a, b) => b.wetWeight - a.wetWeight);
-  const withoutNutr = allPlants.filter(p => !extraSet.has(p.plantNumber)).sort((a, b) => b.wetWeight - a.wetWeight);
+  const withN = allPlants.filter(p => extraSet.has(p.plantNumber));
+  const withoutN = allPlants.filter(p => !extraSet.has(p.plantNumber));
+  const sortedW = allPlants.map(p => p.wetWeight).sort((a, b) => a - b);
 
-  const calcGroup = (arr) => {
+  const calcG = (arr) => {
     if (!arr.length) return { avg: 0, median: 0, min: 0, max: 0, total: 0, count: 0 };
     const w = arr.map(p => p.wetWeight).sort((a, b) => a - b);
     const total = w.reduce((s, v) => s + v, 0);
-    const median = w.length % 2 === 0
-      ? Math.round((w[w.length / 2 - 1] + w[w.length / 2]) / 2)
-      : w[Math.floor(w.length / 2)];
+    const median = w.length % 2 === 0 ? Math.round((w[w.length / 2 - 1] + w[w.length / 2]) / 2) : w[Math.floor(w.length / 2)];
     return { avg: Math.round(total / w.length), median, min: w[0], max: w[w.length - 1], total, count: w.length };
   };
 
-  const sW = calcGroup(withNutr);
-  const sWO = calcGroup(withoutNutr);
+  const sW = calcG(withN);
+  const sWO = calcG(withoutN);
   const diff = sW.avg - sWO.avg;
   const diffPct = sWO.avg > 0 ? ((diff / sWO.avg) * 100).toFixed(1) : '0.0';
   const medDiff = sW.median - sWO.median;
   const medDiffPct = sWO.median > 0 ? ((medDiff / sWO.median) * 100).toFixed(1) : '0.0';
-
-  // ── Page 1: Header ──
-  drawRect(0, 0, pw, 42, 24, 24, 32);
-  doc.setFont('Roboto', 'bold');
-  doc.setFontSize(18);
-  doc.setTextColor(255, 255, 255);
-  doc.text(t('archive.nutritionReport'), mx, 18);
-
-  doc.setFont('Roboto', 'normal');
-  doc.setFontSize(11);
-  doc.setTextColor(180, 180, 200);
+  const diffColor = diff > 0 ? [100, 230, 120] : diff < 0 ? [230, 100, 100] : [160, 160, 180];
   const roomLabel = archive.roomName || `${t('archive.room')} ${archive.roomNumber}`;
-  doc.text(`${roomLabel}  ·  ${archive.strain || ''}  ·  ${fmtDate(archive.harvestDate)}`, mx, 28);
-  doc.text(`${t('archive.plantsLabel')}: ${archive.plantsCount}  ·  ${t('archive.floweringDays')}: ${archive.actualDays}`, mx, 36);
 
-  y = 52;
+  // ══════════ PAGE 1: Header + Room Map ══════════
+  pageBg();
+  let y = 12;
 
-  // ── Summary blocks ──
+  // Header bar
+  roundRect(mx, y, cw, 22, 3, [26, 26, 36]);
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(16); doc.setTextColor(255, 255, 255);
+  doc.text(t('archive.nutritionReport'), mx + 6, y + 10);
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(9); doc.setTextColor(140, 140, 170);
+  doc.text(`${roomLabel}  ·  ${archive.strain || ''}  ·  ${fmtDate(archive.harvestDate)}  ·  ${archive.plantsCount} ${t('common.pcs')}  ·  ${archive.actualDays} ${t('archive.daysLabel')}`, mx + 6, y + 18);
+  y += 28;
+
+  // ── Room map ──
+  const { customRows = [], plants = [] } = archive.harvestMapData || {};
+  if (customRows.length && plants.length) {
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(220, 220, 240);
+    doc.text(t('archive.harvestMap'), mx, y + 4);
+
+    // Legend
+    doc.setFontSize(7); doc.setFont('Roboto', 'normal');
+    const legX = mx + cw - 50;
+    roundRect(legX - 2, y - 1, 52, 7, 1, [30, 30, 40]);
+    doc.setFillColor(200, 170, 50); doc.rect(legX, y + 0.5, 3, 3, 'F');
+    doc.setTextColor(200, 170, 50); doc.text(t('harvest.extraNutrition'), legX + 5, y + 3.5);
+    doc.setFillColor(70, 70, 90); doc.rect(legX + 32, y + 0.5, 3, 3, 'F');
+    doc.setTextColor(120, 120, 150); doc.text(t('harvest.withoutNutrition').substring(0, 6), legX + 37, y + 3.5);
+    y += 9;
+
+    // Build position map
+    const posMap = {};
+    plants.forEach(p => { posMap[`${p.row}:${p.position}`] = p; });
+
+    // Calculate cell size to fit in available width
+    const totalCols = customRows.reduce((max, r) => Math.max(max, r.cols || 1), 0);
+    const numRows = customRows.length;
+    const gapBetweenRows = 3;
+    const mapWidth = cw;
+    const rowNameW = 18;
+    const availW = mapWidth - rowNameW;
+    const cellGap = 0.8;
+    const cellSize = Math.min((availW - (totalCols - 1) * cellGap) / totalCols, 10);
+    const mapAvailH = ph - y - 20; // leave room for footer
+    const totalGridRows = customRows.reduce((sum, r) => sum + (r.rows || 1), 0);
+    const cellH = Math.min(cellSize, (mapAvailH - (numRows - 1) * gapBetweenRows - numRows * 5) / totalGridRows);
+    const cs = Math.min(cellSize, cellH, 10);
+
+    customRows.forEach((row, rowIdx) => {
+      const cols = row.cols || 1;
+      const rowRows = row.rows || 1;
+
+      // Row label
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(6.5); doc.setTextColor(100, 100, 130);
+      doc.text(row.name || `${t('roomMap.rowDefault', { num: rowIdx + 1 })}`, mx, y + cs * 0.6);
+
+      for (let rr = 0; rr < rowRows; rr++) {
+        for (let cc = 0; cc < cols; cc++) {
+          const posIdx = rr * cols + cc;
+          const plant = posMap[`${rowIdx}:${posIdx}`];
+          const cx = mx + rowNameW + cc * (cs + cellGap);
+          const cy = y + rr * (cs + cellGap);
+
+          if (!plant || !plant.wetWeight) {
+            roundRect(cx, cy, cs, cs, 1, [28, 28, 36]);
+            continue;
+          }
+
+          const isNutr = extraSet.has(plant.plantNumber);
+          const bgColor = pdfHeatColor(plant.wetWeight, sortedW);
+          const txtColor = pdfHeatTextColor(plant.wetWeight, sortedW);
+
+          roundRect(cx, cy, cs, cs, 1, bgColor);
+
+          // Yellow border for nutrition plants
+          if (isNutr) {
+            doc.setDrawColor(210, 180, 50);
+            doc.setLineWidth(0.6);
+            doc.roundedRect(cx, cy, cs, cs, 1, 1, 'S');
+          }
+
+          // Plant number
+          doc.setFont('Roboto', 'bold'); doc.setFontSize(cs > 7 ? 5.5 : 4.5);
+          doc.setTextColor(...txtColor);
+          doc.text(String(plant.plantNumber), cx + cs / 2, cy + cs * 0.38, { align: 'center' });
+
+          // Weight
+          doc.setFont('Roboto', 'normal'); doc.setFontSize(cs > 7 ? 4.5 : 3.8);
+          doc.text(`${plant.wetWeight}`, cx + cs / 2, cy + cs * 0.7, { align: 'center' });
+        }
+      }
+
+      y += rowRows * (cs + cellGap) + gapBetweenRows;
+    });
+
+    y += 2;
+  }
+
+  // Legend gradient bar
+  if (y + 8 < ph - 15) {
+    const gradW = cw * 0.6;
+    const gradX = mx + (cw - gradW) / 2;
+    const gradSteps = 40;
+    const stepW = gradW / gradSteps;
+    for (let i = 0; i < gradSteps; i++) {
+      const frac = i / (gradSteps - 1);
+      const h = frac * 140;
+      const s = 85 - frac * 15;
+      const l = 20 + frac * 2;
+      const rgb = hslToRgb(h, s, l);
+      rect(gradX + i * stepW, y, stepW + 0.1, 3, rgb);
+    }
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(6); doc.setTextColor(100, 100, 130);
+    const gMin = sortedW.length ? sortedW[0] : 0;
+    const gMax = sortedW.length ? sortedW[sortedW.length - 1] : 0;
+    doc.text(`${gMin}${t('common.grams')}`, gradX, y + 7);
+    doc.text(`${gMax}${t('common.grams')}`, gradX + gradW, y + 7, { align: 'right' });
+    y += 10;
+  }
+
+  footer();
+
+  // ══════════ PAGE 2: Statistics + Charts ══════════
+  doc.addPage();
+  pageBg();
+  y = 12;
+
+  // ── Summary cards ──
   const blockW = (cw - 6) / 3;
 
-  // With nutrition block
-  drawRect(mx, y, blockW, 30, 40, 60, 30);
-  doc.setFont('Roboto', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(180, 210, 150);
-  doc.text(t('harvest.withNutrition'), mx + blockW / 2, y + 8, { align: 'center' });
-  doc.setFont('Roboto', 'bold');
-  doc.setFontSize(20);
-  doc.setTextColor(130, 230, 100);
-  doc.text(`${fmtNum(sW.avg)}${t('common.grams')}`, mx + blockW / 2, y + 20, { align: 'center' });
-  doc.setFont('Roboto', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(140, 160, 130);
-  doc.text(`${sW.count} ${t('common.pcs')}  ·  Σ${fmtNum(sW.total)}${t('common.grams')}`, mx + blockW / 2, y + 27, { align: 'center' });
+  // With nutrition
+  roundRect(mx, y, blockW, 28, 3, [28, 50, 32]);
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(7.5); doc.setTextColor(150, 200, 130);
+  doc.text(t('harvest.withNutrition'), mx + blockW / 2, y + 7, { align: 'center' });
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(22); doc.setTextColor(110, 230, 100);
+  doc.text(`${fmtNum(sW.avg)}${t('common.grams')}`, mx + blockW / 2, y + 19, { align: 'center' });
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(6.5); doc.setTextColor(110, 140, 100);
+  doc.text(`${sW.count} ${t('common.pcs')}  ·  ${fmtNum(sW.total)}${t('common.grams')}`, mx + blockW / 2, y + 25, { align: 'center' });
 
-  // Without nutrition block
+  // Without nutrition
   const bx2 = mx + blockW + 3;
-  drawRect(bx2, y, blockW, 30, 40, 40, 48);
-  doc.setFontSize(8);
-  doc.setTextColor(160, 160, 180);
-  doc.text(t('harvest.withoutNutrition'), bx2 + blockW / 2, y + 8, { align: 'center' });
-  doc.setFont('Roboto', 'bold');
-  doc.setFontSize(20);
-  doc.setTextColor(200, 200, 220);
-  doc.text(`${fmtNum(sWO.avg)}${t('common.grams')}`, bx2 + blockW / 2, y + 20, { align: 'center' });
-  doc.setFont('Roboto', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(140, 140, 160);
-  doc.text(`${sWO.count} ${t('common.pcs')}  ·  Σ${fmtNum(sWO.total)}${t('common.grams')}`, bx2 + blockW / 2, y + 27, { align: 'center' });
+  roundRect(bx2, y, blockW, 28, 3, [30, 30, 40]);
+  doc.setFontSize(7.5); doc.setTextColor(130, 130, 160);
+  doc.text(t('harvest.withoutNutrition'), bx2 + blockW / 2, y + 7, { align: 'center' });
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(22); doc.setTextColor(190, 190, 210);
+  doc.text(`${fmtNum(sWO.avg)}${t('common.grams')}`, bx2 + blockW / 2, y + 19, { align: 'center' });
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(6.5); doc.setTextColor(110, 110, 140);
+  doc.text(`${sWO.count} ${t('common.pcs')}  ·  ${fmtNum(sWO.total)}${t('common.grams')}`, bx2 + blockW / 2, y + 25, { align: 'center' });
 
-  // Difference block
+  // Difference
   const bx3 = mx + (blockW + 3) * 2;
-  const diffBg = diff > 0 ? [30, 60, 40] : diff < 0 ? [60, 30, 30] : [40, 40, 48];
-  drawRect(bx3, y, blockW, 30, ...diffBg);
-  doc.setFontSize(8);
-  doc.setTextColor(180, 180, 200);
-  doc.text(t('harvest.difference'), bx3 + blockW / 2, y + 8, { align: 'center' });
-  doc.setFont('Roboto', 'bold');
-  doc.setFontSize(20);
-  const diffColor = diff > 0 ? [100, 230, 120] : diff < 0 ? [230, 100, 100] : [180, 180, 200];
-  doc.setTextColor(...diffColor);
-  doc.text(`${diff > 0 ? '+' : ''}${fmtNum(diff)}${t('common.grams')}`, bx3 + blockW / 2, y + 20, { align: 'center' });
-  doc.setFont('Roboto', 'normal');
-  doc.setFontSize(10);
-  doc.text(`${diff > 0 ? '+' : ''}${diffPct}%`, bx3 + blockW / 2, y + 27, { align: 'center' });
+  const diffBg = diff > 0 ? [25, 50, 30] : diff < 0 ? [50, 25, 25] : [30, 30, 40];
+  roundRect(bx3, y, blockW, 28, 3, diffBg);
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(7.5); doc.setTextColor(160, 160, 180);
+  doc.text(t('harvest.difference'), bx3 + blockW / 2, y + 7, { align: 'center' });
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(22); doc.setTextColor(...diffColor);
+  doc.text(`${diff > 0 ? '+' : ''}${fmtNum(diff)}${t('common.grams')}`, bx3 + blockW / 2, y + 19, { align: 'center' });
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(10); doc.setTextColor(...diffColor);
+  doc.text(`${diff > 0 ? '+' : ''}${diffPct}%`, bx3 + blockW / 2, y + 25, { align: 'center' });
 
-  y += 38;
+  y += 35;
+
+  // ── Bar chart: avg / median / min / max comparison ──
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(10); doc.setTextColor(220, 220, 240);
+  doc.text(t('archive.nutritionReportDetailed'), mx, y + 4);
+  y += 10;
+
+  const barMetrics = [
+    { label: t('archive.avgWeightLabel'), vW: sW.avg, vWO: sWO.avg },
+    { label: t('archive.medianLabel'), vW: sW.median, vWO: sWO.median },
+    { label: t('archive.minWeightLabel'), vW: sW.min, vWO: sWO.min },
+    { label: t('archive.maxWeightLabel'), vW: sW.max, vWO: sWO.max },
+    { label: t('archive.totalWeightLabel'), vW: sW.total, vWO: sWO.total },
+  ];
+
+  const chartH = 40;
+  const chartX = mx + 30;
+  const chartW = cw - 30;
+  const barGroupW = chartW / barMetrics.length;
+  const barW = barGroupW * 0.3;
+  const barGap = 2;
+  const maxVal = Math.max(...barMetrics.map(m => Math.max(m.vW, m.vWO)), 1);
+
+  // Chart background
+  roundRect(mx, y - 2, cw, chartH + 18, 3, [24, 24, 34]);
+
+  // Grid lines
+  doc.setDrawColor(40, 40, 55); doc.setLineWidth(0.15);
+  for (let i = 0; i <= 4; i++) {
+    const gy = y + chartH - (chartH * i / 4);
+    doc.line(chartX, gy, mx + cw - 4, gy);
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(5); doc.setTextColor(70, 70, 95);
+    doc.text(String(Math.round(maxVal * i / 4)), chartX - 2, gy + 1.5, { align: 'right' });
+  }
+
+  barMetrics.forEach((m, i) => {
+    const gx = chartX + i * barGroupW + barGroupW * 0.2;
+    const h1 = maxVal > 0 ? (m.vW / maxVal) * chartH : 0;
+    const h2 = maxVal > 0 ? (m.vWO / maxVal) * chartH : 0;
+
+    // Bar: with nutrition (yellow/green)
+    if (h1 > 0) {
+      const by = y + chartH - h1;
+      roundRect(gx, by, barW, h1, 1, [180, 160, 50]);
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(4.5); doc.setTextColor(230, 210, 80);
+      doc.text(fmtNum(m.vW), gx + barW / 2, by - 1.5, { align: 'center' });
+    }
+
+    // Bar: without nutrition (gray)
+    if (h2 > 0) {
+      const by = y + chartH - h2;
+      roundRect(gx + barW + barGap, by, barW, h2, 1, [60, 60, 80]);
+      doc.setFont('Roboto', 'bold'); doc.setFontSize(4.5); doc.setTextColor(140, 140, 170);
+      doc.text(fmtNum(m.vWO), gx + barW + barGap + barW / 2, by - 1.5, { align: 'center' });
+    }
+
+    // Label
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(5.5); doc.setTextColor(110, 110, 140);
+    doc.text(m.label, gx + barW + barGap / 2, y + chartH + 5, { align: 'center' });
+  });
+
+  // Chart legend
+  const legY = y + chartH + 9;
+  doc.setFillColor(180, 160, 50); doc.rect(chartX, legY, 3, 2.5, 'F');
+  doc.setFont('Roboto', 'normal'); doc.setFontSize(5.5); doc.setTextColor(180, 160, 50);
+  doc.text(t('harvest.withNutrition'), chartX + 5, legY + 2);
+  doc.setFillColor(60, 60, 80); doc.rect(chartX + 40, legY, 3, 2.5, 'F');
+  doc.setTextColor(110, 110, 140);
+  doc.text(t('harvest.withoutNutrition'), chartX + 45, legY + 2);
+
+  y += chartH + 24;
 
   // ── Metrics table ──
-  doc.setFont('Roboto', 'bold');
-  doc.setFontSize(11);
-  doc.setTextColor(255, 255, 255);
-  doc.text(t('archive.nutritionReportDetailed'), mx, y);
-  y += 6;
-
-  // Table header
-  drawRect(mx, y, cw, 8, 35, 35, 45);
-  doc.setFont('Roboto', 'bold');
-  doc.setFontSize(8);
-  doc.setTextColor(160, 160, 180);
-  const colX = [mx + 3, mx + 55, mx + 105, mx + 145];
+  roundRect(mx, y, cw, 8, 2, [28, 28, 40]);
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(7.5); doc.setTextColor(140, 140, 170);
+  const colX = [mx + 4, mx + 50, mx + 95, mx + 140];
   doc.text(t('archive.metric'), colX[0], y + 5.5);
-  doc.text(`🧪 ${t('harvest.withNutrition')}`, colX[1], y + 5.5);
+  doc.text(t('harvest.withNutrition'), colX[1], y + 5.5);
   doc.text(t('harvest.withoutNutrition'), colX[2], y + 5.5);
   doc.text(t('harvest.difference'), colX[3], y + 5.5);
   y += 8;
 
-  // Table rows
-  const rows = [
-    [t('archive.plantsLabel'), String(sW.count), String(sWO.count), '—'],
-    [t('archive.avgWeightLabel'), `${fmtNum(sW.avg)}${t('common.grams')}`, `${fmtNum(sWO.avg)}${t('common.grams')}`, `${diff > 0 ? '+' : ''}${fmtNum(diff)}${t('common.grams')} (${diff > 0 ? '+' : ''}${diffPct}%)`],
-    [t('archive.medianLabel'), `${fmtNum(sW.median)}${t('common.grams')}`, `${fmtNum(sWO.median)}${t('common.grams')}`, `${medDiff > 0 ? '+' : ''}${fmtNum(medDiff)}${t('common.grams')} (${medDiff > 0 ? '+' : ''}${medDiffPct}%)`],
-    [t('archive.minWeightLabel'), `${fmtNum(sW.min)}${t('common.grams')}`, `${fmtNum(sWO.min)}${t('common.grams')}`, '—'],
-    [t('archive.maxWeightLabel'), `${fmtNum(sW.max)}${t('common.grams')}`, `${fmtNum(sWO.max)}${t('common.grams')}`, '—'],
-    [t('archive.totalWeightLabel'), `${fmtNum(sW.total)}${t('common.grams')}`, `${fmtNum(sWO.total)}${t('common.grams')}`, `Σ${fmtNum(sW.total + sWO.total)}${t('common.grams')}`],
+  const tableRows = [
+    [t('archive.plantsLabel'), String(sW.count), String(sWO.count), '—', 0],
+    [t('archive.avgWeightLabel'), `${fmtNum(sW.avg)}${t('common.grams')}`, `${fmtNum(sWO.avg)}${t('common.grams')}`, `${diff > 0 ? '+' : ''}${fmtNum(diff)}${t('common.grams')} (${diff > 0 ? '+' : ''}${diffPct}%)`, diff],
+    [t('archive.medianLabel'), `${fmtNum(sW.median)}${t('common.grams')}`, `${fmtNum(sWO.median)}${t('common.grams')}`, `${medDiff > 0 ? '+' : ''}${fmtNum(medDiff)}${t('common.grams')} (${medDiff > 0 ? '+' : ''}${medDiffPct}%)`, medDiff],
+    [t('archive.minWeightLabel'), `${fmtNum(sW.min)}${t('common.grams')}`, `${fmtNum(sWO.min)}${t('common.grams')}`, '—', 0],
+    [t('archive.maxWeightLabel'), `${fmtNum(sW.max)}${t('common.grams')}`, `${fmtNum(sWO.max)}${t('common.grams')}`, '—', 0],
+    [t('archive.totalWeightLabel'), `${fmtNum(sW.total)}${t('common.grams')}`, `${fmtNum(sWO.total)}${t('common.grams')}`, `${fmtNum(sW.total + sWO.total)}${t('common.grams')}`, 0],
   ];
 
-  rows.forEach((row, i) => {
-    const isEven = i % 2 === 0;
-    if (isEven) drawRect(mx, y, cw, 7, 30, 30, 38);
-    doc.setFont('Roboto', 'normal');
-    doc.setFontSize(8);
-    doc.setTextColor(160, 160, 180);
-    doc.text(row[0], colX[0], y + 5);
-    doc.setTextColor(230, 210, 120);
-    doc.text(row[1], colX[1], y + 5);
-    doc.setTextColor(200, 200, 220);
-    doc.text(row[2], colX[2], y + 5);
-    // Diff column color
+  tableRows.forEach((row, i) => {
+    if (i % 2 === 0) roundRect(mx, y, cw, 7, 0, [24, 24, 32]);
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(7.5);
+    doc.setTextColor(130, 130, 160); doc.text(row[0], colX[0], y + 5);
+    doc.setTextColor(220, 200, 100); doc.text(row[1], colX[1], y + 5);
+    doc.setTextColor(180, 180, 200); doc.text(row[2], colX[2], y + 5);
     if (row[3] !== '—') {
-      const isDiffRow = i === 1 || i === 2;
-      const val = isDiffRow ? (i === 1 ? diff : medDiff) : 0;
-      doc.setTextColor(val > 0 ? 100 : val < 0 ? 230 : 160, val > 0 ? 230 : val < 0 ? 100 : 160, val > 0 ? 120 : val < 0 ? 100 : 180);
+      const v = row[4];
+      doc.setTextColor(v > 0 ? 100 : v < 0 ? 230 : 130, v > 0 ? 230 : v < 0 ? 100 : 130, v > 0 ? 120 : v < 0 ? 100 : 160);
     } else {
-      doc.setTextColor(100, 100, 120);
+      doc.setTextColor(70, 70, 90);
     }
     doc.text(row[3], colX[3], y + 5);
     y += 7;
@@ -176,72 +380,61 @@ async function generateNutritionPDF(archive, t, locale) {
 
   y += 6;
 
-  // ── Per-plant lists ──
-  const listH = Math.max(withNutr.length, withoutNutr.length) * 5 + 12;
-  const needsNewPage = y + listH > ph - 25;
-  if (needsNewPage) { doc.addPage(); y = 15; }
+  // ── Weight distribution histogram ──
+  const allW_nutr = withN.map(p => p.wetWeight).sort((a, b) => a - b);
+  const allW_noNutr = withoutN.map(p => p.wetWeight).sort((a, b) => a - b);
+  if (allW_nutr.length >= 2 || allW_noNutr.length >= 2) {
+    const allWeights = [...allW_nutr, ...allW_noNutr];
+    const hMin = Math.min(...allWeights);
+    const hMax = Math.max(...allWeights);
+    const bucketCount = 8;
+    const bucketSize = (hMax - hMin) / bucketCount || 1;
 
-  const halfW = (cw - 4) / 2;
+    const bucketsN = Array(bucketCount).fill(0);
+    const bucketsWO = Array(bucketCount).fill(0);
+    allW_nutr.forEach(w => { bucketsN[Math.min(Math.floor((w - hMin) / bucketSize), bucketCount - 1)]++; });
+    allW_noNutr.forEach(w => { bucketsWO[Math.min(Math.floor((w - hMin) / bucketSize), bucketCount - 1)]++; });
+    const maxBucket = Math.max(...bucketsN, ...bucketsWO, 1);
 
-  // Left: with nutrition
-  doc.setFont('Roboto', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(230, 210, 120);
-  doc.text(`🧪 ${t('harvest.withNutrition')} (${sW.count})`, mx, y + 4);
+    doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(200, 200, 220);
+    doc.text(t('roomMap.weightDistribution'), mx, y + 4);
+    y += 8;
 
-  // Right: without nutrition
-  doc.setTextColor(180, 180, 200);
-  doc.text(`${t('harvest.withoutNutrition')} (${sWO.count})`, mx + halfW + 4, y + 4);
+    const histH = 32;
+    const histX = mx + 8;
+    const histW = cw - 16;
+    roundRect(mx, y - 2, cw, histH + 16, 3, [24, 24, 34]);
 
-  y += 7;
-  drawLine(mx, y, mx + cw, y, 60, 60, 70);
-  y += 2;
+    const bw = histW / bucketCount;
+    const singleBarW = bw * 0.35;
 
-  const startY = y;
-  const maxPlants = Math.min(Math.max(withNutr.length, withoutNutr.length), Math.floor((ph - 30 - y) / 5));
+    for (let i = 0; i < bucketCount; i++) {
+      const bx = histX + i * bw;
+      const h1 = maxBucket > 0 ? (bucketsN[i] / maxBucket) * histH : 0;
+      const h2 = maxBucket > 0 ? (bucketsWO[i] / maxBucket) * histH : 0;
 
-  // With nutrition column
-  doc.setFont('Roboto', 'normal');
-  doc.setFontSize(7.5);
-  let ly = startY;
-  withNutr.slice(0, maxPlants).forEach((p, i) => {
-    if (i % 2 === 0) drawRect(mx, ly - 0.5, halfW, 5, 30, 35, 28);
-    doc.setTextColor(140, 140, 160);
-    doc.text(`#${p.plantNumber}${p.strain ? `  ${p.strain}` : ''}`, mx + 2, ly + 3);
-    doc.setTextColor(230, 210, 120);
-    doc.text(`${fmtNum(p.wetWeight)}${t('common.grams')}`, mx + halfW - 2, ly + 3, { align: 'right' });
-    ly += 5;
-  });
-  if (withNutr.length > maxPlants) {
-    doc.setTextColor(100, 100, 120);
-    doc.text(`... +${withNutr.length - maxPlants}`, mx + 2, ly + 3);
+      if (h1 > 0) roundRect(bx + bw * 0.1, y + histH - h1, singleBarW, h1, 1, [180, 160, 50]);
+      if (h2 > 0) roundRect(bx + bw * 0.1 + singleBarW + 1, y + histH - h2, singleBarW, h2, 1, [60, 60, 80]);
+
+      // Bucket label
+      doc.setFont('Roboto', 'normal'); doc.setFontSize(4.5); doc.setTextColor(90, 90, 110);
+      const from = Math.round(hMin + i * bucketSize);
+      const to = Math.round(hMin + (i + 1) * bucketSize);
+      doc.text(`${from}-${to}`, bx + bw / 2, y + histH + 4, { align: 'center' });
+    }
+
+    doc.setFont('Roboto', 'normal'); doc.setFontSize(5); doc.setTextColor(80, 80, 100);
+    doc.text(t('common.grams'), histX + histW / 2, y + histH + 8, { align: 'center' });
+
+    y += histH + 16;
   }
-
-  // Without nutrition column
-  ly = startY;
-  const rx = mx + halfW + 4;
-  withoutNutr.slice(0, maxPlants).forEach((p, i) => {
-    if (i % 2 === 0) drawRect(rx, ly - 0.5, halfW, 5, 30, 30, 38);
-    doc.setTextColor(140, 140, 160);
-    doc.text(`#${p.plantNumber}${p.strain ? `  ${p.strain}` : ''}`, rx + 2, ly + 3);
-    doc.setTextColor(200, 200, 220);
-    doc.text(`${fmtNum(p.wetWeight)}${t('common.grams')}`, rx + halfW - 2, ly + 3, { align: 'right' });
-    ly += 5;
-  });
-  if (withoutNutr.length > maxPlants) {
-    doc.setTextColor(100, 100, 120);
-    doc.text(`... +${withoutNutr.length - maxPlants}`, rx + 2, ly + 3);
-  }
-
-  y = Math.max(ly, startY + maxPlants * 5) + 8;
 
   // ── Conclusion ──
-  if (y + 20 > ph - 20) { doc.addPage(); y = 15; }
-  const concBg = diff > 0 ? [30, 55, 35] : diff < 0 ? [55, 30, 30] : [40, 40, 48];
-  drawRect(mx, y, cw, 16, ...concBg);
-  doc.setFont('Roboto', 'bold');
-  doc.setFontSize(9);
-  doc.setTextColor(...diffColor);
+  y += 4;
+  if (y + 18 > ph - 15) { doc.addPage(); pageBg(); y = 15; }
+  const concBg = diff > 0 ? [22, 45, 28] : diff < 0 ? [45, 22, 22] : [28, 28, 38];
+  roundRect(mx, y, cw, 16, 3, concBg);
+  doc.setFont('Roboto', 'bold'); doc.setFontSize(9); doc.setTextColor(...diffColor);
   const conclusion = diff > 0
     ? t('archive.nutritionPositive', { pct: diffPct, grams: diff })
     : diff < 0
@@ -250,16 +443,10 @@ async function generateNutritionPDF(archive, t, locale) {
   const lines = doc.splitTextToSize(conclusion, cw - 10);
   doc.text(lines, mx + 5, y + (lines.length === 1 ? 10 : 6));
 
-  // ── Footer ──
-  const footerY = ph - 10;
-  doc.setFont('Roboto', 'normal');
-  doc.setFontSize(7);
-  doc.setTextColor(100, 100, 120);
-  doc.text('True Source · Extra Nutrition Report', mx, footerY);
-  doc.text(new Date().toLocaleString(locale), pw - mx, footerY, { align: 'right' });
+  footer();
 
   // ── Save ──
-  const fname = `nutrition-report-${roomLabel}-${fmtDate(archive.harvestDate).replace(/\//g, '-')}.pdf`;
+  const fname = `nutrition-report-${roomLabel}-${fmtDate(archive.harvestDate).replace(/[/.]/g, '-')}.pdf`;
   doc.save(fname);
 }
 
