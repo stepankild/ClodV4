@@ -5,8 +5,8 @@ import IrrigationLog from '../models/IrrigationLog.js';
 import Zone from '../models/Zone.js';
 import { getZoneState } from '../mqtt/index.js';
 
-// Cooldown tracking: "zoneId:metric" → last alert timestamp
-const lastAlertTime = new Map();
+// Cooldown tracking: "zoneId:metric" → { lastSent, count }
+const alertCooldowns = new Map();
 // Track which metrics are currently in alert state (for recovery messages)
 const activeAlerts = new Map(); // "zoneId:metric" → true
 // Track light state for anomaly detection: zoneId → { isDay, stableSince }
@@ -100,12 +100,35 @@ function formatTime() {
 }
 
 /**
- * Check if cooldown has passed for a specific alert
+ * Escalating cooldown: 1st repeat after cooldownMin, 2nd after 60min, then every 3h
+ * Returns true if enough time has passed to send next alert
  */
 function cooldownPassed(key, cooldownMin) {
-  const last = lastAlertTime.get(key);
-  if (!last) return true;
-  return Date.now() - last > cooldownMin * 60 * 1000;
+  const cd = alertCooldowns.get(key);
+  if (!cd) return true;
+  const count = cd.count || 0;
+  let waitMin;
+  if (count <= 1) waitMin = cooldownMin;       // 1st repeat: configured (default 30min)
+  else if (count === 2) waitMin = 60;           // 2nd repeat: 1 hour
+  else waitMin = 180;                           // 3rd+: every 3 hours
+  return Date.now() - cd.lastSent > waitMin * 60 * 1000;
+}
+
+/**
+ * Record that an alert was sent (increments escalation counter)
+ */
+function recordAlert(key) {
+  const cd = alertCooldowns.get(key) || { lastSent: 0, count: 0 };
+  cd.lastSent = Date.now();
+  cd.count += 1;
+  alertCooldowns.set(key, cd);
+}
+
+/**
+ * Reset cooldown when alert resolves (value returns to normal)
+ */
+function resetCooldown(key) {
+  alertCooldowns.delete(key);
 }
 
 /**
@@ -138,7 +161,7 @@ async function checkAlerts() {
           const msg = `🔴 <b>Зона: ${zoneName}</b>\nДатчики не отвечают >${offlineMinutes} мин\n🕐 ${formatTime()}`;
           const ok = await sendTelegram(chatId, msg);
           if (ok) {
-            lastAlertTime.set(key, Date.now());
+            recordAlert(key);
             activeAlerts.set(key, true);
             await AlertLog.create({ zoneId, metric: 'offline', type: 'alert', message: msg });
           }
@@ -147,6 +170,7 @@ async function checkAlerts() {
           const msg = `✅ <b>Зона: ${zoneName}</b>\n🔌 Датчики снова онлайн\n🕐 ${formatTime()}`;
           await sendTelegram(chatId, msg);
           activeAlerts.delete(key);
+          resetCooldown(key);
           await AlertLog.create({ zoneId, metric: 'offline', type: 'recovery', message: msg });
         }
       }
@@ -188,7 +212,7 @@ async function checkAlerts() {
             const msg = `⚠️ <b>Зона: ${zoneName}</b>\n${label}: ${displayValue}${unit} (${threshold})\n🕐 ${formatTime()}`;
             const ok = await sendTelegram(chatId, msg);
             if (ok) {
-              lastAlertTime.set(key, Date.now());
+              recordAlert(key);
               activeAlerts.set(key, true);
               const thresholdStr = rule.min != null && value < rule.min ? `<${rule.min}` : `>${rule.max}`;
               await AlertLog.create({ zoneId, metric: rule.metric, type: 'alert', value, threshold: thresholdStr, message: msg });
@@ -199,6 +223,7 @@ async function checkAlerts() {
           const msg = `✅ <b>Зона: ${zoneName}</b>\n${label} в норме: ${displayValue}${unit}\n🕐 ${formatTime()}`;
           await sendTelegram(chatId, msg);
           activeAlerts.delete(key);
+          resetCooldown(key);
           await AlertLog.create({ zoneId, metric: rule.metric, type: 'recovery', value, message: msg });
         }
       }
@@ -233,7 +258,7 @@ async function checkAlerts() {
                 const msg = `💡 <b>Зона: ${zoneName}</b>\n${eventType}\n☀️ ${lux.toFixed(0)} lux\n🕐 ${formatTime()}`;
                 const ok = await sendTelegram(chatId, msg);
                 if (ok) {
-                  lastAlertTime.set(key, Date.now());
+                  recordAlert(key);
                   await AlertLog.create({ zoneId, metric: 'light_anomaly', type: 'alert', value: lux, message: msg });
                 }
               }
