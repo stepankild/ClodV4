@@ -14,6 +14,88 @@ const lightState = new Map();
 
 const LIGHT_THRESHOLD = 50; // lux — above = day, below = night
 
+// Learned light schedule cache: zoneId → { onHour, offHour, dayLength, updatedAt }
+const learnedLightSchedule = new Map();
+const SCHEDULE_CACHE_TTL = 60 * 60 * 1000; // refresh every 1 hour
+
+/**
+ * Learn the normal light schedule from last 7 days of data.
+ * Returns { onHour, offHour, dayLengthH } or null if not enough data.
+ */
+async function learnLightSchedule(zoneId) {
+  const cached = learnedLightSchedule.get(zoneId);
+  if (cached && Date.now() - cached.updatedAt < SCHEDULE_CACHE_TTL) return cached;
+
+  try {
+    const since = new Date(Date.now() - 7 * 24 * 3600 * 1000);
+    const readings = await SensorReading.find({
+      zoneId,
+      light: { $ne: null },
+      timestamp: { $gte: since }
+    }).sort({ timestamp: 1 }).select('light timestamp').lean();
+
+    if (readings.length < 100) return null; // not enough data
+
+    // Group by date (Prague timezone), find transitions per day
+    const days = new Map(); // dateStr → [{time, isDay}]
+    for (const r of readings) {
+      const d = new Date(r.timestamp);
+      const prague = new Date(d.toLocaleString('en-US', { timeZone: 'Europe/Prague' }));
+      const dateStr = prague.toDateString();
+      if (!days.has(dateStr)) days.set(dateStr, []);
+      days.get(dateStr).push({
+        hour: prague.getHours() + prague.getMinutes() / 60,
+        isDay: r.light > LIGHT_THRESHOLD
+      });
+    }
+
+    const onTimes = [];
+    const offTimes = [];
+
+    for (const [, dayReadings] of days) {
+      if (dayReadings.length < 20) continue; // skip incomplete days
+
+      // Find first night→day transition (lights ON)
+      for (let i = 1; i < dayReadings.length; i++) {
+        if (!dayReadings[i - 1].isDay && dayReadings[i].isDay) {
+          onTimes.push(dayReadings[i].hour);
+          break;
+        }
+      }
+      // Find first day→night transition (lights OFF)
+      // Search from readings that are after the ON time
+      let foundOn = false;
+      for (let i = 1; i < dayReadings.length; i++) {
+        if (!dayReadings[i - 1].isDay && dayReadings[i].isDay) foundOn = true;
+        if (foundOn && dayReadings[i - 1].isDay && !dayReadings[i].isDay) {
+          offTimes.push(dayReadings[i].hour);
+          break;
+        }
+      }
+    }
+
+    if (onTimes.length < 2 || offTimes.length < 2) return null; // need at least 2 days
+
+    const avgOn = onTimes.reduce((a, b) => a + b, 0) / onTimes.length;
+    const avgOff = offTimes.reduce((a, b) => a + b, 0) / offTimes.length;
+    const dayLengthH = avgOff > avgOn ? avgOff - avgOn : (24 - avgOn + avgOff);
+
+    const result = {
+      onHour: Math.round(avgOn * 10) / 10,
+      offHour: Math.round(avgOff * 10) / 10,
+      dayLengthH: Math.round(dayLengthH * 10) / 10,
+      updatedAt: Date.now()
+    };
+
+    learnedLightSchedule.set(zoneId, result);
+    console.log(`[alerts] Learned light schedule for ${zoneId}: ON=${result.onHour}h OFF=${result.offHour}h day=${result.dayLengthH}h`);
+    return result;
+  } catch (e) {
+    console.error(`[alerts] learnLightSchedule error: ${e.message}`);
+    return null;
+  }
+}
+
 const METRIC_LABELS = {
   temperature: '🌡 Температура',
   humidity: '💧 Влажность',
@@ -229,8 +311,7 @@ async function checkAlerts() {
       }
 
       // ── Light anomaly detection ──
-      // Only alerts if light transition happens far from expected schedule
-      // rule.min = expected ON hour (e.g. 6), rule.max = expected OFF hour (e.g. 0/24)
+      // Learns normal schedule from last 7 days, alerts only on deviations
       const lightAnomalyRule = rules.find(r => r.metric === 'light_anomaly' && r.enabled);
       if (lightAnomalyRule && reading) {
         const lux = reading.light;
@@ -245,37 +326,41 @@ async function checkAlerts() {
             const stableMinutes = (Date.now() - prev.stableSince) / 60000;
 
             if (stableMinutes > 30) {
-              // Check if this transition is expected based on configured schedule
-              const pragueNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Prague' }));
-              const currentHour = pragueNow.getHours() + pragueNow.getMinutes() / 60;
-              const expectedOnHour = lightAnomalyRule.min;   // e.g. 6
-              const expectedOffHour = lightAnomalyRule.max;  // e.g. 0 (midnight)
+              // Learn expected schedule from historical data
+              const schedule = await learnLightSchedule(zoneId);
 
-              let isAnomaly = false;
-              const TOLERANCE = 1; // ±1 hour tolerance
+              if (schedule) {
+                const pragueNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Prague' }));
+                const currentHour = pragueNow.getHours() + pragueNow.getMinutes() / 60;
+                const TOLERANCE = 1.5; // ±1.5 hour tolerance
 
-              if (isDay && expectedOnHour != null) {
-                // Lights just turned ON — check if near expected ON time
-                const diff = Math.abs(currentHour - expectedOnHour);
-                isAnomaly = diff > TOLERANCE && (24 - diff) > TOLERANCE;
-              } else if (!isDay && expectedOffHour != null) {
-                // Lights just turned OFF — check if near expected OFF time
-                const offH = expectedOffHour === 0 ? 24 : expectedOffHour;
-                const diff = Math.abs(currentHour - offH);
-                isAnomaly = diff > TOLERANCE && (24 - diff) > TOLERANCE;
-              }
+                // Check distance between two hours on a 24h clock
+                const hourDist = (a, b) => { const d = Math.abs(a - b); return Math.min(d, 24 - d); };
 
-              if (isAnomaly && cooldownPassed(key, lightAnomalyRule.cooldownMin)) {
-                const eventType = isDay ? 'лампы ВКЛЮЧИЛИСЬ (не по расписанию)' : 'лампы ВЫКЛЮЧИЛИСЬ (не по расписанию)';
-                const timeStr = `${Math.floor(currentHour)}:${String(Math.round((currentHour % 1) * 60)).padStart(2, '0')}`;
-                const expected = isDay ? `ожидалось в ${expectedOnHour}:00` : `ожидалось в ${expectedOffHour}:00`;
-                const msg = `💡 <b>Зона: ${zoneName}</b>\n${eventType}\n☀️ ${lux.toFixed(0)} lux в ${timeStr} (${expected})\n🕐 ${formatTime()}`;
-                const ok = await sendTelegram(chatId, msg);
-                if (ok) {
-                  recordAlert(key);
-                  await AlertLog.create({ zoneId, metric: 'light_anomaly', type: 'alert', value: lux, message: msg });
+                let isAnomaly = false;
+                if (isDay) {
+                  // Lights ON — compare to learned ON time
+                  isAnomaly = hourDist(currentHour, schedule.onHour) > TOLERANCE;
+                } else {
+                  // Lights OFF — compare to learned OFF time
+                  isAnomaly = hourDist(currentHour, schedule.offHour) > TOLERANCE;
+                }
+
+                if (isAnomaly && cooldownPassed(key, lightAnomalyRule.cooldownMin)) {
+                  const eventType = isDay ? 'лампы ВКЛЮЧИЛИСЬ' : 'лампы ВЫКЛЮЧИЛИСЬ';
+                  const fmtH = (h) => `${Math.floor(h)}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+                  const expected = isDay
+                    ? `обычно вкл в ${fmtH(schedule.onHour)}`
+                    : `обычно выкл в ${fmtH(schedule.offHour)}`;
+                  const msg = `💡 <b>Зона: ${zoneName}</b>\n${eventType} не по расписанию\n☀️ ${lux.toFixed(0)} lux (${expected})\n🕐 ${formatTime()}`;
+                  const ok = await sendTelegram(chatId, msg);
+                  if (ok) {
+                    recordAlert(key);
+                    await AlertLog.create({ zoneId, metric: 'light_anomaly', type: 'alert', value: lux, message: msg });
+                  }
                 }
               }
+              // If no schedule learned yet (< 2 days of data) — skip, don't alert
             }
 
             lightState.set(zoneId, { isDay, stableSince: Date.now(), transitionCount: (prev.transitionCount || 0) + 1 });
