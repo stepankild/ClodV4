@@ -5,8 +5,9 @@ import IrrigationLog from '../models/IrrigationLog.js';
 import Zone from '../models/Zone.js';
 import { getZoneState } from '../mqtt/index.js';
 
-// Cooldown tracking: "zoneId:metric" → { lastSent, count }
-const alertCooldowns = new Map();
+// In-memory cooldown cache (seeded from MongoDB on start, persisted on each alert)
+const alertCooldowns = new Map(); // "zoneId:metric" → { lastSent, count }
+let cooldownsSeeded = false;
 // Track which metrics are currently in alert state (for recovery messages)
 const activeAlerts = new Map(); // "zoneId:metric" → true
 // Track light state for anomaly detection: zoneId → { isDay, stableSince }
@@ -179,6 +180,42 @@ function formatTime() {
     day: '2-digit', month: '2-digit', year: 'numeric',
     hour: '2-digit', minute: '2-digit'
   });
+}
+
+/**
+ * Seed cooldowns + activeAlerts from MongoDB AlertLog on startup.
+ * Prevents duplicate alerts after Railway restart/deploy.
+ */
+async function seedCooldownsFromDb() {
+  if (cooldownsSeeded) return;
+  cooldownsSeeded = true;
+  try {
+    // For each zone+metric, get the last alert and last recovery
+    const pipeline = [
+      { $match: { timestamp: { $gte: new Date(Date.now() - 24 * 3600 * 1000) } } },
+      { $sort: { timestamp: -1 } },
+      { $group: {
+        _id: { zoneId: '$zoneId', metric: '$metric' },
+        lastType: { $first: '$type' },
+        lastTimestamp: { $first: '$timestamp' },
+        alertCount: { $sum: { $cond: [{ $eq: ['$type', 'alert'] }, 1, 0] } }
+      }}
+    ];
+    const results = await AlertLog.aggregate(pipeline);
+    for (const r of results) {
+      const key = `${r._id.zoneId}:${r._id.metric}`;
+      const ts = new Date(r.lastTimestamp).getTime();
+      if (r.lastType === 'alert') {
+        // Last event was alert — still active, restore cooldown
+        alertCooldowns.set(key, { lastSent: ts, count: r.alertCount });
+        activeAlerts.set(key, true);
+      }
+      // If last was recovery — cooldown already reset, nothing to restore
+    }
+    console.log(`[alerts] Seeded ${alertCooldowns.size} cooldowns from DB`);
+  } catch (e) {
+    console.error('[alerts] seedCooldownsFromDb error:', e.message);
+  }
 }
 
 /**
@@ -577,7 +614,8 @@ export async function sendTestAlert(chatId) {
  */
 const startedAt = Date.now();
 
-export function initAlertScheduler() {
+export async function initAlertScheduler() {
+  await seedCooldownsFromDb();
   console.log('[alerts] Scheduler started (30s interval, daily summary at 9:00 Prague, 2min warmup)');
   setInterval(() => {
     // Skip alerts for first 2 minutes after server start (deploy restart causes false offline alerts)
