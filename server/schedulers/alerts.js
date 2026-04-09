@@ -332,7 +332,7 @@ async function checkAlerts() {
               if (schedule) {
                 const pragueNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Prague' }));
                 const currentHour = pragueNow.getHours() + pragueNow.getMinutes() / 60;
-                const TOLERANCE = 1.5; // ±1.5 hour tolerance
+                const TOLERANCE = 0.5; // ±30 min tolerance
 
                 // Check distance between two hours on a 24h clock
                 const hourDist = (a, b) => { const d = Math.abs(a - b); return Math.min(d, 24 - d); };

@@ -969,7 +969,7 @@ const ZoneDetail = () => {
                           </div>
                         )}
                         {isLightAnomaly && rule.enabled && (
-                          <span className="text-xs text-dark-500">авто-расписание из истории (±1.5ч допуск)</span>
+                          <span className="text-xs text-dark-500">авто-расписание из истории (±30мин допуск)</span>
                         )}
                       </div>
                     );
