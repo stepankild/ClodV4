@@ -969,7 +969,25 @@ const ZoneDetail = () => {
                           </div>
                         )}
                         {isLightAnomaly && rule.enabled && (
-                          <span className="text-xs text-dark-500">алерт если лампы вкл ночью или выкл днём</span>
+                          <div className="flex items-center gap-2 text-xs">
+                            <span className="text-dark-500">вкл</span>
+                            <input
+                              type="number"
+                              min="0" max="23" step="1"
+                              value={rule.min ?? 6}
+                              onChange={e => updateAlertRule('light_anomaly', 'min', Number(e.target.value))}
+                              className="bg-dark-900 border border-dark-600 rounded px-1.5 py-0.5 text-dark-200 w-12 text-center text-xs"
+                            />
+                            <span className="text-dark-500">выкл</span>
+                            <input
+                              type="number"
+                              min="0" max="23" step="1"
+                              value={rule.max ?? 0}
+                              onChange={e => updateAlertRule('light_anomaly', 'max', Number(e.target.value))}
+                              className="bg-dark-900 border border-dark-600 rounded px-1.5 py-0.5 text-dark-200 w-12 text-center text-xs"
+                            />
+                            <span className="text-dark-600 text-[10px]">ч (±1ч допуск)</span>
+                          </div>
                         )}
                       </div>
                     );

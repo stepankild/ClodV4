@@ -229,7 +229,8 @@ async function checkAlerts() {
       }
 
       // ── Light anomaly detection ──
-      // Detects unexpected light changes: lights ON during expected night, or OFF during expected day
+      // Only alerts if light transition happens far from expected schedule
+      // rule.min = expected ON hour (e.g. 6), rule.max = expected OFF hour (e.g. 0/24)
       const lightAnomalyRule = rules.find(r => r.metric === 'light_anomaly' && r.enabled);
       if (lightAnomalyRule && reading) {
         const lux = reading.light;
@@ -239,23 +240,36 @@ async function checkAlerts() {
           const key = `${zoneId}:light_anomaly`;
 
           if (!prev) {
-            // First reading — just store state
             lightState.set(zoneId, { isDay, stableSince: Date.now(), transitionCount: 0 });
           } else if (isDay !== prev.isDay) {
-            // Light state changed
             const stableMinutes = (Date.now() - prev.stableSince) / 60000;
 
-            // Only alert if previous state was stable for >30 min (not just a brief flicker)
-            // and the transition is unexpected (short stable period before = anomaly)
             if (stableMinutes > 30) {
-              // This is a real transition — check if it's anomalous
-              // Night was stable >30min and suddenly lights turned on = anomaly
-              // Day was stable >30min and suddenly lights turned off = anomaly
-              // We track transitions; the user will know from Telegram what happened
-              const eventType = isDay ? 'лампы ВКЛЮЧИЛИСЬ (была ночь)' : 'лампы ВЫКЛЮЧИЛИСЬ (был день)';
+              // Check if this transition is expected based on configured schedule
+              const pragueNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Europe/Prague' }));
+              const currentHour = pragueNow.getHours() + pragueNow.getMinutes() / 60;
+              const expectedOnHour = lightAnomalyRule.min;   // e.g. 6
+              const expectedOffHour = lightAnomalyRule.max;  // e.g. 0 (midnight)
 
-              if (cooldownPassed(key, lightAnomalyRule.cooldownMin)) {
-                const msg = `💡 <b>Зона: ${zoneName}</b>\n${eventType}\n☀️ ${lux.toFixed(0)} lux\n🕐 ${formatTime()}`;
+              let isAnomaly = false;
+              const TOLERANCE = 1; // ±1 hour tolerance
+
+              if (isDay && expectedOnHour != null) {
+                // Lights just turned ON — check if near expected ON time
+                const diff = Math.abs(currentHour - expectedOnHour);
+                isAnomaly = diff > TOLERANCE && (24 - diff) > TOLERANCE;
+              } else if (!isDay && expectedOffHour != null) {
+                // Lights just turned OFF — check if near expected OFF time
+                const offH = expectedOffHour === 0 ? 24 : expectedOffHour;
+                const diff = Math.abs(currentHour - offH);
+                isAnomaly = diff > TOLERANCE && (24 - diff) > TOLERANCE;
+              }
+
+              if (isAnomaly && cooldownPassed(key, lightAnomalyRule.cooldownMin)) {
+                const eventType = isDay ? 'лампы ВКЛЮЧИЛИСЬ (не по расписанию)' : 'лампы ВЫКЛЮЧИЛИСЬ (не по расписанию)';
+                const timeStr = `${Math.floor(currentHour)}:${String(Math.round((currentHour % 1) * 60)).padStart(2, '0')}`;
+                const expected = isDay ? `ожидалось в ${expectedOnHour}:00` : `ожидалось в ${expectedOffHour}:00`;
+                const msg = `💡 <b>Зона: ${zoneName}</b>\n${eventType}\n☀️ ${lux.toFixed(0)} lux в ${timeStr} (${expected})\n🕐 ${formatTime()}`;
                 const ok = await sendTelegram(chatId, msg);
                 if (ok) {
                   recordAlert(key);
@@ -266,7 +280,6 @@ async function checkAlerts() {
 
             lightState.set(zoneId, { isDay, stableSince: Date.now(), transitionCount: (prev.transitionCount || 0) + 1 });
           }
-          // If same state — just keep tracking (stableSince stays)
         }
       }
     }

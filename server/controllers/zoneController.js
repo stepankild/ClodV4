@@ -625,7 +625,7 @@ export const getAlertConfig = async (req, res) => {
       { metric: 'light', enabled: false, min: null, max: null, cooldownMin: 30 },
       { metric: 'vpd', enabled: false, min: 0.4, max: 1.6, cooldownMin: 30 },
       { metric: 'offline', enabled: false, min: null, max: 5, cooldownMin: 30 },
-      { metric: 'light_anomaly', enabled: false, min: null, max: null, cooldownMin: 30 }
+      { metric: 'light_anomaly', enabled: false, min: 6, max: 0, cooldownMin: 30 }
     ];
 
     let config = await AlertConfig.findOne({ zoneId }).lean();

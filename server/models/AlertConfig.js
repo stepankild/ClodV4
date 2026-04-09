@@ -25,7 +25,7 @@ const alertConfigSchema = new mongoose.Schema({
       { metric: 'light', enabled: false, min: null, max: null, cooldownMin: 30 },
       { metric: 'vpd', enabled: false, min: 0.4, max: 1.6, cooldownMin: 30 },
       { metric: 'offline', enabled: false, min: null, max: 5, cooldownMin: 30 },
-      { metric: 'light_anomaly', enabled: false, min: null, max: null, cooldownMin: 30 }
+      { metric: 'light_anomaly', enabled: false, min: 6, max: 0, cooldownMin: 30 }
     ]
   }
 }, { timestamps: true });
