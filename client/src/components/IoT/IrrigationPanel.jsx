@@ -31,7 +31,13 @@ const IrrigationPanel = ({ zoneId }) => {
     }
   }, [zoneId]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  useEffect(() => {
+    loadData();
+    // Poll the live HA state every 30 seconds so a stuck pump / drift is
+    // noticed without needing a manual reload.
+    const interval = setInterval(loadData, 30 * 1000);
+    return () => clearInterval(interval);
+  }, [loadData]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -76,7 +82,18 @@ const IrrigationPanel = ({ zoneId }) => {
     );
   }
 
-  const plugOn = status?.plugState === 'on';
+  // Real pump state: prefer the live HA value from status, fall back to the
+  // last-known value the scheduler stored in the DB. If both are missing,
+  // show "unknown" so we never imply the pump is off when we don't know.
+  const liveState = (status?.plugState === 'on' || status?.plugState === 'off')
+    ? status.plugState
+    : (status?.liveState || 'unknown');
+  const plugOn = liveState === 'on';
+  const plugUnknown = liveState !== 'on' && liveState !== 'off';
+  const stuck = !!status?.stuck;
+  const stuckReason = status?.stuckReason || '';
+  const liveStateAt = status?.liveStateAt ? new Date(status.liveStateAt) : null;
+
   const todayStats = log.length > 0 ? {
     onCount: log.filter(l => l.action === 'on' && new Date(l.timestamp).toDateString() === new Date().toDateString()).length,
     totalMin: log.filter(l => l.action === 'on' && new Date(l.timestamp).toDateString() === new Date().toDateString())
@@ -84,15 +101,44 @@ const IrrigationPanel = ({ zoneId }) => {
   } : { onCount: 0, totalMin: 0 };
 
   return (
-    <div className="bg-dark-800 border border-dark-700 rounded-lg p-5">
+    <div className={`bg-dark-800 border rounded-lg p-5 ${stuck ? 'border-red-700' : 'border-dark-700'}`}>
+      {stuck && (
+        <div className="mb-4 p-3 bg-red-900/40 border border-red-800 rounded-lg text-xs text-red-300 flex items-start gap-2">
+          <span className="text-base leading-none">⚠</span>
+          <div className="min-w-0">
+            <div className="font-semibold text-red-200">Насос завис</div>
+            <div className="text-red-300/80">
+              {stuckReason || 'Насос работает дольше расписания и не отвечает на команду выключения'}
+            </div>
+            <div className="text-red-300/60 mt-0.5">
+              Проверьте Home Assistant и выключите вручную. Система продолжит попытки.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <span className="text-lg">💧</span>
           <h3 className="text-lg font-semibold text-dark-100">Полив</h3>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${plugOn ? 'bg-green-900 text-green-300' : 'bg-dark-700 text-dark-400'}`}>
-            {plugOn ? 'Насос ВКЛ' : 'Насос ВЫКЛ'}
+          <span
+            className={`text-xs px-2 py-0.5 rounded-full ${
+              plugUnknown
+                ? 'bg-amber-900 text-amber-300'
+                : plugOn
+                  ? 'bg-green-900 text-green-300'
+                  : 'bg-dark-700 text-dark-400'
+            }`}
+            title={liveStateAt ? `Обновлено ${liveStateAt.toLocaleTimeString()}` : ''}
+          >
+            {plugUnknown ? 'Насос ?' : plugOn ? 'Насос ВКЛ' : 'Насос ВЫКЛ'}
           </span>
+          {stuck && (
+            <span className="text-xs px-2 py-0.5 rounded-full bg-red-900 text-red-300">
+              завис
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -100,6 +146,7 @@ const IrrigationPanel = ({ zoneId }) => {
             className={`text-xs px-3 py-1.5 rounded font-medium ${plugOn
               ? 'bg-red-900 text-red-300 hover:bg-red-800'
               : 'bg-green-900 text-green-300 hover:bg-green-800'}`}
+            disabled={plugUnknown}
           >
             {plugOn ? 'Выключить' : 'Включить'}
           </button>
@@ -207,7 +254,9 @@ const IrrigationPanel = ({ zoneId }) => {
                   {entry.duration && entry.action === 'on' && ` ${entry.duration}мин`}
                 </span>
                 <span className="text-dark-600 ml-auto">
-                  {entry.trigger === 'schedule' ? 'авто' : 'ручн.'}
+                  {entry.trigger === 'schedule' ? 'авто'
+                    : entry.trigger === 'external' ? 'извне'
+                    : 'ручн.'}
                 </span>
               </div>
             ))}

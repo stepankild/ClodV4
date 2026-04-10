@@ -556,7 +556,11 @@ export const getIrrigationStatus = async (req, res) => {
       enabled: config.enabled,
       schedules: config.schedules,
       plugState,
-      entityId: config.entityId
+      entityId: config.entityId,
+      liveState: config.liveState || 'unknown',
+      liveStateAt: config.liveStateAt || null,
+      stuck: config.stuck || false,
+      stuckReason: config.stuckReason || ''
     });
   } catch (error) {
     console.error('Irrigation status error:', error);
@@ -572,10 +576,13 @@ export const getIrrigationLog = async (req, res) => {
     const limit = Math.min(parseInt(req.query.limit) || 50, 200);
     const from = req.query.from ? new Date(req.query.from) : new Date(Date.now() - 7 * 24 * 3600 * 1000);
 
-    const logs = await IrrigationLog.find({ zoneId, timestamp: { $gte: from } })
-      .sort({ timestamp: -1 })
-      .limit(limit)
-      .lean();
+    const [logs, config] = await Promise.all([
+      IrrigationLog.find({ zoneId, timestamp: { $gte: from } })
+        .sort({ timestamp: -1 })
+        .limit(limit)
+        .lean(),
+      IrrigationSchedule.findOne({ zoneId }).lean()
+    ]);
 
     // Calculate stats
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -603,7 +610,11 @@ export const getIrrigationLog = async (req, res) => {
         todayOnCount: onCount,
         todayOffCount: offCount,
         todayOnMinutes: Math.round(totalOnMs / 60000)
-      }
+      },
+      liveState: config?.liveState || 'unknown',
+      liveStateAt: config?.liveStateAt || null,
+      stuck: config?.stuck || false,
+      stuckReason: config?.stuckReason || ''
     });
   } catch (error) {
     console.error('Irrigation log error:', error);

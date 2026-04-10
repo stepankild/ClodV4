@@ -50,39 +50,147 @@ async function haSwitch(entityId, action) {
 }
 
 /**
- * Reconcile: for every configured zone, find the most recent log entry.
- * If it's an ON whose expectedOffAt has already passed, turn the pump off
- * and log the OFF event. This catches cases where the server was restarted
- * (Railway deploy) between the scheduled ON and the corresponding OFF.
+ * Query Home Assistant for the actual state of a switch entity.
+ * Returns 'on', 'off', or 'unknown' (HA unreachable, token missing, etc).
  */
-async function reconcilePendingOffs() {
+async function haGetState(entityId) {
+  const haUrl = process.env.HA_URL || 'http://localhost:8123';
+  const haToken = process.env.HA_TOKEN;
+  if (!haToken) return 'unknown';
+  try {
+    const resp = await fetch(`${haUrl}/api/states/${encodeURIComponent(entityId)}`, {
+      headers: { 'Authorization': `Bearer ${haToken}` }
+    });
+    if (!resp.ok) return 'unknown';
+    const body = await resp.json();
+    const state = String(body?.state || '').toLowerCase();
+    if (state === 'on' || state === 'off') return state;
+    return 'unknown';
+  } catch (e) {
+    console.error('[irrigation] HA state query error:', e.message);
+    return 'unknown';
+  }
+}
+
+/**
+ * Turn the pump OFF with retries. Returns true on confirmed success (HA
+ * reports state = 'off' after the call), false if we couldn't confirm.
+ */
+async function haTurnOffConfirmed(entityId, attempts = 3) {
+  for (let i = 0; i < attempts; i++) {
+    await haSwitch(entityId, 'off');
+    // Small delay to let HA state propagate
+    await new Promise(r => setTimeout(r, 800));
+    const state = await haGetState(entityId);
+    if (state === 'off') return true;
+    if (state === 'unknown' && i === attempts - 1) return false;
+  }
+  return false;
+}
+
+/**
+ * Reconciliation pass run on every scheduler tick. Three things happen:
+ *
+ *   1. Query Home Assistant for the real state of each zone's switch
+ *      entity and remember it on IrrigationSchedule.liveState. That way
+ *      the UI always has an up-to-date, authoritative "is it actually on"
+ *      regardless of what our own command log says.
+ *
+ *   2. If a zone's most recent log entry is an ON whose expectedOffAt has
+ *      already passed, turn the pump off (with confirm) and write the OFF
+ *      log. Handles missed scheduled offs after a restart.
+ *
+ *   3. If HA state disagrees with our log — e.g. HA says off but our last
+ *      log says on (someone toggled the plug manually in HA), or HA says
+ *      on but we have no open ON event — write a synthetic log entry
+ *      with trigger='external' so the log stays accurate. If HA reports
+ *      the pump on past its scheduled end and we can't reach HA to stop
+ *      it, flag the zone as "stuck".
+ */
+async function reconcileZones() {
   try {
     const configs = await IrrigationSchedule.find({ enabled: true }).lean();
     const now = new Date();
 
     for (const config of configs) {
+      const entityId = config.entityId || 'switch.cuco_v2eur_f6d3_switch';
+
+      // 1. Query HA for the real state
+      const liveState = await haGetState(entityId);
+
       const lastLog = await IrrigationLog
         .findOne({ zoneId: config.zoneId })
         .sort({ timestamp: -1 })
         .lean();
 
-      if (!lastLog || lastLog.action !== 'on') continue;
-      if (!lastLog.expectedOffAt) continue;
-      if (new Date(lastLog.expectedOffAt) > now) continue; // still running
+      const lastAction = lastLog?.action || null;
+      const expectedOff = lastLog?.expectedOffAt ? new Date(lastLog.expectedOffAt) : null;
+      const overdueOff = lastAction === 'on' && expectedOff && expectedOff <= now;
 
-      console.log(`[irrigation] Reconciling missed OFF for ${config.zoneId} (expected ${new Date(lastLog.expectedOffAt).toISOString()})`);
+      let stuck = false;
+      let stuckReason = '';
 
-      const entityId = config.entityId || 'switch.cuco_v2eur_f6d3_switch';
-      await haSwitch(entityId, 'off');
-      // Log OFF regardless of HA success — otherwise a flaky HA call would
-      // leave the DB showing an eternally-open ON entry.
-      await IrrigationLog.create({
-        zoneId: config.zoneId,
-        action: 'off',
-        trigger: lastLog.trigger || 'schedule',
-        scheduleTime: lastLog.scheduleTime || null,
-        duration: lastLog.duration || null,
-      });
+      // 2. Scheduled ON has overrun — stop it
+      if (overdueOff) {
+        if (liveState === 'off') {
+          // Pump is already off, our log just doesn't have a matching OFF.
+          console.log(`[irrigation] ${config.zoneId}: HA already off, closing log (expected ${expectedOff.toISOString()})`);
+          await IrrigationLog.create({
+            zoneId: config.zoneId,
+            action: 'off',
+            trigger: lastLog.trigger || 'schedule',
+            scheduleTime: lastLog.scheduleTime || null,
+            duration: lastLog.duration || null,
+          });
+        } else {
+          console.log(`[irrigation] ${config.zoneId}: turning off (live=${liveState}, expected off ${expectedOff.toISOString()})`);
+          const confirmed = await haTurnOffConfirmed(entityId);
+          if (confirmed) {
+            await IrrigationLog.create({
+              zoneId: config.zoneId,
+              action: 'off',
+              trigger: lastLog.trigger || 'schedule',
+              scheduleTime: lastLog.scheduleTime || null,
+              duration: lastLog.duration || null,
+            });
+          } else {
+            // Pump is stuck — HA unreachable or not responding. Don't write
+            // a misleading OFF log; flag the zone so the UI can warn.
+            stuck = true;
+            stuckReason = liveState === 'unknown'
+              ? 'HA unreachable during scheduled off'
+              : 'Pump reports ON past scheduled off time';
+            console.error(`[irrigation] ${config.zoneId}: STUCK — ${stuckReason}`);
+          }
+        }
+      }
+
+      // 3. Drift between HA and our log (not handled by overdue path above)
+      if (!overdueOff && liveState !== 'unknown' && lastAction && lastAction !== liveState) {
+        console.log(`[irrigation] ${config.zoneId}: drift detected — log says ${lastAction}, HA says ${liveState}`);
+        await IrrigationLog.create({
+          zoneId: config.zoneId,
+          action: liveState,
+          trigger: 'external',
+          scheduleTime: null,
+          duration: null,
+        });
+      }
+
+      // Re-query live state once more if we just turned it off, so the stored
+      // liveState reflects the post-reconciliation reality.
+      const finalLive = overdueOff ? await haGetState(entityId) : liveState;
+
+      // If pump is confirmed off, clear any stuck flag
+      if (finalLive === 'off') {
+        stuck = false;
+        stuckReason = '';
+      }
+
+      await IrrigationSchedule.updateOne(
+        { _id: config._id },
+        { $set: { liveState: finalLive, liveStateAt: new Date(), stuck, stuckReason } }
+      );
     }
   } catch (e) {
     console.error('[irrigation] Reconciliation error:', e.message);
@@ -94,8 +202,8 @@ async function reconcilePendingOffs() {
  */
 async function checkSchedules() {
   try {
-    // 1. Reconcile any pending OFFs from a previous tick or restart
-    await reconcilePendingOffs();
+    // 1. Reconcile HA state and close any overrun ON events
+    await reconcileZones();
 
     const currentTime = getPragueTime();
 
