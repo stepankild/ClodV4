@@ -34,19 +34,35 @@ const PlannedCycle = mongoose.model('PlannedCycle', plannedCycleSchema);
 
 // Drop any legacy unique index on `room` — it was created when only one plan
 // per room was allowed. The new schema uses a compound {room, order} index and
-// supports multiple planned cycles per room.
-PlannedCycle.collection.listIndexes().toArray().then((indexes) => {
-  for (const idx of indexes) {
-    if (idx.name === '_id_') continue;
-    const keys = idx.key || {};
-    const keyFields = Object.keys(keys);
-    if (idx.unique && keyFields.length === 1 && keyFields[0] === 'room') {
-      console.log(`[PlannedCycle] Dropping stale unique index: ${idx.name}`);
-      PlannedCycle.collection.dropIndex(idx.name).catch((err) => {
-        console.warn(`[PlannedCycle] Failed to drop index ${idx.name}:`, err?.message);
-      });
+// supports multiple planned cycles per room. Runs once after mongoose connects.
+const dropStaleRoomIndex = async () => {
+  try {
+    const indexes = await PlannedCycle.collection.listIndexes().toArray();
+    for (const idx of indexes) {
+      if (idx.name === '_id_') continue;
+      const keys = idx.key || {};
+      const keyFields = Object.keys(keys);
+      if (idx.unique && keyFields.length === 1 && keyFields[0] === 'room') {
+        // eslint-disable-next-line no-console
+        console.log(`[PlannedCycle] Dropping stale unique index: ${idx.name}`);
+        try {
+          await PlannedCycle.collection.dropIndex(idx.name);
+        } catch (err) {
+          // eslint-disable-next-line no-console
+          console.warn(`[PlannedCycle] Failed to drop index ${idx.name}:`, err?.message);
+        }
+      }
     }
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[PlannedCycle] Index cleanup skipped:', err?.message);
   }
-}).catch(() => {});
+};
+
+if (mongoose.connection.readyState === 1) {
+  dropStaleRoomIndex();
+} else {
+  mongoose.connection.once('connected', dropStaleRoomIndex);
+}
 
 export default PlannedCycle;
