@@ -85,8 +85,8 @@ export const createPlan = async (req, res) => {
     await createAuditLog(req, { action: 'plan.upsert', entityType: 'PlannedCycle', entityId: plan._id, details: { roomId, order: orderValue, cycleName: plan.cycleName, strain: plan.strain } });
     res.status(201).json(plan);
   } catch (error) {
-    console.error('Create plan error:', error);
-    res.status(500).json({ message: t('common.serverError', req.lang) });
+    console.error('Create plan error:', error?.message, '\nbody:', JSON.stringify(req.body), '\nstack:', error?.stack);
+    res.status(500).json({ message: `${t('common.serverError', req.lang)}: ${error?.message || 'unknown'}` });
   }
 };
 
