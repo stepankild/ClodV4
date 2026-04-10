@@ -109,6 +109,8 @@ export default function MotherRoomMap({
       const normalized = newPositions.map(p => ({
         row: p.row,
         position: p.position,
+        x: p.x ?? null,
+        y: p.y ?? null,
         plantId: typeof p.plantId === 'object' ? (p.plantId?._id || p.plantId) : p.plantId,
       }));
       onAutoSave?.({ motherRows: newRows, plantPositions: normalized });
@@ -187,9 +189,65 @@ export default function MotherRoomMap({
   const handleChipDragStart = (e, row, position, plantId) => {
     if (!canManage) return;
     e.stopPropagation();
-    setDragging({ plantId, from: { row, position } });
+    // Remember where in the chip the cursor was, so drops can place it centered
+    const chipRect = e.currentTarget.getBoundingClientRect();
+    const offsetX = e.clientX - chipRect.left;
+    const offsetY = e.clientY - chipRect.top;
+    setDragging({ plantId, from: { row, position }, offsetX, offsetY, chipW: chipRect.width, chipH: chipRect.height });
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('text/plain', serializeDragPayload({ type: 'cell', plantId, fromRow: row, fromPos: position }));
+    e.dataTransfer.setData('text/plain', serializeDragPayload({
+      type: 'cell',
+      plantId,
+      fromRow: row,
+      fromPos: position,
+      offsetX,
+      offsetY,
+      chipW: chipRect.width,
+      chipH: chipRect.height,
+    }));
+  };
+
+  // Compute fractional (0..1) coordinates of a drop inside a table container.
+  // Returns the top-left corner of the chip, clamped so the chip stays inside.
+  const computeDropCoords = (e, tableEl, payload) => {
+    const rect = tableEl.getBoundingClientRect();
+    const chipW = payload?.chipW || (dragging?.chipW ?? 32);
+    const chipH = payload?.chipH || (dragging?.chipH ?? 28);
+    const offsetX = payload?.offsetX ?? (dragging?.offsetX ?? chipW / 2);
+    const offsetY = payload?.offsetY ?? (dragging?.offsetY ?? chipH / 2);
+
+    // Desired top-left of the chip in table-local pixels
+    let localX = e.clientX - rect.left - offsetX;
+    let localY = e.clientY - rect.top - offsetY;
+
+    // Clamp so the whole chip stays inside the table
+    const maxX = Math.max(0, rect.width - chipW);
+    const maxY = Math.max(0, rect.height - chipH);
+    localX = Math.max(0, Math.min(maxX, localX));
+    localY = Math.max(0, Math.min(maxY, localY));
+
+    return {
+      x: rect.width > 0 ? localX / rect.width : 0,
+      y: rect.height > 0 ? localY / rect.height : 0,
+    };
+  };
+
+  // Compute fractional coords from a simple click (no drag offset)
+  const computeClickCoords = (e, tableEl) => {
+    const rect = tableEl.getBoundingClientRect();
+    const CHIP_W = 32;
+    const CHIP_H = 28;
+    // Center the chip on the click point
+    let localX = e.clientX - rect.left - CHIP_W / 2;
+    let localY = e.clientY - rect.top - CHIP_H / 2;
+    const maxX = Math.max(0, rect.width - CHIP_W);
+    const maxY = Math.max(0, rect.height - CHIP_H);
+    localX = Math.max(0, Math.min(maxX, localX));
+    localY = Math.max(0, Math.min(maxY, localY));
+    return {
+      x: rect.width > 0 ? localX / rect.width : 0,
+      y: rect.height > 0 ? localY / rect.height : 0,
+    };
   };
 
   const handleDragEnd = () => {
@@ -219,6 +277,7 @@ export default function MotherRoomMap({
       return;
     }
     const plantId = typeof payload.plantId === 'object' ? (payload.plantId?._id || payload.plantId) : payload.plantId;
+    const coords = computeDropCoords(e, e.currentTarget, payload);
 
     const isFromCell = payload.type === 'cell' || (payload.from && typeof payload.from === 'object');
 
@@ -227,17 +286,20 @@ export default function MotherRoomMap({
       const fromRow = payload.fromRow ?? payload.from.row;
       const fromPos = payload.fromPos ?? payload.from.position;
       if (fromRow === row) {
-        // Same table — no-op (chips have no fixed slots)
-        setDropTarget(null);
-        setDragging(null);
-        return;
+        // Same table — just update coordinates of the existing chip
+        newPositions = plantPositions.map(p =>
+          p.row === fromRow && p.position === fromPos
+            ? { ...p, x: coords.x, y: coords.y }
+            : p
+        );
+      } else {
+        const withoutOld = plantPositions.filter(p => !(p.row === fromRow && p.position === fromPos));
+        const nextPos = nextPositionOnTable(row, withoutOld);
+        newPositions = withoutOld.concat([{ row, position: nextPos, plantId, x: coords.x, y: coords.y }]);
       }
-      const withoutOld = plantPositions.filter(p => !(p.row === fromRow && p.position === fromPos));
-      const nextPos = nextPositionOnTable(row, withoutOld);
-      newPositions = withoutOld.concat([{ row, position: nextPos, plantId }]);
     } else {
       const nextPos = nextPositionOnTable(row);
-      newPositions = [...plantPositions, { row, position: nextPos, plantId }];
+      newPositions = [...plantPositions, { row, position: nextPos, plantId, x: coords.x, y: coords.y }];
     }
     setPlantPositions(newPositions);
     scheduleSave(motherRows, newPositions);
@@ -292,21 +354,31 @@ export default function MotherRoomMap({
     if (e.target !== e.currentTarget) return;
     if (!canManage) return;
 
+    const coords = computeClickCoords(e, e.currentTarget);
+
     // Touch-fallback: if a palette chip is selected, place it on this table
     if (activePlantId && !placedPlantIds.has(activePlantId)) {
       const nextPos = nextPositionOnTable(row);
-      const newPositions = [...plantPositions, { row, position: nextPos, plantId: activePlantId }];
+      const newPositions = [...plantPositions, { row, position: nextPos, plantId: activePlantId, x: coords.x, y: coords.y }];
       setPlantPositions(newPositions);
       scheduleSave(motherRows, newPositions);
       setActivePlantId(null);
       return;
     }
 
-    // Otherwise open quick-create popover bound to this table
+    // Otherwise open quick-create popover bound to this table at click point
     setPopover({
       cellKey: `${row}:new`,
       tableRow: row,
-      rect: e.currentTarget.getBoundingClientRect(),
+      tableCoords: coords,
+      rect: {
+        left: e.clientX,
+        top: e.clientY,
+        right: e.clientX,
+        bottom: e.clientY,
+        width: 0,
+        height: 0,
+      },
       plantId: null,
     });
   };
@@ -331,10 +403,17 @@ export default function MotherRoomMap({
   const handleQuickCreateSubmit = async (form) => {
     if (!popover || popover.plantId) return;
     const row = popover.tableRow ?? Number(popover.cellKey.split(':')[0]);
+    const coords = popover.tableCoords || { x: 0, y: 0 };
     const created = await onQuickCreate({ name: form.name.trim(), strain: form.strain });
     if (created) {
       const nextPos = nextPositionOnTable(row);
-      const newPositions = [...plantPositions, { row, position: nextPos, plantId: created._id }];
+      const newPositions = [...plantPositions, {
+        row,
+        position: nextPos,
+        plantId: created._id,
+        x: coords.x,
+        y: coords.y,
+      }];
       setPlantPositions(newPositions);
       scheduleSave(motherRows, newPositions);
     }
@@ -591,8 +670,8 @@ export default function MotherRoomMap({
     const shortDim = Math.min(tableCols, tRows);
     const CELL = 30;
     const PAD = 12;
-    const minWidth = longDim * CELL + PAD * 2;
-    const minHeight = shortDim * CELL + PAD * 2;
+    const tableWidth = longDim * CELL + PAD * 2;
+    const tableHeight = shortDim * CELL + PAD * 2;
 
     // Plants currently placed on this table
     const chips = plantPositions
@@ -603,8 +682,30 @@ export default function MotherRoomMap({
           position: p.position,
           plantId: String(pid),
           plant: plantMap[String(pid)] || (typeof p.plantId === 'object' ? p.plantId : null),
+          x: p.x,
+          y: p.y,
         };
       });
+
+    // Auto-position chips with missing coordinates so they don't all land at 0,0
+    const CHIP_W = 32;
+    const CHIP_H = 28;
+    const GAP = 4;
+    const chipsPerRow = Math.max(1, Math.floor((tableWidth - PAD * 2 + GAP) / (CHIP_W + GAP)));
+    let autoIdx = 0;
+    const resolvedChips = chips.map(c => {
+      if (c.x != null && c.y != null) return c;
+      const r = Math.floor(autoIdx / chipsPerRow);
+      const col = autoIdx % chipsPerRow;
+      autoIdx += 1;
+      const localX = PAD + col * (CHIP_W + GAP);
+      const localY = PAD + r * (CHIP_H + GAP);
+      return {
+        ...c,
+        x: tableWidth > 0 ? localX / tableWidth : 0,
+        y: tableHeight > 0 ? localY / tableHeight : 0,
+      };
+    });
 
     const isTableDropTarget = dropTarget && typeof dropTarget === 'object' && dropTarget.row === flatIdx;
     const isSelectedForPlace = !!activePlantId && canManage;
@@ -619,10 +720,9 @@ export default function MotherRoomMap({
           onDragOver={(e) => handleTableDragOver(e, flatIdx)}
           onDragLeave={handleTableDragLeave}
           onDrop={(e) => handleTableDrop(e, flatIdx)}
-          style={{ minWidth, minHeight }}
+          style={{ width: tableWidth, height: tableHeight }}
           className={`
-            border-2 rounded-md p-2
-            flex flex-wrap gap-1 content-start
+            relative border-2 rounded-md
             transition
             ${canManage ? 'cursor-pointer' : 'cursor-default'}
             ${isTableDropTarget
@@ -632,7 +732,7 @@ export default function MotherRoomMap({
                 : 'border-dark-600 bg-dark-900/30 hover:border-dark-500'}
           `}
         >
-          {chips.map((chip) => {
+          {resolvedChips.map((chip) => {
             const plant = chip.plant;
             if (!plant) return null;
             const color = HEALTH_COLORS[plant.health] || HEALTH_COLORS.good;
@@ -646,13 +746,20 @@ export default function MotherRoomMap({
                 onDragEnd={handleDragEnd}
                 onClick={(e) => handleChipClick(e, flatIdx, chip.position, chip.plantId)}
                 title={`${plant.name || ''}${plant.strain ? ` · ${plant.strain}` : ''}`}
+                style={{
+                  position: 'absolute',
+                  left: `${chip.x * 100}%`,
+                  top: `${chip.y * 100}%`,
+                  width: CHIP_W,
+                  height: CHIP_H,
+                }}
                 className={`
-                  h-7 min-w-[32px] px-1.5 rounded border
+                  rounded border
                   flex items-center justify-center
                   text-[10px] font-bold select-none transition
                   ${color.bg} ${color.border} ${color.text}
                   ${canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
-                  ${isDragSource ? 'opacity-40' : 'hover:brightness-125 hover:scale-105'}
+                  ${isDragSource ? 'opacity-40' : 'hover:brightness-125 hover:z-10'}
                 `}
               >
                 {strainLabel(plant.strain)}
@@ -660,7 +767,7 @@ export default function MotherRoomMap({
             );
           })}
           {chips.length === 0 && canManage && (
-            <span className="text-[10px] text-dark-600 pointer-events-none">+</span>
+            <span className="absolute inset-0 flex items-center justify-center text-[11px] text-dark-600 pointer-events-none">+</span>
           )}
         </div>
       </div>

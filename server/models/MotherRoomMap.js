@@ -12,6 +12,10 @@ const motherRoomMapSchema = new mongoose.Schema({
   plantPositions: [{
     row: { type: Number, required: true },
     position: { type: Number, required: true },
+    // Free-form coordinates within the table outline (0..1 fractions).
+    // Optional for backward compatibility with existing data.
+    x: { type: Number, default: null },
+    y: { type: Number, default: null },
     plantId: { type: mongoose.Schema.Types.ObjectId, ref: 'MotherPlant', required: true }
   }]
 }, {
