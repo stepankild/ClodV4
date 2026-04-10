@@ -397,6 +397,8 @@ function RoomPlanRow({ room, onSave, saving, t }) {
 
 function CurrentCycleCard({ cycle, t }) {
   const daysLeft = cycle.endDate ? diffDays(new Date(), cycle.endDate) : null;
+  const rows = cycle.strainRows || [];
+  const hasRows = rows.length > 0;
 
   return (
     <div className="border border-dark-700 rounded p-2 bg-dark-800/40">
@@ -408,9 +410,22 @@ function CurrentCycleCard({ cycle, t }) {
           <span className="text-[10px] text-dark-600">{t('motherRoom.notStarted')}</span>
         )}
       </div>
-      <div className="text-white text-sm font-medium truncate">{cycle.strain || '—'}</div>
-      <div className="text-[11px] text-dark-400 flex items-center justify-between mt-1">
-        <span>{cycle.plantsCount || 0} {t('motherRoom.pieces')}</span>
+
+      {hasRows ? (
+        <div className="flex flex-col gap-0.5 text-[11px]">
+          {rows.map((row, i) => (
+            <div key={i} className="flex items-center justify-between gap-2">
+              <span className="text-white font-medium truncate">{row.strain || '—'}</span>
+              <span className="text-dark-300 shrink-0">{row.quantity || 0}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-white text-sm font-medium truncate">—</div>
+      )}
+
+      <div className="text-[11px] text-dark-400 flex items-center justify-between mt-1 pt-1 border-t border-dark-700/60">
+        <span>{t('motherRoom.totalPlants')}: <span className="text-white">{cycle.plantsCount || 0}</span></span>
         {daysLeft != null && (
           <span className={daysLeft < 0 ? 'text-red-400' : daysLeft <= 28 ? 'text-amber-400' : 'text-dark-400'}>
             {daysLeft < 0 ? t('motherRoom.overdueBy', { days: -daysLeft }) : t('motherRoom.daysLeft', { days: daysLeft })}
