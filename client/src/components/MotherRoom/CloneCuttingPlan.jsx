@@ -139,11 +139,23 @@ function computeCyclesForRoom(room) {
     };
   };
 
+  // effectiveStartDate = когда цикл реально заезжает в комнату.
+  // Не может быть раньше конца предыдущего цикла: если юзер задал более раннюю
+  // дату — игнорируем, используем конец предыдущего. Более поздняя дата (зазор
+  // между циклами) уважается.
+  const pickMoveIn = (plannedStartDate, earliestAllowed) => {
+    if (!plannedStartDate) return earliestAllowed || null;
+    if (!earliestAllowed) return plannedStartDate;
+    const planned = new Date(plannedStartDate).getTime();
+    const earliest = new Date(earliestAllowed).getTime();
+    return planned > earliest ? plannedStartDate : earliestAllowed;
+  };
+
   const planOrder0 = (room.plannedCycles || []).find(p => (p.order ?? 0) === 0) || null;
   const next = makePlanned('next', planOrder0);
   // Clones for NEXT are cut `cutLeadDays` before the CURRENT cycle ends
   next.cutDate = current.endDate ? addDays(current.endDate, -next.cutLeadDays) : null;
-  next.effectiveStartDate = next.plannedStartDate || current.endDate || null;
+  next.effectiveStartDate = pickMoveIn(next.plannedStartDate, current.endDate);
   next.endDate = next.effectiveStartDate ? addDays(next.effectiveStartDate, next.floweringDays) : null;
 
   const planOrder1 = (room.plannedCycles || []).find(p => (p.order ?? 0) === 1) || null;
@@ -151,7 +163,7 @@ function computeCyclesForRoom(room) {
   // Clones for NEXT+1 are cut `cutLeadDays` AFTER the NEXT cycle moves in
   // (which in the default chained case is the current cycle's end date).
   nextPlus.cutDate = next.effectiveStartDate ? addDays(next.effectiveStartDate, nextPlus.cutLeadDays) : null;
-  nextPlus.effectiveStartDate = nextPlus.plannedStartDate || next.endDate || null;
+  nextPlus.effectiveStartDate = pickMoveIn(nextPlus.plannedStartDate, next.endDate);
   nextPlus.endDate = nextPlus.effectiveStartDate ? addDays(nextPlus.effectiveStartDate, nextPlus.floweringDays) : null;
 
   const cutDays = (d) => (d ? diffDays(now, d) : null);
