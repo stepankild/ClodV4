@@ -22,11 +22,38 @@ export const getPlans = async (req, res) => {
   }
 };
 
+// Normalize a strains array, and compute the legacy single-string / count fields
+// for backward compatibility with Overview/Clones.
+const normalizeStrains = (strains, legacyStrain, legacyQty) => {
+  if (Array.isArray(strains) && strains.length > 0) {
+    const cleaned = strains
+      .map(s => ({
+        strain: String(s.strain || '').trim(),
+        quantity: parseInt(s.quantity, 10) || 0
+      }))
+      .filter(s => s.strain !== '' || s.quantity > 0);
+    if (cleaned.length === 0) {
+      return { strains: [], strain: String(legacyStrain || '').trim(), plantsCount: parseInt(legacyQty, 10) || 0 };
+    }
+    const combinedStrain = cleaned.map(s => s.strain).filter(Boolean).join(', ');
+    const combinedQty = cleaned.reduce((acc, s) => acc + s.quantity, 0);
+    return { strains: cleaned, strain: combinedStrain, plantsCount: combinedQty };
+  }
+  // Fall back to legacy single-strain form
+  const s = String(legacyStrain || '').trim();
+  const q = parseInt(legacyQty, 10) || 0;
+  return {
+    strains: s || q > 0 ? [{ strain: s, quantity: q }] : [],
+    strain: s,
+    plantsCount: q
+  };
+};
+
 // @desc    Create or replace planned cycle for a room at a specific `order` slot
 // @route   POST /api/rooms/plans
 export const createPlan = async (req, res) => {
   try {
-    const { roomId, cycleName, strain, plannedStartDate, plantsCount, floweringDays, notes, order } = req.body;
+    const { roomId, cycleName, strain, strains, plannedStartDate, plantsCount, floweringDays, cutLeadDays, notes, order } = req.body;
     if (!roomId || !mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({ message: t('plans.specifyRoom', req.lang) });
     }
@@ -34,14 +61,17 @@ export const createPlan = async (req, res) => {
     if (!room) return res.status(404).json({ message: t('rooms.notFound', req.lang) });
 
     const orderValue = Number.isFinite(parseInt(order, 10)) ? parseInt(order, 10) : 0;
+    const normalized = normalizeStrains(strains, strain, plantsCount);
 
     const data = {
       room: roomId,
       cycleName: cycleName != null ? String(cycleName).trim() : '',
-      strain: strain != null ? String(strain).trim() : '',
+      strain: normalized.strain,
+      plantsCount: normalized.plantsCount,
+      strains: normalized.strains,
       plannedStartDate: plannedStartDate ? new Date(plannedStartDate) : null,
-      plantsCount: parseInt(plantsCount, 10) || 0,
       floweringDays: parseInt(floweringDays, 10) || 56,
+      cutLeadDays: Number.isFinite(parseInt(cutLeadDays, 10)) ? parseInt(cutLeadDays, 10) : 28,
       order: orderValue,
       notes: notes != null ? String(notes).trim() : ''
     };
@@ -64,15 +94,27 @@ export const createPlan = async (req, res) => {
 // @route   PUT /api/rooms/plans/:id
 export const updatePlan = async (req, res) => {
   try {
-    const { cycleName, strain, plannedStartDate, plantsCount, floweringDays, notes, order } = req.body;
+    const { cycleName, strain, strains, plannedStartDate, plantsCount, floweringDays, cutLeadDays, notes, order } = req.body;
     const plan = await PlannedCycle.findOne({ _id: req.params.id, ...notDeleted });
     if (!plan) return res.status(404).json({ message: t('plans.notFound', req.lang) });
 
     if (cycleName !== undefined) plan.cycleName = String(cycleName).trim();
-    if (strain !== undefined) plan.strain = String(strain).trim();
+    if (strains !== undefined || strain !== undefined || plantsCount !== undefined) {
+      const normalized = normalizeStrains(
+        strains !== undefined ? strains : plan.strains,
+        strain !== undefined ? strain : plan.strain,
+        plantsCount !== undefined ? plantsCount : plan.plantsCount
+      );
+      plan.strains = normalized.strains;
+      plan.strain = normalized.strain;
+      plan.plantsCount = normalized.plantsCount;
+    }
     if (plannedStartDate !== undefined) plan.plannedStartDate = plannedStartDate ? new Date(plannedStartDate) : null;
-    if (plantsCount !== undefined) plan.plantsCount = parseInt(plantsCount, 10) || 0;
     if (floweringDays !== undefined) plan.floweringDays = parseInt(floweringDays, 10) || 56;
+    if (cutLeadDays !== undefined) {
+      const v = parseInt(cutLeadDays, 10);
+      if (Number.isFinite(v)) plan.cutLeadDays = v;
+    }
     if (notes !== undefined) plan.notes = String(notes).trim();
     if (order !== undefined) {
       const v = parseInt(order, 10);

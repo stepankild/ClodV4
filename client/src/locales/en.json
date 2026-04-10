@@ -2182,7 +2182,11 @@
     "covered": "Covered",
     "batchShortHint": "Batch is {{diff}} pcs short of plan",
     "strainMismatch": "strain",
-    "strainMismatchHint": "Planned {{planned}} but batch has {{batch}}"
+    "strainMismatchHint": "Planned {{planned}} but batch has {{batch}}",
+    "addStrain": "strain",
+    "cutLeadDaysHint": "Days before the current cycle ends when clones must be cut",
+    "daysShort": "d",
+    "plannedStartDate": "Start date"
   },
   "language": {
     "ru": "RU",

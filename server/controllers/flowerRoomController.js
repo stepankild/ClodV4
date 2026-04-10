@@ -253,9 +253,11 @@ export const getRoomsSummary = async (req, res) => {
           _id: plannedCycle._id,
           cycleName: plannedCycle.cycleName,
           strain: plannedCycle.strain,
+          strains: plannedCycle.strains || [],
           plannedStartDate: plannedCycle.plannedStartDate,
           plantsCount: plannedCycle.plantsCount,
           floweringDays: plannedCycle.floweringDays,
+          cutLeadDays: plannedCycle.cutLeadDays ?? 28,
           order: plannedCycle.order ?? 0,
           notes: plannedCycle.notes
         } : null,
@@ -263,48 +265,17 @@ export const getRoomsSummary = async (req, res) => {
           _id: pc._id,
           cycleName: pc.cycleName,
           strain: pc.strain,
+          strains: pc.strains || [],
           plannedStartDate: pc.plannedStartDate,
           plantsCount: pc.plantsCount,
           floweringDays: pc.floweringDays,
+          cutLeadDays: pc.cutLeadDays ?? 28,
           order: pc.order ?? 0,
           notes: pc.notes
         })),
         pipeline
       };
     }));
-    // Attach diagnostics to the first room so the frontend debug block can show it.
-    // TODO: remove once the pipeline data flow is verified.
-    if (summary.length > 0) {
-      summary[0]._debug = {
-        allCloneCutsCount: activeCloneCuts.length,
-        allCloneCutsEverCount: allCloneCutsEver.length,
-        allVegBatchesCount: allVegBatches.length,
-        cutsWithRoomSet: activeCloneCuts.filter(c => c.room).length,
-        vegsWithFlowerRoomSet: allVegBatches.filter(v => v.flowerRoom).length,
-        vegsWithSourceCut: allVegBatches.filter(v => v.sourceCloneCut).length,
-        cutRoomIds: Array.from(cutsByRoomStr.keys()),
-        vegRoomIds: Array.from(vegsByRoomStr.keys()),
-        ourRoomIds: rooms.map(r => String(r._id)),
-        sampleCut: activeCloneCuts[0] ? {
-          _id: String(activeCloneCuts[0]._id),
-          room: activeCloneCuts[0].room ? String(activeCloneCuts[0].room) : null,
-          isDone: activeCloneCuts[0].isDone,
-          strain: activeCloneCuts[0].strain,
-          quantity: activeCloneCuts[0].quantity,
-          strains: activeCloneCuts[0].strains,
-        } : null,
-        sampleVeg: allVegBatches[0] ? {
-          _id: String(allVegBatches[0]._id),
-          flowerRoom: allVegBatches[0].flowerRoom ? String(allVegBatches[0].flowerRoom) : null,
-          sourceCloneCut: allVegBatches[0].sourceCloneCut ? String(allVegBatches[0].sourceCloneCut) : null,
-          sourceRoom: allVegBatches[0].sourceCloneCut ? cutIdToRoom.get(String(allVegBatches[0].sourceCloneCut)) || null : null,
-          transplantedToFlowerAt: allVegBatches[0].transplantedToFlowerAt,
-          strain: allVegBatches[0].strain,
-          quantity: allVegBatches[0].quantity,
-          strains: allVegBatches[0].strains,
-        } : null,
-      };
-    }
     res.json(summary);
   } catch (error) {
     console.error('Get rooms summary error:', error);

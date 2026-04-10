@@ -2181,7 +2181,11 @@
     "covered": "Покрыто",
     "batchShortHint": "Батч меньше плана на {{diff}} шт.",
     "strainMismatch": "сорт",
-    "strainMismatchHint": "В плане {{planned}}, но в батче {{batch}}"
+    "strainMismatchHint": "В плане {{planned}}, но в батче {{batch}}",
+    "addStrain": "сорт",
+    "cutLeadDaysHint": "За сколько дней до конца текущего цикла резать клоны",
+    "daysShort": "дн.",
+    "plannedStartDate": "Дата старта"
   },
   "language": {
     "ru": "RU",
