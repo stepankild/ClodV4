@@ -156,6 +156,22 @@ export default function CloneCuttingPlan() {
 
   useEffect(() => { loadRooms(); }, [loadRooms]);
 
+  // Debug: dump raw pipeline per room to the browser console so we can see what
+  // the API actually returned. Remove once the data flow is verified.
+  useEffect(() => {
+    if (!loading && rooms.length > 0) {
+      // eslint-disable-next-line no-console
+      console.log('[CloneCuttingPlan] rooms =', rooms.map(r => ({
+        roomNumber: r.roomNumber,
+        name: r.name,
+        isActive: r.isActive,
+        strain: r.strain,
+        plantsCount: r.plantsCount,
+        pipeline: r.pipeline,
+      })));
+    }
+  }, [rooms, loading]);
+
   // Save (or upsert) a planned cycle for a given room + order. Merges the saved
   // plan into local state so we don't reload the whole rooms list mid-typing.
   const savePlan = async (roomId, order, patch) => {
@@ -254,21 +270,6 @@ export default function CloneCuttingPlan() {
       </div>
     );
   }
-
-  // Debug: dump raw pipeline per room to the browser console so we can see what the
-  // API actually returned. Remove once the data flow is verified.
-  useEffect(() => {
-    if (!loading && rooms.length > 0) {
-      console.log('[CloneCuttingPlan] rooms =', rooms.map(r => ({
-        roomNumber: r.roomNumber,
-        name: r.name,
-        isActive: r.isActive,
-        strain: r.strain,
-        plantsCount: r.plantsCount,
-        pipeline: r.pipeline,
-      })));
-    }
-  }, [rooms, loading]);
 
   if (sortedRooms.length === 0) {
     return null;
