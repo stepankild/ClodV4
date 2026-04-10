@@ -2178,11 +2178,8 @@
     "roomInactive": "Не активна",
     "pipelineCut": "Нарезано",
     "pipelineVeg": "На веге",
-    "pipelineCutHint": "Клонов уже нарезано и ждёт вега",
-    "pipelineVegHint": "Клонов уже в вегетации для этой комнаты",
-    "stillNeed": "Нужно ещё",
     "covered": "Покрыто",
-    "ofPlanned": "из {{planned}}, {{inPipeline}} уже в работе"
+    "batchShortHint": "Батч меньше плана на {{diff}} шт."
   },
   "language": {
     "ru": "RU",

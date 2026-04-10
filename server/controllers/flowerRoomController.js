@@ -78,66 +78,88 @@ export const getRoomsSummary = async (req, res) => {
       ]);
       const plannedCycle = plannedCyclesRaw.find(p => (p.order ?? 0) === 0) || plannedCyclesRaw[0] || null;
 
-      // Build "pipeline" summary: what's already in motion for the next cycle of this room
-      // — clone cuts not yet transplanted to veg, plus veg batches not yet in flower.
+      // Build "pipeline" batches: individual clone-cut / veg-batch entries in motion
+      // toward this room's next cycle. Batches are atomic — each one is meant for ONE
+      // upcoming cycle; leftovers after assignment are just disposed of, not carried over.
       const vegSourceCutIds = new Set(
         vegBatchesRaw.map(b => b.sourceCloneCut?.toString()).filter(Boolean)
       );
       const activeCuts = cloneCutsRaw.filter(c => !vegSourceCutIds.has(c._id.toString()));
-      const cutByStrain = {};
-      let cutTotal = 0;
+
+      const pipelineBatches = [];
+
       for (const c of activeCuts) {
+        const cutDate = c.cutDate || c.createdAt || null;
         if (Array.isArray(c.strains) && c.strains.length > 0) {
           for (const s of c.strains) {
-            const key = (s.strain || '').trim() || '—';
             const q = Number(s.quantity) || 0;
-            cutByStrain[key] = (cutByStrain[key] || 0) + q;
-            cutTotal += q;
+            if (q <= 0) continue;
+            pipelineBatches.push({
+              _id: `${c._id}:${s.strain || ''}`,
+              kind: 'cut',
+              strain: (s.strain || '').trim(),
+              quantity: q,
+              cutDate,
+            });
           }
         } else {
-          const key = (c.strain || '').trim() || '—';
           const q = Number(c.quantity) || 0;
-          cutByStrain[key] = (cutByStrain[key] || 0) + q;
-          cutTotal += q;
+          if (q > 0) {
+            pipelineBatches.push({
+              _id: String(c._id),
+              kind: 'cut',
+              strain: (c.strain || '').trim(),
+              quantity: q,
+              cutDate,
+            });
+          }
         }
       }
 
-      const vegByStrain = {};
-      let vegTotal = 0;
       for (const v of vegBatchesRaw) {
-        // Remaining-in-veg quantity = total minus what already left veg
         const totalQty = Number(v.quantity) || 0;
         const sent = Number(v.sentToFlowerCount) || 0;
         const died = Number(v.diedCount) || 0;
         const disposed = Number(v.disposedCount) || 0;
         const remaining = Math.max(0, totalQty - sent - died - disposed);
         if (remaining <= 0) continue;
+        const cutDate = v.cutDate || v.transplantedToVegAt || v.createdAt || null;
 
         if (Array.isArray(v.strains) && v.strains.length > 0) {
           const strainsTotal = v.strains.reduce((s, x) => s + (Number(x.quantity) || 0), 0);
           for (const s of v.strains) {
-            const key = (s.strain || '').trim() || '—';
             const share = strainsTotal > 0 ? (Number(s.quantity) || 0) / strainsTotal : 0;
             const q = Math.round(remaining * share);
             if (q <= 0) continue;
-            vegByStrain[key] = (vegByStrain[key] || 0) + q;
-            vegTotal += q;
+            pipelineBatches.push({
+              _id: `${v._id}:${s.strain || ''}`,
+              kind: 'veg',
+              strain: (s.strain || '').trim(),
+              quantity: q,
+              cutDate,
+              transplantedToVegAt: v.transplantedToVegAt || null,
+            });
           }
         } else {
-          const key = (v.strain || '').trim() || '—';
-          vegByStrain[key] = (vegByStrain[key] || 0) + remaining;
-          vegTotal += remaining;
+          pipelineBatches.push({
+            _id: String(v._id),
+            kind: 'veg',
+            strain: (v.strain || '').trim(),
+            quantity: remaining,
+            cutDate,
+            transplantedToVegAt: v.transplantedToVegAt || null,
+          });
         }
       }
 
-      const pipeline = {
-        cutByStrain,
-        cutTotal,
-        vegByStrain,
-        vegTotal,
-        cutCount: activeCuts.length,
-        vegCount: vegBatchesRaw.length,
-      };
+      // Sort batches oldest-first so earlier cycles pick them up first
+      pipelineBatches.sort((a, b) => {
+        const da = a.cutDate ? new Date(a.cutDate).getTime() : 0;
+        const db = b.cutDate ? new Date(b.cutDate).getTime() : 0;
+        return da - db;
+      });
+
+      const pipeline = { batches: pipelineBatches };
       // Backward-compat fields
       const trimWeek2 = completedTasksRaw.find(t => t.type === 'trim');
       const defoliationWeek4 = completedTasksRaw.find(t => t.type === 'defoliation');

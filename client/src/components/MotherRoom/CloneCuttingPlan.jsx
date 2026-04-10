@@ -27,16 +27,35 @@ function isoDate(date) {
 }
 
 /**
- * For a given planned cycle, figure out how many clones of its strain are already
- * in the pipeline (cut but not yet in veg + in veg but not yet in flower).
- * Only counts the matching strain.
+ * Assigns pipeline batches (from room.pipeline.batches) to the given planned cycles
+ * in order. Rule:
+ *   - Each batch is atomic — it's meant for ONE cycle, not split between them.
+ *   - A batch with strain S is assigned to the FIRST upcoming cycle whose strain
+ *     matches S (and that isn't already "covered" by an earlier batch).
+ *   - Once assigned, the batch's quantity covers that cycle up to its plantsCount.
+ *     Any surplus is considered waste (disposed), any shortage goes to "still need".
+ *   - A batch already assigned to an earlier cycle can't also cover a later one.
+ *
+ * Returns: { assignments: Map(cycleKind -> batch | null) }.
  */
-function pipelineForStrain(pipeline, strain) {
-  if (!pipeline || !strain) return { cut: 0, veg: 0, total: 0 };
-  const key = String(strain).trim();
-  const cut = pipeline.cutByStrain?.[key] || 0;
-  const veg = pipeline.vegByStrain?.[key] || 0;
-  return { cut, veg, total: cut + veg };
+function assignPipelineToCycles(pipeline, cycles) {
+  const batches = (pipeline?.batches || []).map(b => ({ ...b, used: false }));
+  const assignments = {};
+  for (const cycle of cycles) {
+    if (!cycle?.strain || !(cycle.plantsCount > 0)) {
+      assignments[cycle.kind] = null;
+      continue;
+    }
+    const needle = String(cycle.strain).trim().toLowerCase();
+    const match = batches.find(b => !b.used && (b.strain || '').trim().toLowerCase() === needle);
+    if (match) {
+      match.used = true;
+      assignments[cycle.kind] = match;
+    } else {
+      assignments[cycle.kind] = null;
+    }
+  }
+  return assignments;
 }
 
 /**
@@ -168,31 +187,26 @@ export default function CloneCuttingPlan() {
     });
   }, [rooms]);
 
-  // Aggregate upcoming cuts across all rooms. Each entry's quantity is REDUCED by
-  // whatever's already in the pipeline (cut or in veg) for that strain in that room.
+  // Aggregate upcoming cuts across all rooms. A cycle is "covered" if any atomic
+  // pipeline batch has been assigned to it; otherwise the full planned quantity
+  // still needs to be cut. Pipeline batches aren't split across cycles.
   const upcomingCuts = useMemo(() => {
     const list = [];
     sortedRooms.forEach(room => {
       const { next, nextPlus } = computeCyclesForRoom(room);
-      // Track how many pipeline plants we've already "consumed" by earlier cycles
-      // of the same strain (so NEXT+1 doesn't double-count what NEXT already used).
-      const consumedPerStrain = new Map();
+      const assignments = assignPipelineToCycles(room.pipeline, [next, nextPlus]);
       [next, nextPlus].forEach(cycle => {
         if (!(cycle.plantsCount > 0 && cycle.strain && cycle.cutDate)) return;
-        const pipe = pipelineForStrain(room.pipeline, cycle.strain);
-        const alreadyUsed = consumedPerStrain.get(cycle.strain) || 0;
-        const pipelineAvail = Math.max(0, pipe.total - alreadyUsed);
-        const applied = Math.min(pipelineAvail, cycle.plantsCount);
-        consumedPerStrain.set(cycle.strain, alreadyUsed + applied);
-        const remaining = Math.max(0, cycle.plantsCount - applied);
-        if (remaining <= 0) return;
+        const batch = assignments[cycle.kind];
+        // If a batch is assigned, consider the cycle fully covered (short batches
+        // either get topped up in the same batch or are accepted as-is — we do not
+        // plan extra cuts for them here).
+        if (batch) return;
         list.push({
           roomName: room.name || `${t('motherRoom.roomShort')} ${room.roomNumber}`,
           roomNumber: room.roomNumber,
           strain: cycle.strain,
-          quantity: remaining,
-          plannedQuantity: cycle.plantsCount,
-          pipelineApplied: applied,
+          quantity: cycle.plantsCount,
           cutDate: cycle.cutDate,
           cutInDays: cycle.cutInDays,
           cycleKind: cycle.kind,
@@ -259,11 +273,6 @@ export default function CloneCuttingPlan() {
                     <span className="font-medium truncate">{cut.strain}</span>
                     <span className="text-dark-500">×</span>
                     <span className="font-semibold">{cut.quantity}</span>
-                    {cut.pipelineApplied > 0 && (
-                      <span className="text-[9px] text-dark-500">
-                        ({t('motherRoom.ofPlanned', { planned: cut.plannedQuantity, inPipeline: cut.pipelineApplied })})
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-center gap-2 text-[10px]">
                     <span>{formatDate(cut.cutDate)}</span>
@@ -304,20 +313,12 @@ export default function CloneCuttingPlan() {
 
 function RoomPlanRow({ room, onSave, saving, t }) {
   const { current, next, nextPlus } = useMemo(() => computeCyclesForRoom(room), [room]);
+  const assignments = useMemo(
+    () => assignPipelineToCycles(room.pipeline, [next, nextPlus]),
+    [room.pipeline, next, nextPlus]
+  );
   const key0 = `${room._id}_0`;
   const key1 = `${room._id}_1`;
-
-  // Pipeline consumption: NEXT eats from the pool first, NEXT+1 gets the leftover.
-  const nextPipe = pipelineForStrain(room.pipeline, next.strain);
-  const nextApplied = Math.min(nextPipe.total, next.plantsCount || 0);
-  const nextPipeShown = { ...nextPipe, applied: nextApplied };
-
-  const nextPlusPipe = pipelineForStrain(room.pipeline, nextPlus.strain);
-  const nextPlusAvailable = (nextPlus.strain && nextPlus.strain === next.strain)
-    ? Math.max(0, nextPlusPipe.total - nextApplied)
-    : nextPlusPipe.total;
-  const nextPlusApplied = Math.min(nextPlusAvailable, nextPlus.plantsCount || 0);
-  const nextPlusPipeShown = { ...nextPlusPipe, total: nextPlusAvailable, applied: nextPlusApplied };
 
   return (
     <div className="border border-dark-700 rounded-lg p-3 bg-dark-900/20">
@@ -335,7 +336,7 @@ function RoomPlanRow({ room, onSave, saving, t }) {
         <CurrentCycleCard cycle={current} t={t} />
         <PlannedCycleCard
           cycle={next}
-          pipeline={nextPipeShown}
+          batch={assignments.next}
           title={t('motherRoom.cycleNext')}
           cutLabel={t('motherRoom.cutDate')}
           onSave={(patch) => onSave(0, patch)}
@@ -344,7 +345,7 @@ function RoomPlanRow({ room, onSave, saving, t }) {
         />
         <PlannedCycleCard
           cycle={nextPlus}
-          pipeline={nextPlusPipeShown}
+          batch={assignments.nextPlus}
           title={t('motherRoom.cycleNextPlus')}
           cutLabel={t('motherRoom.cutDate')}
           onSave={(patch) => onSave(1, patch)}
@@ -382,7 +383,7 @@ function CurrentCycleCard({ cycle, t }) {
   );
 }
 
-function PlannedCycleCard({ cycle, pipeline, title, cutLabel, onSave, saving, t }) {
+function PlannedCycleCard({ cycle, batch, title, cutLabel, onSave, saving, t }) {
   const [strain, setStrain] = useState(cycle.strain);
   const [plantsCount, setPlantsCount] = useState(cycle.plantsCount);
   const [plannedStartDate, setPlannedStartDate] = useState(isoDate(cycle.plannedStartDate));
@@ -419,13 +420,10 @@ function PlannedCycleCard({ cycle, pipeline, title, cutLabel, onSave, saving, t 
   };
   useEffect(() => () => clearTimeout(saveTimer.current), []);
 
-  // Pipeline-aware remaining to cut
+  // A batch atomically "covers" this cycle — no splitting across cycles.
   const planned = cycle.plantsCount || 0;
-  const pipelineApplied = pipeline?.applied || 0;
-  const pipelineCut = pipeline?.cut || 0;
-  const pipelineVeg = pipeline?.veg || 0;
-  const remainingToCut = Math.max(0, planned - pipelineApplied);
-  const fullyCovered = planned > 0 && remainingToCut === 0;
+  const fullyCovered = !!batch && planned > 0;
+  const batchShort = batch && batch.quantity < planned;
 
   const overdue = !fullyCovered && cycle.cutInDays != null && cycle.cutInDays < 0;
   const soon = !fullyCovered && cycle.cutInDays != null && cycle.cutInDays >= 0 && cycle.cutInDays <= 7;
@@ -492,24 +490,20 @@ function PlannedCycleCard({ cycle, pipeline, title, cutLabel, onSave, saving, t 
         </div>
       </div>
 
-      {/* Pipeline status (only if there's something for this strain) */}
-      {(pipelineCut > 0 || pipelineVeg > 0) && (
-        <div className="flex items-center gap-2 text-[10px] pt-0.5 border-t border-dark-700/60">
-          {pipelineCut > 0 && (
-            <span className="text-dark-400" title={t('motherRoom.pipelineCutHint')}>
-              <span className="text-dark-500">{t('motherRoom.pipelineCut')}:</span>{' '}
-              <span className="text-white">{pipelineCut}</span>
-            </span>
+      {/* Assigned batch info (if any) */}
+      {batch && (
+        <div className="flex items-center gap-1.5 text-[10px] pt-0.5 border-t border-dark-700/60">
+          <span className={`px-1 rounded ${batch.kind === 'veg' ? 'bg-green-900/40 text-green-400' : 'bg-blue-900/40 text-blue-400'}`}>
+            {batch.kind === 'veg' ? t('motherRoom.pipelineVeg') : t('motherRoom.pipelineCut')}
+          </span>
+          <span className="text-white font-semibold">{batch.quantity}</span>
+          <span className="text-dark-500">{t('motherRoom.pieces')}</span>
+          {batch.cutDate && (
+            <span className="text-dark-500 ml-auto">{formatDate(batch.cutDate)}</span>
           )}
-          {pipelineVeg > 0 && (
-            <span className="text-dark-400" title={t('motherRoom.pipelineVegHint')}>
-              <span className="text-dark-500">{t('motherRoom.pipelineVeg')}:</span>{' '}
-              <span className="text-white">{pipelineVeg}</span>
-            </span>
-          )}
-          {planned > 0 && remainingToCut > 0 && (
-            <span className="text-amber-400 ml-auto">
-              {t('motherRoom.stillNeed')}: <span className="font-semibold">{remainingToCut}</span>
+          {batchShort && (
+            <span className="text-amber-500" title={t('motherRoom.batchShortHint', { diff: planned - batch.quantity })}>
+              −{planned - batch.quantity}
             </span>
           )}
         </div>
