@@ -413,6 +413,24 @@ export const startCycle = async (req, res) => {
 
     await room.save();
 
+    // Shift planned cycles forward: the cycle we just started "consumed"
+    // PlannedCycle order=0, so soft-delete it and decrement the order of any
+    // remaining plans (order 1 → 0, order 2 → 1, …). That way the mother
+    // room clone plan cards shift automatically: old NEXT becomes current,
+    // old NEXT+1 becomes NEXT, and NEXT+1 turns into a fresh empty slot.
+    try {
+      await PlannedCycle.updateMany(
+        { room: room._id, order: 0, deletedAt: null },
+        { $set: { deletedAt: new Date() } }
+      );
+      await PlannedCycle.updateMany(
+        { room: room._id, deletedAt: null },
+        { $inc: { order: -1 } }
+      );
+    } catch (shiftErr) {
+      console.warn('Plan shift on cycle start failed:', shiftErr?.message);
+    }
+
     // Создаём лог начала цикла
     await RoomLog.create({
       room: room._id,
