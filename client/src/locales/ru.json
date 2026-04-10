@@ -2156,7 +2156,9 @@
     "saveError": "Ошибка сохранения",
     "needsPrune": "Нужна обрезка",
     "totalPlants": "Всего",
-    "placeOnMap": "Поставить на карту"
+    "placeOnMap": "Поставить на карту",
+    "byStrain": "По сортам",
+    "byHealth": "По состоянию"
   },
   "language": {
     "ru": "RU",

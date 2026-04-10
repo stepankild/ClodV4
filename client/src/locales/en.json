@@ -2157,7 +2157,9 @@
     "saveError": "Save error",
     "needsPrune": "Needs prune",
     "totalPlants": "Total",
-    "placeOnMap": "Place on map"
+    "placeOnMap": "Place on map",
+    "byStrain": "By strain",
+    "byHealth": "By health"
   },
   "language": {
     "ru": "RU",

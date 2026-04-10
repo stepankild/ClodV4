@@ -74,6 +74,9 @@ export default function MotherRoomMap({
   const [dragging, setDragging] = useState(null); // { plantId, from: 'palette' | {row, position} }
   const [dropTarget, setDropTarget] = useState(null); // 'palette' | {row, position}
 
+  // Hover tooltip (hidden during drag)
+  const [hoveredChip, setHoveredChip] = useState(null); // { plant, anchorX, anchorY }
+
   // Popover state
   const [popover, setPopover] = useState(null);
   // { cellKey: 'r:p', rect: DOMRect, plantId: string|null }
@@ -170,6 +173,25 @@ export default function MotherRoomMap({
 
   const unplacedPlants = plants.filter(p => !p.retiredAt && !placedPlantIds.has(p._id));
 
+  // Summary breakdowns (active plants only, placed + unplaced)
+  const strainBreakdown = useMemo(() => {
+    const counts = new Map();
+    plants.filter(p => !p.retiredAt).forEach(p => {
+      const key = p.strain?.trim() || '—';
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  }, [plants]);
+
+  const healthBreakdown = useMemo(() => {
+    const counts = {};
+    plants.filter(p => !p.retiredAt).forEach(p => {
+      const h = p.health || 'good';
+      counts[h] = (counts[h] || 0) + 1;
+    });
+    return counts;
+  }, [plants]);
+
   // Next free position slot on a table (tables are slot-less, but we still store
   // unique `position` per chip to key plantPositions entries)
   const nextPositionOnTable = (row, positions = plantPositions) => {
@@ -189,6 +211,7 @@ export default function MotherRoomMap({
   const handleChipDragStart = (e, row, position, plantId) => {
     if (!canManage) return;
     e.stopPropagation();
+    setHoveredChip(null);
     // Remember where in the chip the cursor was, so drops can place it centered
     const chipRect = e.currentTarget.getBoundingClientRect();
     const offsetX = e.clientX - chipRect.left;
@@ -745,7 +768,16 @@ export default function MotherRoomMap({
                 onDragStart={(e) => handleChipDragStart(e, flatIdx, chip.position, chip.plantId)}
                 onDragEnd={handleDragEnd}
                 onClick={(e) => handleChipClick(e, flatIdx, chip.position, chip.plantId)}
-                title={`${plant.name || ''}${plant.strain ? ` · ${plant.strain}` : ''}`}
+                onMouseEnter={(e) => {
+                  if (dragging) return;
+                  const r = e.currentTarget.getBoundingClientRect();
+                  setHoveredChip({
+                    plant,
+                    anchorX: r.left + r.width / 2,
+                    anchorY: r.top,
+                  });
+                }}
+                onMouseLeave={() => setHoveredChip(null)}
                 style={{
                   position: 'absolute',
                   left: `${chip.x * 100}%`,
@@ -770,6 +802,66 @@ export default function MotherRoomMap({
             <span className="absolute inset-0 flex items-center justify-center text-[11px] text-dark-600 pointer-events-none">+</span>
           )}
         </div>
+      </div>
+    );
+  };
+
+  const renderHoverTooltip = () => {
+    if (!hoveredChip || dragging || popover) return null;
+    const { plant, anchorX, anchorY } = hoveredChip;
+    const color = HEALTH_COLORS[plant.health] || HEALTH_COLORS.good;
+    const age = daysAgo(plant.plantedDate);
+    const lastPrune = daysAgo(plant.lastPruneDate);
+
+    const TOOLTIP_W = 240;
+    const MARGIN = 8;
+    let left = anchorX - TOOLTIP_W / 2;
+    if (left + TOOLTIP_W > window.innerWidth - MARGIN) left = window.innerWidth - TOOLTIP_W - MARGIN;
+    if (left < MARGIN) left = MARGIN;
+    // Show above the chip by default, flip below if not enough room
+    let bottom = window.innerHeight - anchorY + MARGIN;
+    const showAbove = anchorY > 140;
+    const style = showAbove
+      ? { position: 'fixed', left, bottom, width: TOOLTIP_W, pointerEvents: 'none', zIndex: 45 }
+      : { position: 'fixed', left, top: anchorY + 28 + MARGIN, width: TOOLTIP_W, pointerEvents: 'none', zIndex: 45 };
+
+    return (
+      <div
+        style={style}
+        className="bg-dark-900/95 backdrop-blur border border-dark-600 rounded-lg shadow-2xl px-3 py-2 text-xs"
+      >
+        <div className="flex items-start justify-between gap-2 mb-1">
+          <div className="min-w-0">
+            <div className="text-white font-semibold truncate">{plant.name || '—'}</div>
+            {plant.strain && <div className="text-dark-300 text-[11px] truncate">{plant.strain}</div>}
+          </div>
+          <span className={`px-1.5 py-0.5 rounded text-[9px] font-medium ${color.bg} ${color.border} ${color.text} border shrink-0`}>
+            {t(`motherRoom.health${(plant.health || 'good').charAt(0).toUpperCase() + (plant.health || 'good').slice(1)}`)}
+          </span>
+        </div>
+        <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[11px] text-dark-300">
+          <div>
+            <span className="text-dark-500">{t('motherRoom.age')}: </span>
+            <span className="text-white">{age != null ? `${age} ${t('motherRoom.ageDays')}` : '—'}</span>
+          </div>
+          <div>
+            <span className="text-dark-500">{t('motherRoom.lastPrune')}: </span>
+            <span className="text-white">
+              {lastPrune != null ? `${lastPrune} ${t('motherRoom.daysAgo')}` : t('motherRoom.neverPruned')}
+            </span>
+          </div>
+          {plant.pruneHistory?.length > 0 && (
+            <div className="col-span-2">
+              <span className="text-dark-500">{t('motherRoom.pruneHistory')}: </span>
+              <span className="text-white">{plant.pruneHistory.length}×</span>
+            </div>
+          )}
+        </div>
+        {plant.notes && (
+          <div className="mt-1.5 pt-1.5 border-t border-dark-700 text-[11px] text-dark-300 whitespace-pre-wrap break-words line-clamp-4">
+            {plant.notes}
+          </div>
+        )}
       </div>
     );
   };
@@ -912,27 +1004,41 @@ export default function MotherRoomMap({
         })}
       </div>
 
-      {/* Health legend */}
-      {assignedCount > 0 && (
-        <div className="flex flex-wrap gap-3 text-xs">
-          {Object.entries(HEALTH_COLORS).map(([key, color]) => {
-            const count = Object.values(positionMap).filter(pid => {
-              const p = plantMap[pid];
-              return p && p.health === key;
-            }).length;
-            if (count === 0) return null;
-            return (
-              <div key={key} className="flex items-center gap-1.5">
-                <span className={`w-2.5 h-2.5 rounded-full ${color.dot}`} />
-                <span className="text-dark-300">{t(`motherRoom.health${key.charAt(0).toUpperCase() + key.slice(1)}`)}</span>
-                <span className="text-dark-500">{count}</span>
-              </div>
-            );
-          })}
+      {/* Summary: strain breakdown + health breakdown */}
+      {plants.some(p => !p.retiredAt) && (
+        <div className="mt-3 border-t border-dark-700 pt-3 space-y-2 text-xs">
+          {strainBreakdown.length > 0 && (
+            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span className="text-dark-500 font-medium">{t('motherRoom.byStrain')}:</span>
+              {strainBreakdown.map(([strain, count]) => (
+                <span key={strain} className="text-dark-300">
+                  <span className="text-white font-medium">{strain}</span>
+                  <span className="text-dark-500 ml-1">{count}</span>
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="text-dark-500 font-medium">{t('motherRoom.byHealth')}:</span>
+            {Object.entries(HEALTH_COLORS).map(([key, color]) => {
+              const count = healthBreakdown[key] || 0;
+              if (count === 0) return null;
+              return (
+                <span key={key} className="flex items-center gap-1">
+                  <span className={`w-2 h-2 rounded-full ${color.dot}`} />
+                  <span className="text-dark-300">
+                    {t(`motherRoom.health${key.charAt(0).toUpperCase() + key.slice(1)}`)}
+                  </span>
+                  <span className="text-dark-500">{count}</span>
+                </span>
+              );
+            })}
+          </div>
         </div>
       )}
 
       {renderPopover()}
+      {renderHoverTooltip()}
     </div>
   );
 }
