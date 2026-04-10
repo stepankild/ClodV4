@@ -5,6 +5,34 @@ import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted, deletedOnly } from '../utils/softDelete.js';
 import { t } from '../utils/i18n.js';
 
+// One-time cleanup: drop legacy unique index on `room` that was created when only
+// one plan per room was allowed. The startup-time version in the model file may
+// not fire early enough on some deploys, so we also guard the first write here.
+let staleIndexCleaned = false;
+const ensureStaleRoomIndexDropped = async () => {
+  if (staleIndexCleaned) return;
+  try {
+    const indexes = await PlannedCycle.collection.listIndexes().toArray();
+    for (const idx of indexes) {
+      if (idx.name === '_id_') continue;
+      const keyFields = Object.keys(idx.key || {});
+      if (idx.unique && keyFields.length === 1 && keyFields[0] === 'room') {
+        console.log(`[plannedController] Dropping stale unique index: ${idx.name}`);
+        try {
+          await PlannedCycle.collection.dropIndex(idx.name);
+          console.log(`[plannedController] Dropped ${idx.name}`);
+        } catch (err) {
+          console.warn(`[plannedController] Failed to drop ${idx.name}:`, err?.message);
+        }
+      }
+    }
+    staleIndexCleaned = true;
+  } catch (err) {
+    console.warn('[plannedController] Index listing failed:', err?.message);
+    // don't set the flag — retry on the next call
+  }
+};
+
 // @desc    Get planned cycles (all or by roomId)
 // @route   GET /api/rooms/plans
 export const getPlans = async (req, res) => {
@@ -53,6 +81,7 @@ const normalizeStrains = (strains, legacyStrain, legacyQty) => {
 // @route   POST /api/rooms/plans
 export const createPlan = async (req, res) => {
   try {
+    await ensureStaleRoomIndexDropped();
     const { roomId, cycleName, strain, strains, plannedStartDate, plantsCount, floweringDays, cutLeadDays, notes, order } = req.body;
     if (!roomId || !mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({ message: t('plans.specifyRoom', req.lang) });
