@@ -2147,7 +2147,17 @@
     "noActivePlants": "No active plants to place",
     "mapSaved": "Map saved",
     "spotsUsed": "spots used",
-    "unplaced": "unplaced"
+    "unplaced": "Unplaced",
+    "quickCreate": "Quick create",
+    "createAndPlace": "Create and place",
+    "removeFromMap": "Remove from map",
+    "dropHereToUnplace": "Drop here to remove from map",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "saveError": "Save error",
+    "needsPrune": "Needs prune",
+    "totalPlants": "Total",
+    "placeOnMap": "Place on map"
   },
   "language": {
     "ru": "RU",

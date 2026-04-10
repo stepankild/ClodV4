@@ -2146,7 +2146,17 @@
     "noActivePlants": "Нет активных растений для размещения",
     "mapSaved": "Карта сохранена",
     "spotsUsed": "мест занято",
-    "unplaced": "не размещено"
+    "unplaced": "Не размещены",
+    "quickCreate": "Быстрое создание",
+    "createAndPlace": "Создать и поставить",
+    "removeFromMap": "Снять с карты",
+    "dropHereToUnplace": "Отпустите здесь, чтобы снять с карты",
+    "saving": "Сохранение…",
+    "saved": "Сохранено",
+    "saveError": "Ошибка сохранения",
+    "needsPrune": "Нужна обрезка",
+    "totalPlants": "Всего",
+    "placeOnMap": "Поставить на карту"
   },
   "language": {
     "ru": "RU",
