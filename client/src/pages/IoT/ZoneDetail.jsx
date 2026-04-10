@@ -735,7 +735,6 @@ const ZoneDetail = () => {
                   yAxisId={s.yAxisId}
                   dot={false}
                   strokeWidth={2}
-                  connectNulls
                 />
               ))}
             </LineChart>

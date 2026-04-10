@@ -260,25 +260,54 @@ stcc4_device = None
 
 
 def init_stcc4(i2c_address=0x64):
-    """Initialize STCC4 sensor via smbus2."""
+    """Initialize STCC4 sensor via smbus2, with retries."""
     global stcc4_device
-    try:
-        stcc4_device = STCC4(bus_num=1, address=i2c_address)
-        if stcc4_device.start():
-            return True
-        stcc4_device = None
-        return False
-    except Exception as e:
-        print(f"[STCC4] Init error: {e}")
-        stcc4_device = None
-        return False
+    for attempt in range(3):
+        try:
+            # Close previous handle if any (bus reset on retry)
+            if stcc4_device is not None:
+                try:
+                    stcc4_device.bus.close()
+                except Exception:
+                    pass
+                stcc4_device = None
+                time.sleep(1)
+            stcc4_device = STCC4(bus_num=1, address=i2c_address)
+            if stcc4_device.start():
+                print(f"[STCC4] Init OK (attempt {attempt+1})")
+                return True
+        except Exception as e:
+            print(f"[STCC4] Init attempt {attempt+1} error: {e}")
+        time.sleep(2)
+    print("[STCC4] All init attempts failed")
+    stcc4_device = None
+    return False
 
+
+_stcc4_addr = 0x64
+_stcc4_fail_count = 0
 
 def read_stcc4():
-    """Read CO2, temperature, humidity from STCC4."""
+    """Read CO2, temperature, humidity from STCC4. Auto-reinit on repeated failures."""
+    global stcc4_device, _stcc4_fail_count
     if stcc4_device is None or not stcc4_device.ready:
+        _stcc4_fail_count += 1
+        # Try to reinit every 10 failed cycles (~5 min)
+        if _stcc4_fail_count >= 10:
+            _stcc4_fail_count = 0
+            print("[STCC4] Attempting auto-reinit...")
+            init_stcc4(_stcc4_addr)
         return None, None, None
-    return stcc4_device.read_measurement()
+    result = stcc4_device.read_measurement()
+    if result[0] is None:
+        _stcc4_fail_count += 1
+        if _stcc4_fail_count >= 5:
+            print("[STCC4] Too many read failures, will reinit...")
+            stcc4_device = None
+            _stcc4_fail_count = 0
+    else:
+        _stcc4_fail_count = 0
+    return result
 
 
 # ── SHT45 (I2C Temperature + Humidity) ──
@@ -572,7 +601,9 @@ def main():
 
     co2_conf = sensors_conf.get("stcc4") or sensors_conf.get("scd41")
     if co2_conf and co2_conf.get("enabled", True):
-        init_stcc4(co2_conf.get("address", 0x64))
+        global _stcc4_addr
+        _stcc4_addr = co2_conf.get("address", 0x64)
+        init_stcc4(_stcc4_addr)
 
     sht45_conf = sensors_conf.get("sht45")
     if sht45_conf and sht45_conf.get("enabled", True):
@@ -597,6 +628,37 @@ def main():
     signal.signal(signal.SIGTERM, signal_handler)
 
     ds18b20_config = config.get("sensors", {}).get("ds18b20", [])
+
+    # I2C bus recovery state
+    i2c_fail_streak = 0          # consecutive cycles where all I2C sensors failed
+    I2C_RECOVERY_THRESHOLD = 3   # cycles before triggering bus reset
+
+    def recover_i2c_bus():
+        """Close all smbus handles and reinit I2C sensors.
+        Recovers from I2C bus lockup (one sensor stuck pulling SDA/SCL low)."""
+        global stcc4_device, sht45_device, bh1750_device
+        print("[I2C RECOVERY] All I2C sensors failing — attempting bus reset...")
+        # Close existing smbus handles
+        for dev_name, dev in [("STCC4", stcc4_device), ("SHT45", sht45_device), ("BH1750", bh1750_device)]:
+            if dev is not None:
+                try:
+                    dev.bus.close()
+                    print(f"[I2C RECOVERY] Closed {dev_name} bus")
+                except Exception as e:
+                    print(f"[I2C RECOVERY] Close {dev_name} error: {e}")
+        stcc4_device = None
+        sht45_device = None
+        bh1750_device = None
+        # Wait for bus to settle (allows stuck devices to time out internally)
+        time.sleep(3)
+        # Reinit all I2C sensors
+        if co2_conf and co2_conf.get("enabled", True):
+            init_stcc4(co2_conf.get("address", 0x64))
+        if sht45_conf and sht45_conf.get("enabled", True):
+            init_sht45(sht45_conf.get("address", 0x44))
+        if bh1750_conf and bh1750_conf.get("enabled", True):
+            init_bh1750(_bh1750_addr)
+        print("[I2C RECOVERY] Reinit complete")
 
     while running:
         try:
@@ -634,6 +696,35 @@ def main():
             lux = read_bh1750()
             if lux is not None:
                 payload["light"] = lux
+
+            # ── I2C bus health check ──
+            # If all enabled I2C sensors failed this cycle → track streak
+            i2c_enabled = []
+            i2c_failed = []
+            if co2_conf and co2_conf.get("enabled", True):
+                i2c_enabled.append("stcc4")
+                if co2 is None:
+                    i2c_failed.append("stcc4")
+            if sht45_conf and sht45_conf.get("enabled", True):
+                i2c_enabled.append("sht45")
+                if sht_temp is None:
+                    i2c_failed.append("sht45")
+            if bh1750_conf and bh1750_conf.get("enabled", True):
+                i2c_enabled.append("bh1750")
+                if lux is None:
+                    i2c_failed.append("bh1750")
+
+            # Bus lockup detection: need ≥2 I2C sensors to distinguish bus issue from single sensor fault
+            if len(i2c_enabled) >= 2 and len(i2c_failed) == len(i2c_enabled):
+                i2c_fail_streak += 1
+                print(f"[I2C] All {len(i2c_enabled)} I2C sensors failed (streak: {i2c_fail_streak}/{I2C_RECOVERY_THRESHOLD})")
+                if i2c_fail_streak >= I2C_RECOVERY_THRESHOLD:
+                    recover_i2c_bus()
+                    i2c_fail_streak = 0
+            else:
+                if i2c_fail_streak > 0:
+                    print(f"[I2C] Bus recovered naturally (streak was {i2c_fail_streak})")
+                i2c_fail_streak = 0
 
             topic = f"grow/zone/{zone_id}/sensors"
             msg = json.dumps(payload)
