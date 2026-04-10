@@ -255,6 +255,21 @@ export default function CloneCuttingPlan() {
     );
   }
 
+  // Debug: dump raw pipeline per room to the browser console so we can see what the
+  // API actually returned. Remove once the data flow is verified.
+  useEffect(() => {
+    if (!loading && rooms.length > 0) {
+      console.log('[CloneCuttingPlan] rooms =', rooms.map(r => ({
+        roomNumber: r.roomNumber,
+        name: r.name,
+        isActive: r.isActive,
+        strain: r.strain,
+        plantsCount: r.plantsCount,
+        pipeline: r.pipeline,
+      })));
+    }
+  }, [rooms, loading]);
+
   if (sortedRooms.length === 0) {
     return null;
   }
@@ -265,6 +280,32 @@ export default function CloneCuttingPlan() {
         <h3 className="text-sm font-semibold text-white">{t('motherRoom.cloneCuttingPlan')}</h3>
         <span className="text-[11px] text-dark-500">{t('motherRoom.cutRuleHint')}</span>
       </div>
+
+      {/* Debug: raw pipeline per room — remove once verified */}
+      <details className="text-[10px] text-dark-500 font-mono">
+        <summary className="cursor-pointer hover:text-dark-300">debug: pipeline данные (для проверки)</summary>
+        <div className="mt-1 space-y-1 pl-3">
+          {sortedRooms.map(r => {
+            const batches = r.pipeline?.batches || [];
+            const cut = batches.filter(b => b.kind === 'cut').reduce((s, b) => s + (b.quantity || 0), 0);
+            const veg = batches.filter(b => b.kind === 'veg').reduce((s, b) => s + (b.quantity || 0), 0);
+            return (
+              <div key={r._id}>
+                #{r.roomNumber} {r.name}: {batches.length} батчей | cut {cut} | veg {veg}
+                {batches.length > 0 && (
+                  <div className="pl-4 text-dark-600">
+                    {batches.map((b, i) => (
+                      <div key={i}>
+                        [{b.kind}] {b.strain || '—'} × {b.quantity} {b.cutDate ? `(${new Date(b.cutDate).toLocaleDateString()})` : ''}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </details>
 
       {/* Aggregated upcoming cuts */}
       {upcomingCuts.length > 0 ? (
