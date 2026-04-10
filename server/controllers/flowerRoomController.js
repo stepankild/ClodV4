@@ -73,7 +73,7 @@ export const getRoomsSummary = async (req, res) => {
         RoomTask.find({ room: roomId, completed: false, ...notDeleted }).lean(),
         CycleArchive.findOne({ room: roomId }).sort({ harvestDate: -1 }).lean(),
         PlannedCycle.find({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).sort({ order: 1 }).lean(),
-        CloneCut.find({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean(),
+        CloneCut.find({ room: roomId, isDone: { $ne: true }, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean(),
         VegBatch.find({ flowerRoom: roomId, transplantedToFlowerAt: null, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
       ]);
       const plannedCycle = plannedCyclesRaw.find(p => (p.order ?? 0) === 0) || plannedCyclesRaw[0] || null;

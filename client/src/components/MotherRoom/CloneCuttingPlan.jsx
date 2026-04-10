@@ -27,21 +27,47 @@ function isoDate(date) {
 }
 
 /**
- * Assigns pipeline batches to the given cycles in CHRONOLOGICAL order:
- *   - Batches are sorted oldest-first on the backend.
- *   - The oldest batch goes to the first cycle (NEXT), the next to NEXT+1, etc.
- *   - Strain is NOT required to match — we just flag a mismatch visually if it
- *     differs from the planned strain.
- *   - Assignment happens even if the cycle's plan is empty (so the user can see
- *     "hey, there's already something in the pipeline for this slot").
+ * Summarizes a room's pipeline: all CloneCut + VegBatch entries targeted at this
+ * room belong to its NEXT cycle. We just sum them and group by strain — no clever
+ * matching, no chronological assignment.
  */
-function assignPipelineToCycles(pipeline, cycles) {
+function summarizePipeline(pipeline) {
   const batches = pipeline?.batches || [];
-  const assignments = {};
-  cycles.forEach((cycle, i) => {
-    assignments[cycle.kind] = batches[i] || null;
-  });
-  return assignments;
+  if (batches.length === 0) return { empty: true, totalCut: 0, totalVeg: 0, byStrain: [], earliestDate: null };
+
+  let totalCut = 0;
+  let totalVeg = 0;
+  const strainMap = new Map();
+  let earliestDate = null;
+
+  for (const b of batches) {
+    const qty = Number(b.quantity) || 0;
+    if (qty <= 0) continue;
+    if (b.kind === 'veg') totalVeg += qty;
+    else totalCut += qty;
+    const key = (b.strain || '—').trim() || '—';
+    const prev = strainMap.get(key) || { strain: key, cut: 0, veg: 0 };
+    if (b.kind === 'veg') prev.veg += qty;
+    else prev.cut += qty;
+    strainMap.set(key, prev);
+
+    if (b.cutDate) {
+      const t = new Date(b.cutDate).getTime();
+      if (earliestDate == null || t < earliestDate) earliestDate = t;
+    }
+  }
+
+  const byStrain = Array.from(strainMap.values())
+    .sort((a, b) => (b.cut + b.veg) - (a.cut + a.veg));
+
+  return {
+    empty: false,
+    totalCut,
+    totalVeg,
+    total: totalCut + totalVeg,
+    byStrain,
+    earliestDate: earliestDate ? new Date(earliestDate) : null,
+  };
 }
 
 /**
@@ -173,27 +199,39 @@ export default function CloneCuttingPlan() {
     });
   }, [rooms]);
 
-  // Aggregate upcoming cuts across all rooms. A cycle is "covered" if ANY atomic
-  // pipeline batch has been assigned to it (chronologically). Otherwise, if the
-  // cycle has a planned strain + quantity, it still needs to be cut.
+  // Aggregate upcoming cuts across all rooms. NEXT cycle is covered if there's
+  // ANY pipeline batch for that room. NEXT+1 is always based on the manual plan.
   const upcomingCuts = useMemo(() => {
     const list = [];
     sortedRooms.forEach(room => {
       const { next, nextPlus } = computeCyclesForRoom(room);
-      const assignments = assignPipelineToCycles(room.pipeline, [next, nextPlus]);
-      [next, nextPlus].forEach(cycle => {
-        if (!(cycle.plantsCount > 0 && cycle.strain && cycle.cutDate)) return;
-        if (assignments[cycle.kind]) return; // covered
+      const pipelineSummary = summarizePipeline(room.pipeline);
+
+      // NEXT: need to cut only if pipeline is empty AND plan is set
+      if (pipelineSummary.empty && next.plantsCount > 0 && next.strain && next.cutDate) {
         list.push({
           roomName: room.name || `${t('motherRoom.roomShort')} ${room.roomNumber}`,
           roomNumber: room.roomNumber,
-          strain: cycle.strain,
-          quantity: cycle.plantsCount,
-          cutDate: cycle.cutDate,
-          cutInDays: cycle.cutInDays,
-          cycleKind: cycle.kind,
+          strain: next.strain,
+          quantity: next.plantsCount,
+          cutDate: next.cutDate,
+          cutInDays: next.cutInDays,
+          cycleKind: next.kind,
         });
-      });
+      }
+
+      // NEXT+1: always driven by the manual plan
+      if (nextPlus.plantsCount > 0 && nextPlus.strain && nextPlus.cutDate) {
+        list.push({
+          roomName: room.name || `${t('motherRoom.roomShort')} ${room.roomNumber}`,
+          roomNumber: room.roomNumber,
+          strain: nextPlus.strain,
+          quantity: nextPlus.plantsCount,
+          cutDate: nextPlus.cutDate,
+          cutInDays: nextPlus.cutInDays,
+          cycleKind: nextPlus.kind,
+        });
+      }
     });
     list.sort((a, b) => new Date(a.cutDate) - new Date(b.cutDate));
     return list;
@@ -295,10 +333,7 @@ export default function CloneCuttingPlan() {
 
 function RoomPlanRow({ room, onSave, saving, t }) {
   const { current, next, nextPlus } = useMemo(() => computeCyclesForRoom(room), [room]);
-  const assignments = useMemo(
-    () => assignPipelineToCycles(room.pipeline, [next, nextPlus]),
-    [room.pipeline, next, nextPlus]
-  );
+  const pipelineSummary = useMemo(() => summarizePipeline(room.pipeline), [room.pipeline]);
   const key0 = `${room._id}_0`;
   const key1 = `${room._id}_1`;
 
@@ -318,7 +353,7 @@ function RoomPlanRow({ room, onSave, saving, t }) {
         <CurrentCycleCard cycle={current} t={t} />
         <PlannedCycleCard
           cycle={next}
-          batch={assignments.next}
+          pipelineSummary={pipelineSummary}
           title={t('motherRoom.cycleNext')}
           cutLabel={t('motherRoom.cutDate')}
           onSave={(patch) => onSave(0, patch)}
@@ -327,7 +362,7 @@ function RoomPlanRow({ room, onSave, saving, t }) {
         />
         <PlannedCycleCard
           cycle={nextPlus}
-          batch={assignments.nextPlus}
+          pipelineSummary={null}
           title={t('motherRoom.cycleNextPlus')}
           cutLabel={t('motherRoom.cutDate')}
           onSave={(patch) => onSave(1, patch)}
@@ -365,7 +400,7 @@ function CurrentCycleCard({ cycle, t }) {
   );
 }
 
-function PlannedCycleCard({ cycle, batch, title, cutLabel, onSave, saving, t }) {
+function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, saving, t }) {
   const [strain, setStrain] = useState(cycle.strain);
   const [plantsCount, setPlantsCount] = useState(cycle.plantsCount);
   const [plannedStartDate, setPlannedStartDate] = useState(isoDate(cycle.plannedStartDate));
@@ -402,15 +437,9 @@ function PlannedCycleCard({ cycle, batch, title, cutLabel, onSave, saving, t }) 
   };
   useEffect(() => () => clearTimeout(saveTimer.current), []);
 
-  // A batch atomically "covers" this cycle — no splitting across cycles.
-  const planned = cycle.plantsCount || 0;
-  const fullyCovered = !!batch;
-  const batchShort = batch && planned > 0 && batch.quantity < planned;
-  const strainMismatch = batch && cycle.strain && batch.strain &&
-    String(batch.strain).trim().toLowerCase() !== String(cycle.strain).trim().toLowerCase();
-
-  const overdue = !fullyCovered && cycle.cutInDays != null && cycle.cutInDays < 0;
-  const soon = !fullyCovered && cycle.cutInDays != null && cycle.cutInDays >= 0 && cycle.cutInDays <= 7;
+  const hasPipeline = pipelineSummary && !pipelineSummary.empty;
+  const overdue = !hasPipeline && cycle.cutInDays != null && cycle.cutInDays < 0;
+  const soon = !hasPipeline && cycle.cutInDays != null && cycle.cutInDays >= 0 && cycle.cutInDays <= 7;
 
   return (
     <div className="border border-dark-700 rounded p-2 bg-dark-800/40 space-y-1.5">
@@ -419,48 +448,77 @@ function PlannedCycleCard({ cycle, batch, title, cutLabel, onSave, saving, t }) 
         {saving && <span className="text-[10px] text-dark-400">…</span>}
       </div>
 
-      <StrainSelect
-        value={strain}
-        onChange={(v) => { setStrain(v); scheduleSave(v, plantsCount, plannedStartDate); }}
-        className="w-full text-sm"
-      />
-
-      <div className="flex items-center gap-1.5">
-        <input
-          type="number"
-          min={0}
-          value={plantsCount}
-          onChange={e => {
-            const v = parseInt(e.target.value, 10) || 0;
-            setPlantsCount(v);
-            scheduleSave(strain, v, plannedStartDate);
-          }}
-          placeholder={t('motherRoom.clonesCount')}
-          className="w-16 bg-dark-700 border border-dark-600 rounded px-2 py-1 text-white text-xs text-center"
-        />
-        <span className="text-[10px] text-dark-500">{t('motherRoom.pieces')}</span>
-        <input
-          type="date"
-          value={plannedStartDate}
-          onChange={e => {
-            setPlannedStartDate(e.target.value);
-            scheduleSave(strain, plantsCount, e.target.value);
-          }}
-          className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded px-2 py-1 text-white text-[11px]"
-        />
-      </div>
+      {hasPipeline ? (
+        // ─── Pipeline view: batches already exist for this cycle ───
+        <div className="space-y-1">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-lg font-bold text-green-400">{pipelineSummary.total}</span>
+            <span className="text-[10px] text-dark-400">{t('motherRoom.pieces')}</span>
+            <span className="text-[10px] text-green-500 ml-auto">✓ {t('motherRoom.covered')}</span>
+          </div>
+          <div className="flex flex-wrap gap-1 text-[10px]">
+            {pipelineSummary.totalCut > 0 && (
+              <span className="px-1 rounded bg-blue-900/40 text-blue-400">
+                {t('motherRoom.pipelineCut')} {pipelineSummary.totalCut}
+              </span>
+            )}
+            {pipelineSummary.totalVeg > 0 && (
+              <span className="px-1 rounded bg-green-900/40 text-green-400">
+                {t('motherRoom.pipelineVeg')} {pipelineSummary.totalVeg}
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col gap-0.5 text-[10px] text-dark-300">
+            {pipelineSummary.byStrain.map(s => (
+              <div key={s.strain} className="flex items-center justify-between">
+                <span className="truncate">{s.strain}</span>
+                <span className="text-white font-medium">{s.cut + s.veg}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        // ─── Plan view: nothing in pipeline yet, let user plan manually ───
+        <>
+          <StrainSelect
+            value={strain}
+            onChange={(v) => { setStrain(v); scheduleSave(v, plantsCount, plannedStartDate); }}
+            className="w-full text-sm"
+          />
+          <div className="flex items-center gap-1.5">
+            <input
+              type="number"
+              min={0}
+              value={plantsCount}
+              onChange={e => {
+                const v = parseInt(e.target.value, 10) || 0;
+                setPlantsCount(v);
+                scheduleSave(strain, v, plannedStartDate);
+              }}
+              placeholder={t('motherRoom.clonesCount')}
+              className="w-16 bg-dark-700 border border-dark-600 rounded px-2 py-1 text-white text-xs text-center"
+            />
+            <span className="text-[10px] text-dark-500">{t('motherRoom.pieces')}</span>
+            <input
+              type="date"
+              value={plannedStartDate}
+              onChange={e => {
+                setPlannedStartDate(e.target.value);
+                scheduleSave(strain, plantsCount, e.target.value);
+              }}
+              className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded px-2 py-1 text-white text-[11px]"
+            />
+          </div>
+        </>
+      )}
 
       <div className="flex items-center justify-between text-[11px] pt-0.5">
         <span className="text-dark-500">{cutLabel}:</span>
         <div className="flex items-center gap-1.5">
-          <span className={fullyCovered ? 'text-dark-500 line-through' : 'text-white'}>
+          <span className={hasPipeline ? 'text-dark-500 line-through' : 'text-white'}>
             {formatDate(cycle.cutDate)}
           </span>
-          {fullyCovered ? (
-            <span className="text-[10px] px-1 rounded bg-green-900/40 text-green-400">
-              ✓ {t('motherRoom.covered')}
-            </span>
-          ) : cycle.cutInDays != null ? (
+          {!hasPipeline && cycle.cutInDays != null && (
             <span className={`text-[10px] px-1 rounded ${
               overdue ? 'bg-red-900/40 text-red-400' : soon ? 'bg-amber-900/30 text-amber-400' : 'text-dark-500'
             }`}>
@@ -470,42 +528,9 @@ function PlannedCycleCard({ cycle, batch, title, cutLabel, onSave, saving, t }) 
                   ? t('motherRoom.today')
                   : t('motherRoom.inDays', { days: cycle.cutInDays })}
             </span>
-          ) : null}
-        </div>
-      </div>
-
-      {/* Assigned batch info (if any) */}
-      {batch && (
-        <div className="flex flex-col gap-0.5 pt-0.5 border-t border-dark-700/60">
-          <div className="flex items-center gap-1.5 text-[10px]">
-            <span className={`px-1 rounded ${batch.kind === 'veg' ? 'bg-green-900/40 text-green-400' : 'bg-blue-900/40 text-blue-400'}`}>
-              {batch.kind === 'veg' ? t('motherRoom.pipelineVeg') : t('motherRoom.pipelineCut')}
-            </span>
-            <span className="text-white font-semibold">{batch.quantity}</span>
-            <span className="text-dark-500">{t('motherRoom.pieces')}</span>
-            {batch.strain && (
-              <span className="text-dark-400 truncate">{batch.strain}</span>
-            )}
-            {batch.cutDate && (
-              <span className="text-dark-500 ml-auto">{formatDate(batch.cutDate)}</span>
-            )}
-          </div>
-          {(batchShort || strainMismatch) && (
-            <div className="flex items-center gap-2 text-[10px]">
-              {batchShort && (
-                <span className="text-amber-500" title={t('motherRoom.batchShortHint', { diff: planned - batch.quantity })}>
-                  −{planned - batch.quantity}
-                </span>
-              )}
-              {strainMismatch && (
-                <span className="text-amber-500" title={t('motherRoom.strainMismatchHint', { planned: cycle.strain, batch: batch.strain })}>
-                  ⚠ {t('motherRoom.strainMismatch')}
-                </span>
-              )}
-            </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }
