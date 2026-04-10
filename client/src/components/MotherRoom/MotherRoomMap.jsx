@@ -572,6 +572,7 @@ export default function MotherRoomMap({
   const renderTable = (table) => {
     const { flatIdx, tableCols, tableRows: tRows, deadSpots } = table;
 
+    // Build mapping from original grid index to sequential position (stored in DB)
     let posCounter = 0;
     const gridToPosMap = {};
     for (let gi = 0; gi < tableCols * tRows; gi++) {
@@ -580,17 +581,26 @@ export default function MotherRoomMap({
       }
     }
 
+    // Always render with the longer dimension horizontal.
+    // If rows > cols, transpose display: (displayRow, displayCol) -> (origRow=displayCol, origCol=displayRow).
+    const isTransposed = tRows > tableCols;
+    const displayCols = isTransposed ? tRows : tableCols;
+    const displayRows = isTransposed ? tableCols : tRows;
+
     return (
       <div key={flatIdx} className="flex flex-col items-center shrink-0">
         <span className="text-[10px] text-dark-500 font-medium mb-0.5">{table.tableInRow + 1}</span>
 
         <div className="flex flex-col" style={{ gap: '2px' }}>
-          {Array.from({ length: tRows }, (_, rowInTable) => (
-            <div key={rowInTable} className="flex" style={{ gap: '2px' }}>
-              {Array.from({ length: tableCols }, (_, colIdx) => {
-                const gridIdx = rowInTable * tableCols + colIdx;
+          {Array.from({ length: displayRows }, (_, dRow) => (
+            <div key={dRow} className="flex" style={{ gap: '2px' }}>
+              {Array.from({ length: displayCols }, (_, dCol) => {
+                // Map display (dRow, dCol) back to original grid index
+                const origRow = isTransposed ? dCol : dRow;
+                const origCol = isTransposed ? dRow : dCol;
+                const gridIdx = origRow * tableCols + origCol;
                 const isDead = deadSpots.has(gridIdx);
-                if (isDead) return <div key={colIdx} className="w-[22px] h-[22px] sm:w-[26px] sm:h-[26px]" />;
+                if (isDead) return <div key={dCol} className="w-[22px] h-[22px] sm:w-[26px] sm:h-[26px]" />;
 
                 const posIdx = gridToPosMap[gridIdx];
                 const key = `${flatIdx}:${posIdx}`;
@@ -602,7 +612,7 @@ export default function MotherRoomMap({
 
                 return (
                   <MotherPlantCell
-                    key={colIdx}
+                    key={dCol}
                     plantName={plant?.name}
                     strainLabel={plant?.strain}
                     health={plant?.health || 'good'}
