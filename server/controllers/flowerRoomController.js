@@ -64,28 +64,47 @@ export const getRoomsSummary = async (req, res) => {
       rooms = await FlowerRoom.insertMany(defaultRooms);
     }
 
-    // Load ALL active clone cuts and veg batches once, then group per-room in JS.
-    // This avoids any ObjectId matching quirks and gives us diagnostic visibility.
-    const [allCloneCuts, allVegBatches] = await Promise.all([
+    // Load clone cuts and veg batches:
+    //  - ALL cloneCuts (including soft-deleted) for the cutId→room lookup, because
+    //    when a VegBatch is created from a CloneCut, the original cut gets soft-deleted
+    //    but its `room` field is how we trace the veg batch back to its target room.
+    //  - Active cloneCuts (non-deleted) for the "in clones" pool — cuts that haven't
+    //    been turned into veg batches yet.
+    //  - Active veg batches (not in flower yet).
+    const [allCloneCutsEver, activeCloneCuts, allVegBatches] = await Promise.all([
+      CloneCut.find({}).lean(),
       CloneCut.find({ $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean(),
       VegBatch.find({ $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
     ]);
 
-    // Group by room id as a string for robust comparison
+    // cutId (string) → room id (string). Covers soft-deleted cuts too.
+    const cutIdToRoom = new Map();
+    for (const c of allCloneCutsEver) {
+      if (c.room) cutIdToRoom.set(String(c._id), String(c.room));
+    }
+
+    // "In clones" pool, grouped by room
     const cutsByRoomStr = new Map();
-    for (const c of allCloneCuts) {
+    for (const c of activeCloneCuts) {
       if (!c.room) continue;
       const key = String(c.room);
       if (!cutsByRoomStr.has(key)) cutsByRoomStr.set(key, []);
       cutsByRoomStr.get(key).push(c);
     }
+
+    // VegBatches grouped by room — via `flowerRoom` if set, else via sourceCloneCut → room
     const vegsByRoomStr = new Map();
     for (const v of allVegBatches) {
-      if (!v.flowerRoom) continue;
-      if (v.transplantedToFlowerAt) continue; // already in flower — not pipeline anymore
-      const key = String(v.flowerRoom);
-      if (!vegsByRoomStr.has(key)) vegsByRoomStr.set(key, []);
-      vegsByRoomStr.get(key).push(v);
+      if (v.transplantedToFlowerAt) continue;
+      let roomKey = null;
+      if (v.flowerRoom) {
+        roomKey = String(v.flowerRoom);
+      } else if (v.sourceCloneCut) {
+        roomKey = cutIdToRoom.get(String(v.sourceCloneCut)) || null;
+      }
+      if (!roomKey) continue;
+      if (!vegsByRoomStr.has(roomKey)) vegsByRoomStr.set(roomKey, []);
+      vegsByRoomStr.get(roomKey).push(v);
     }
 
     const summary = await Promise.all(rooms.map(async (room) => {
@@ -257,24 +276,28 @@ export const getRoomsSummary = async (req, res) => {
     // TODO: remove once the pipeline data flow is verified.
     if (summary.length > 0) {
       summary[0]._debug = {
-        allCloneCutsCount: allCloneCuts.length,
+        allCloneCutsCount: activeCloneCuts.length,
+        allCloneCutsEverCount: allCloneCutsEver.length,
         allVegBatchesCount: allVegBatches.length,
-        cutsWithRoomSet: allCloneCuts.filter(c => c.room).length,
+        cutsWithRoomSet: activeCloneCuts.filter(c => c.room).length,
         vegsWithFlowerRoomSet: allVegBatches.filter(v => v.flowerRoom).length,
+        vegsWithSourceCut: allVegBatches.filter(v => v.sourceCloneCut).length,
         cutRoomIds: Array.from(cutsByRoomStr.keys()),
         vegRoomIds: Array.from(vegsByRoomStr.keys()),
         ourRoomIds: rooms.map(r => String(r._id)),
-        sampleCut: allCloneCuts[0] ? {
-          _id: String(allCloneCuts[0]._id),
-          room: allCloneCuts[0].room ? String(allCloneCuts[0].room) : null,
-          isDone: allCloneCuts[0].isDone,
-          strain: allCloneCuts[0].strain,
-          quantity: allCloneCuts[0].quantity,
-          strains: allCloneCuts[0].strains,
+        sampleCut: activeCloneCuts[0] ? {
+          _id: String(activeCloneCuts[0]._id),
+          room: activeCloneCuts[0].room ? String(activeCloneCuts[0].room) : null,
+          isDone: activeCloneCuts[0].isDone,
+          strain: activeCloneCuts[0].strain,
+          quantity: activeCloneCuts[0].quantity,
+          strains: activeCloneCuts[0].strains,
         } : null,
         sampleVeg: allVegBatches[0] ? {
           _id: String(allVegBatches[0]._id),
           flowerRoom: allVegBatches[0].flowerRoom ? String(allVegBatches[0].flowerRoom) : null,
+          sourceCloneCut: allVegBatches[0].sourceCloneCut ? String(allVegBatches[0].sourceCloneCut) : null,
+          sourceRoom: allVegBatches[0].sourceCloneCut ? cutIdToRoom.get(String(allVegBatches[0].sourceCloneCut)) || null : null,
           transplantedToFlowerAt: allVegBatches[0].transplantedToFlowerAt,
           strain: allVegBatches[0].strain,
           quantity: allVegBatches[0].quantity,
