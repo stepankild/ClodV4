@@ -32,4 +32,21 @@ plannedCycleSchema.index({ deletedAt: 1 });
 
 const PlannedCycle = mongoose.model('PlannedCycle', plannedCycleSchema);
 
+// Drop any legacy unique index on `room` — it was created when only one plan
+// per room was allowed. The new schema uses a compound {room, order} index and
+// supports multiple planned cycles per room.
+PlannedCycle.collection.listIndexes().toArray().then((indexes) => {
+  for (const idx of indexes) {
+    if (idx.name === '_id_') continue;
+    const keys = idx.key || {};
+    const keyFields = Object.keys(keys);
+    if (idx.unique && keyFields.length === 1 && keyFields[0] === 'room') {
+      console.log(`[PlannedCycle] Dropping stale unique index: ${idx.name}`);
+      PlannedCycle.collection.dropIndex(idx.name).catch((err) => {
+        console.warn(`[PlannedCycle] Failed to drop index ${idx.name}:`, err?.message);
+      });
+    }
+  }
+}).catch(() => {});
+
 export default PlannedCycle;

@@ -203,11 +203,8 @@ export default function CloneCuttingPlan() {
         return { ...r, plannedCycles: nextPlans, plannedCycle: nextPlannedCycle };
       }));
     } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Save plan error:', err, err.response?.data);
-      const status = err.response?.status;
-      const msg = err.response?.data?.message || err.message || 'Error';
-      alert(`Save plan error${status ? ' (' + status + ')' : ''}: ${msg}`);
+      console.error('Save plan error:', err);
+      alert(err.response?.data?.message || 'Error');
     } finally {
       setSaving(s => ({ ...s, [key]: false }));
     }
