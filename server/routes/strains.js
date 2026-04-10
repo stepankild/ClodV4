@@ -29,9 +29,22 @@ router.post('/restore-recent', checkPermission('*'), restoreRecentStrains);
 router.get('/deleted', checkPermission('audit:read'), getDeletedStrains);
 router.post('/deleted/:id/restore', checkPermission('audit:read'), restoreStrain);
 
-// CRUD — требует право на редактирование пользователей (есть только у менеджеров/админов)
-router.post('/', checkPermission('users:update'), createStrain);
-router.put('/:id', checkPermission('users:update'), updateStrain);
+// Создание/редактирование сорта — доступно любой роли, которая работает с растениями
+// (гровер при добавлении плана клонов, менеджер при настройке и т.д.)
+const cultivationWrite = checkPermission(
+  'users:update',
+  'mothers:manage',
+  'clones:create',
+  'clones:edit',
+  'vegetation:create',
+  'vegetation:edit',
+  'rooms:edit',
+  'cycles:plan'
+);
+
+router.post('/', cultivationWrite, createStrain);
+router.put('/:id', cultivationWrite, updateStrain);
+// Удаление оставляем за теми, кто имеет право управлять пользователями/настройками
 router.delete('/:id', checkPermission('users:update'), deleteStrain);
 
 export default router;
