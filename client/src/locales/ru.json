@@ -2187,7 +2187,8 @@
     "cutLeadLabel": "Резать за",
     "cutLeadSuffix": "до конца цикла",
     "daysShort": "дн.",
-    "plannedStartDate": "Дата старта"
+    "plannedStartDate": "Дата старта",
+    "cycleOverdue": "задержка"
   },
   "language": {
     "ru": "RU",

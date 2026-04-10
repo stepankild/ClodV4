@@ -136,13 +136,29 @@ function computeCyclesForRoom(room) {
     };
   };
 
+  // If the current cycle is overdue (calendar end is in the past but the room
+  // is still flowering — e.g. due to light issues), clamp the chain anchor to
+  // today: the next cycle can't physically move in until the current one
+  // actually finishes, so planning must push forward from today at the earliest.
+  current.isOverdue = current.endDate ? new Date(current.endDate) < now : false;
+  current.effectiveEnd = current.endDate
+    ? (current.isOverdue ? now : new Date(current.endDate))
+    : null;
+
   const planOrder0 = (room.plannedCycles || []).find(p => (p.order ?? 0) === 0) || null;
   const next = makePlanned('next', planOrder0);
-  // NEXT is chained — it starts when CURRENT ends.
-  next.effectiveStartDate = current.endDate || null;
+  // NEXT is chained — it starts when CURRENT actually finishes (>= today).
+  next.effectiveStartDate = current.effectiveEnd || null;
   next.endDate = next.effectiveStartDate ? addDays(next.effectiveStartDate, next.floweringDays) : null;
-  // Clones for NEXT are cut `cutLeadDays` before the CURRENT cycle ends.
-  next.cutDate = current.endDate ? addDays(current.endDate, -next.cutLeadDays) : null;
+  // Clones for NEXT are cut `cutLeadDays` before the CURRENT cycle ends. If
+  // that would be in the past (ideal moment has already passed), clamp to
+  // today so the plan shows "cut now" instead of a stale overdue date.
+  if (current.effectiveEnd) {
+    const ideal = addDays(current.effectiveEnd, -next.cutLeadDays);
+    next.cutDate = ideal < now ? now : ideal;
+  } else {
+    next.cutDate = null;
+  }
 
   const planOrder1 = (room.plannedCycles || []).find(p => (p.order ?? 0) === 1) || null;
   const nextPlus = makePlanned('nextPlus', planOrder1);
@@ -407,9 +423,14 @@ function CurrentCycleCard({ cycle, t }) {
   const hasRows = rows.length > 0;
 
   return (
-    <div className="border border-dark-700 rounded p-2 bg-dark-800/40">
+    <div className={`border rounded p-2 bg-dark-800/40 ${cycle.isOverdue ? 'border-red-800/60' : 'border-dark-700'}`}>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[10px] uppercase text-dark-500 font-semibold">{t('motherRoom.cycleCurrent')}</span>
+        <span className="text-[10px] uppercase text-dark-500 font-semibold">
+          {t('motherRoom.cycleCurrent')}
+          {cycle.isOverdue && (
+            <span className="ml-1 text-red-400 normal-case">· {t('motherRoom.cycleOverdue')}</span>
+          )}
+        </span>
         {cycle.startDate ? (
           <span className="text-[10px] text-dark-600">{formatDate(cycle.endDate)}</span>
         ) : (

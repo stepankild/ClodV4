@@ -2188,7 +2188,8 @@
     "cutLeadLabel": "Cut",
     "cutLeadSuffix": "before cycle end",
     "daysShort": "d",
-    "plannedStartDate": "Start date"
+    "plannedStartDate": "Start date",
+    "cycleOverdue": "overdue"
   },
   "language": {
     "ru": "RU",
