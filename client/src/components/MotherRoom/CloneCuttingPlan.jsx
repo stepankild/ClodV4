@@ -282,17 +282,32 @@ export default function CloneCuttingPlan() {
         <span className="text-[11px] text-dark-500">{t('motherRoom.cutRuleHint')}</span>
       </div>
 
-      {/* Debug: raw pipeline per room — remove once verified */}
-      <details className="text-[10px] text-dark-500 font-mono">
+      {/* Debug: raw pipeline per room + global diagnostics — remove once verified */}
+      <details className="text-[10px] text-dark-500 font-mono" open>
         <summary className="cursor-pointer hover:text-dark-300">debug: pipeline данные (для проверки)</summary>
         <div className="mt-1 space-y-1 pl-3">
+          {sortedRooms[0]?._debug && (
+            <div className="mb-2 p-2 bg-dark-900/60 rounded space-y-0.5 text-dark-400">
+              <div>Всего CloneCut в БД: <span className="text-white">{sortedRooms[0]._debug.allCloneCutsCount}</span> (с room: <span className="text-white">{sortedRooms[0]._debug.cutsWithRoomSet}</span>)</div>
+              <div>Всего VegBatch в БД: <span className="text-white">{sortedRooms[0]._debug.allVegBatchesCount}</span> (с flowerRoom: <span className="text-white">{sortedRooms[0]._debug.vegsWithFlowerRoomSet}</span>)</div>
+              <div>Наши room._id: <span className="text-dark-500 break-all">{sortedRooms[0]._debug.ourRoomIds.join(', ')}</span></div>
+              <div>CloneCut.room значения: <span className="text-dark-500 break-all">{sortedRooms[0]._debug.cutRoomIds.join(', ') || '(пусто)'}</span></div>
+              <div>VegBatch.flowerRoom значения: <span className="text-dark-500 break-all">{sortedRooms[0]._debug.vegRoomIds.join(', ') || '(пусто)'}</span></div>
+              {sortedRooms[0]._debug.sampleCut && (
+                <div>Пример CloneCut: <span className="text-dark-500">{JSON.stringify(sortedRooms[0]._debug.sampleCut)}</span></div>
+              )}
+              {sortedRooms[0]._debug.sampleVeg && (
+                <div>Пример VegBatch: <span className="text-dark-500">{JSON.stringify(sortedRooms[0]._debug.sampleVeg)}</span></div>
+              )}
+            </div>
+          )}
           {sortedRooms.map(r => {
             const batches = r.pipeline?.batches || [];
             const cut = batches.filter(b => b.kind === 'cut').reduce((s, b) => s + (b.quantity || 0), 0);
             const veg = batches.filter(b => b.kind === 'veg').reduce((s, b) => s + (b.quantity || 0), 0);
             return (
               <div key={r._id}>
-                #{r.roomNumber} {r.name}: {batches.length} батчей | cut {cut} | veg {veg}
+                #{r.roomNumber} {r.name} ({String(r._id).slice(-6)}): {batches.length} батчей | cut {cut} | veg {veg}
                 {batches.length > 0 && (
                   <div className="pl-4 text-dark-600">
                     {batches.map((b, i) => (

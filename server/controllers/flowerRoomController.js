@@ -64,17 +64,42 @@ export const getRoomsSummary = async (req, res) => {
       rooms = await FlowerRoom.insertMany(defaultRooms);
     }
 
+    // Load ALL active clone cuts and veg batches once, then group per-room in JS.
+    // This avoids any ObjectId matching quirks and gives us diagnostic visibility.
+    const [allCloneCuts, allVegBatches] = await Promise.all([
+      CloneCut.find({ $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean(),
+      VegBatch.find({ $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
+    ]);
+
+    // Group by room id as a string for robust comparison
+    const cutsByRoomStr = new Map();
+    for (const c of allCloneCuts) {
+      if (!c.room) continue;
+      const key = String(c.room);
+      if (!cutsByRoomStr.has(key)) cutsByRoomStr.set(key, []);
+      cutsByRoomStr.get(key).push(c);
+    }
+    const vegsByRoomStr = new Map();
+    for (const v of allVegBatches) {
+      if (!v.flowerRoom) continue;
+      if (v.transplantedToFlowerAt) continue; // already in flower — not pipeline anymore
+      const key = String(v.flowerRoom);
+      if (!vegsByRoomStr.has(key)) vegsByRoomStr.set(key, []);
+      vegsByRoomStr.get(key).push(v);
+    }
+
     const summary = await Promise.all(rooms.map(async (room) => {
       const roomId = room._id;
+      const roomKey = String(roomId);
+      const cloneCutsRaw = cutsByRoomStr.get(roomKey) || [];
+      const vegBatchesRaw = vegsByRoomStr.get(roomKey) || [];
       // Фильтр задач по текущему циклу (если есть cycleId)
       const cycleFilter = room.currentCycleId ? { cycleId: room.currentCycleId } : {};
-      const [completedTasksRaw, pendingTasksRaw, lastArchive, plannedCyclesRaw, cloneCutsRaw, vegBatchesRaw] = await Promise.all([
+      const [completedTasksRaw, pendingTasksRaw, lastArchive, plannedCyclesRaw] = await Promise.all([
         RoomTask.find({ room: roomId, completed: true, ...cycleFilter, ...notDeleted }).lean(),
         RoomTask.find({ room: roomId, completed: false, ...notDeleted }).lean(),
         CycleArchive.findOne({ room: roomId }).sort({ harvestDate: -1 }).lean(),
-        PlannedCycle.find({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).sort({ order: 1 }).lean(),
-        CloneCut.find({ room: roomId, isDone: { $ne: true }, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean(),
-        VegBatch.find({ flowerRoom: roomId, transplantedToFlowerAt: null, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
+        PlannedCycle.find({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).sort({ order: 1 }).lean()
       ]);
       const plannedCycle = plannedCyclesRaw.find(p => (p.order ?? 0) === 0) || plannedCyclesRaw[0] || null;
 
@@ -228,6 +253,35 @@ export const getRoomsSummary = async (req, res) => {
         pipeline
       };
     }));
+    // Attach diagnostics to the first room so the frontend debug block can show it.
+    // TODO: remove once the pipeline data flow is verified.
+    if (summary.length > 0) {
+      summary[0]._debug = {
+        allCloneCutsCount: allCloneCuts.length,
+        allVegBatchesCount: allVegBatches.length,
+        cutsWithRoomSet: allCloneCuts.filter(c => c.room).length,
+        vegsWithFlowerRoomSet: allVegBatches.filter(v => v.flowerRoom).length,
+        cutRoomIds: Array.from(cutsByRoomStr.keys()),
+        vegRoomIds: Array.from(vegsByRoomStr.keys()),
+        ourRoomIds: rooms.map(r => String(r._id)),
+        sampleCut: allCloneCuts[0] ? {
+          _id: String(allCloneCuts[0]._id),
+          room: allCloneCuts[0].room ? String(allCloneCuts[0].room) : null,
+          isDone: allCloneCuts[0].isDone,
+          strain: allCloneCuts[0].strain,
+          quantity: allCloneCuts[0].quantity,
+          strains: allCloneCuts[0].strains,
+        } : null,
+        sampleVeg: allVegBatches[0] ? {
+          _id: String(allVegBatches[0]._id),
+          flowerRoom: allVegBatches[0].flowerRoom ? String(allVegBatches[0].flowerRoom) : null,
+          transplantedToFlowerAt: allVegBatches[0].transplantedToFlowerAt,
+          strain: allVegBatches[0].strain,
+          quantity: allVegBatches[0].quantity,
+          strains: allVegBatches[0].strains,
+        } : null,
+      };
+    }
     res.json(summary);
   } catch (error) {
     console.error('Get rooms summary error:', error);
