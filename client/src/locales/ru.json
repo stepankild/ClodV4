@@ -2183,7 +2183,9 @@
     "strainMismatch": "сорт",
     "strainMismatchHint": "В плане {{planned}}, но в батче {{batch}}",
     "addStrain": "сорт",
-    "cutLeadDaysHint": "За сколько дней до конца текущего цикла резать клоны",
+    "cutLeadDaysHint": "За сколько дней до конца предыдущего цикла нарезать клонов",
+    "cutLeadLabel": "Резать за",
+    "cutLeadSuffix": "до конца цикла",
     "daysShort": "дн.",
     "plannedStartDate": "Дата старта"
   },

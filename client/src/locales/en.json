@@ -2184,7 +2184,9 @@
     "strainMismatch": "strain",
     "strainMismatchHint": "Planned {{planned}} but batch has {{batch}}",
     "addStrain": "strain",
-    "cutLeadDaysHint": "Days before the current cycle ends when clones must be cut",
+    "cutLeadDaysHint": "Days before the previous cycle ends when clones must be cut",
+    "cutLeadLabel": "Cut",
+    "cutLeadSuffix": "before cycle end",
     "daysShort": "d",
     "plannedStartDate": "Start date"
   },

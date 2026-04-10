@@ -98,14 +98,11 @@ function summarizePipeline(pipeline) {
  * Computes the three cycle slots for a room and the cut event associated with each
  * planned cycle.
  *
- * Cut rules:
- *  - NEXT clones are cut `cutLeadDays` days BEFORE the current cycle ends.
- *  - NEXT+1 clones are cut `cutLeadDays` days AFTER the next cycle moves in.
- *    (The current cycle ends → the next cycle moves in → cutLeadDays later we
- *    take cuttings for the cycle after that.)
- *
- * For the common case of 56-day cycles with 28-day lead, both rules give the
- * same date, but they diverge if the next cycle has a non-default length.
+ * Cut rule: clones are cut `cutLeadDays` days BEFORE the end of the PREVIOUS
+ * cycle. For NEXT clones, the previous cycle is the one currently flowering.
+ * For NEXT+1 clones, the previous cycle is NEXT. Cycles are always chained —
+ * NEXT starts when CURRENT ends, NEXT+1 starts when NEXT ends — so shifting
+ * the current cycle automatically shifts every planned cut date.
  */
 function computeCyclesForRoom(room) {
   const now = new Date();
@@ -139,32 +136,21 @@ function computeCyclesForRoom(room) {
     };
   };
 
-  // effectiveStartDate = когда цикл реально заезжает в комнату.
-  // Не может быть раньше конца предыдущего цикла: если юзер задал более раннюю
-  // дату — игнорируем, используем конец предыдущего. Более поздняя дата (зазор
-  // между циклами) уважается.
-  const pickMoveIn = (plannedStartDate, earliestAllowed) => {
-    if (!plannedStartDate) return earliestAllowed || null;
-    if (!earliestAllowed) return plannedStartDate;
-    const planned = new Date(plannedStartDate).getTime();
-    const earliest = new Date(earliestAllowed).getTime();
-    return planned > earliest ? plannedStartDate : earliestAllowed;
-  };
-
   const planOrder0 = (room.plannedCycles || []).find(p => (p.order ?? 0) === 0) || null;
   const next = makePlanned('next', planOrder0);
-  // Clones for NEXT are cut `cutLeadDays` before the CURRENT cycle ends
-  next.cutDate = current.endDate ? addDays(current.endDate, -next.cutLeadDays) : null;
-  next.effectiveStartDate = pickMoveIn(next.plannedStartDate, current.endDate);
+  // NEXT is chained — it starts when CURRENT ends.
+  next.effectiveStartDate = current.endDate || null;
   next.endDate = next.effectiveStartDate ? addDays(next.effectiveStartDate, next.floweringDays) : null;
+  // Clones for NEXT are cut `cutLeadDays` before the CURRENT cycle ends.
+  next.cutDate = current.endDate ? addDays(current.endDate, -next.cutLeadDays) : null;
 
   const planOrder1 = (room.plannedCycles || []).find(p => (p.order ?? 0) === 1) || null;
   const nextPlus = makePlanned('nextPlus', planOrder1);
-  // Clones for NEXT+1 are cut `cutLeadDays` AFTER the NEXT cycle moves in
-  // (which in the default chained case is the current cycle's end date).
-  nextPlus.cutDate = next.effectiveStartDate ? addDays(next.effectiveStartDate, nextPlus.cutLeadDays) : null;
-  nextPlus.effectiveStartDate = pickMoveIn(nextPlus.plannedStartDate, next.endDate);
+  // NEXT+1 is chained after NEXT.
+  nextPlus.effectiveStartDate = next.endDate || null;
   nextPlus.endDate = nextPlus.effectiveStartDate ? addDays(nextPlus.effectiveStartDate, nextPlus.floweringDays) : null;
+  // Clones for NEXT+1 are cut `cutLeadDays` before NEXT ends.
+  nextPlus.cutDate = next.endDate ? addDays(next.endDate, -nextPlus.cutLeadDays) : null;
 
   const cutDays = (d) => (d ? diffDays(now, d) : null);
   next.cutInDays = cutDays(next.cutDate);
@@ -462,7 +448,6 @@ function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, sav
 
   // Local form state
   const [strainRows, setStrainRows] = useState(() => ensureRows(cycle.strainRows));
-  const [plannedStartDate, setPlannedStartDate] = useState(isoDate(cycle.plannedStartDate));
   const [cutLeadDays, setCutLeadDays] = useState(cycle.cutLeadDays ?? DEFAULT_CUT_LEAD_DAYS);
 
   // Keep in sync when parent data refreshes (after a save). We only re-sync if
@@ -472,25 +457,23 @@ function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, sav
   useEffect(() => {
     const incoming = {
       strains: (cycle.strainRows || []).map(r => ({ strain: r.strain || '', quantity: Number(r.quantity) || 0 })),
-      plannedStartDate: isoDate(cycle.plannedStartDate),
       cutLeadDays: cycle.cutLeadDays ?? DEFAULT_CUT_LEAD_DAYS,
     };
     const sig = JSON.stringify(incoming);
     if (sig === lastSignatureRef.current) return;
     lastSignatureRef.current = sig;
     setStrainRows(ensureRows(incoming.strains));
-    setPlannedStartDate(incoming.plannedStartDate);
     setCutLeadDays(incoming.cutLeadDays);
-  }, [cycle.strainRows, cycle.plannedStartDate, cycle.cutLeadDays]);
+  }, [cycle.strainRows, cycle.cutLeadDays]);
 
   // Debounced autosave
   const saveTimer = useRef(null);
-  const scheduleSave = (nextRows, nextDate, nextLeadDays) => {
+  const scheduleSave = (nextRows, nextLeadDays) => {
     clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       onSave({
         strains: nextRows.filter(r => r.strain || r.quantity > 0),
-        plannedStartDate: nextDate || null,
+        plannedStartDate: null,
         floweringDays: cycle.floweringDays || 56,
         cutLeadDays: Number.isFinite(nextLeadDays) ? nextLeadDays : DEFAULT_CUT_LEAD_DAYS,
       });
@@ -502,7 +485,7 @@ function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, sav
   const updateRow = (idx, patch) => {
     const next = strainRows.map((r, i) => (i === idx ? { ...r, ...patch } : r));
     setStrainRows(next);
-    scheduleSave(next, plannedStartDate, cutLeadDays);
+    scheduleSave(next, cutLeadDays);
   };
   const addRow = () => {
     const next = [...strainRows, { strain: '', quantity: 0 }];
@@ -512,7 +495,7 @@ function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, sav
   const removeRow = (idx) => {
     const next = strainRows.filter((_, i) => i !== idx);
     setStrainRows(next);
-    scheduleSave(next, plannedStartDate, cutLeadDays);
+    scheduleSave(next, cutLeadDays);
   };
 
   const hasPipeline = pipelineSummary && !pipelineSummary.empty;
@@ -591,33 +574,22 @@ function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, sav
             + {t('motherRoom.addStrain')}
           </button>
 
-          <div className="flex items-center gap-1 pt-0.5">
+          <div className="flex items-center gap-1.5 pt-0.5 text-[10px] text-dark-400" title={t('motherRoom.cutLeadDaysHint')}>
+            <span className="text-dark-500">{t('motherRoom.cutLeadLabel')}</span>
             <input
-              type="date"
-              value={plannedStartDate}
+              type="number"
+              min={1}
+              max={365}
+              value={cutLeadDays}
               onChange={e => {
-                setPlannedStartDate(e.target.value);
-                scheduleSave(strainRows, e.target.value, cutLeadDays);
+                const v = parseInt(e.target.value, 10) || DEFAULT_CUT_LEAD_DAYS;
+                setCutLeadDays(v);
+                scheduleSave(strainRows, v);
               }}
-              className="flex-1 min-w-0 bg-dark-700 border border-dark-600 rounded px-2 py-1 text-white text-[11px]"
-              title={t('motherRoom.plannedStartDate', 'Дата старта')}
+              className="w-12 bg-dark-700 border border-dark-600 rounded px-1 py-1 text-white text-[11px] text-center"
             />
-            <div className="flex items-center gap-0.5 shrink-0" title={t('motherRoom.cutLeadDaysHint')}>
-              <span className="text-[10px] text-dark-500">−</span>
-              <input
-                type="number"
-                min={1}
-                max={365}
-                value={cutLeadDays}
-                onChange={e => {
-                  const v = parseInt(e.target.value, 10) || DEFAULT_CUT_LEAD_DAYS;
-                  setCutLeadDays(v);
-                  scheduleSave(strainRows, plannedStartDate, v);
-                }}
-                className="w-10 bg-dark-700 border border-dark-600 rounded px-1 py-1 text-white text-[11px] text-center"
-              />
-              <span className="text-[10px] text-dark-500">{t('motherRoom.daysShort')}</span>
-            </div>
+            <span className="text-dark-500">{t('motherRoom.daysShort')}</span>
+            <span className="text-dark-500">{t('motherRoom.cutLeadSuffix')}</span>
           </div>
         </div>
       )}
