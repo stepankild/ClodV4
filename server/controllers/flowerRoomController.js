@@ -5,6 +5,7 @@ import CycleArchive from '../models/CycleArchive.js';
 import PlannedCycle from '../models/PlannedCycle.js';
 import HarvestSession from '../models/HarvestSession.js';
 import CloneCut from '../models/CloneCut.js';
+import VegBatch from '../models/VegBatch.js';
 import mongoose from 'mongoose';
 import { createAuditLog } from '../utils/auditLog.js';
 import { notDeleted } from '../utils/softDelete.js';
@@ -67,13 +68,76 @@ export const getRoomsSummary = async (req, res) => {
       const roomId = room._id;
       // Фильтр задач по текущему циклу (если есть cycleId)
       const cycleFilter = room.currentCycleId ? { cycleId: room.currentCycleId } : {};
-      const [completedTasksRaw, pendingTasksRaw, lastArchive, plannedCyclesRaw] = await Promise.all([
+      const [completedTasksRaw, pendingTasksRaw, lastArchive, plannedCyclesRaw, cloneCutsRaw, vegBatchesRaw] = await Promise.all([
         RoomTask.find({ room: roomId, completed: true, ...cycleFilter, ...notDeleted }).lean(),
         RoomTask.find({ room: roomId, completed: false, ...notDeleted }).lean(),
         CycleArchive.findOne({ room: roomId }).sort({ harvestDate: -1 }).lean(),
-        PlannedCycle.find({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).sort({ order: 1 }).lean()
+        PlannedCycle.find({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).sort({ order: 1 }).lean(),
+        CloneCut.find({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean(),
+        VegBatch.find({ flowerRoom: roomId, transplantedToFlowerAt: null, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
       ]);
       const plannedCycle = plannedCyclesRaw.find(p => (p.order ?? 0) === 0) || plannedCyclesRaw[0] || null;
+
+      // Build "pipeline" summary: what's already in motion for the next cycle of this room
+      // — clone cuts not yet transplanted to veg, plus veg batches not yet in flower.
+      const vegSourceCutIds = new Set(
+        vegBatchesRaw.map(b => b.sourceCloneCut?.toString()).filter(Boolean)
+      );
+      const activeCuts = cloneCutsRaw.filter(c => !vegSourceCutIds.has(c._id.toString()));
+      const cutByStrain = {};
+      let cutTotal = 0;
+      for (const c of activeCuts) {
+        if (Array.isArray(c.strains) && c.strains.length > 0) {
+          for (const s of c.strains) {
+            const key = (s.strain || '').trim() || '—';
+            const q = Number(s.quantity) || 0;
+            cutByStrain[key] = (cutByStrain[key] || 0) + q;
+            cutTotal += q;
+          }
+        } else {
+          const key = (c.strain || '').trim() || '—';
+          const q = Number(c.quantity) || 0;
+          cutByStrain[key] = (cutByStrain[key] || 0) + q;
+          cutTotal += q;
+        }
+      }
+
+      const vegByStrain = {};
+      let vegTotal = 0;
+      for (const v of vegBatchesRaw) {
+        // Remaining-in-veg quantity = total minus what already left veg
+        const totalQty = Number(v.quantity) || 0;
+        const sent = Number(v.sentToFlowerCount) || 0;
+        const died = Number(v.diedCount) || 0;
+        const disposed = Number(v.disposedCount) || 0;
+        const remaining = Math.max(0, totalQty - sent - died - disposed);
+        if (remaining <= 0) continue;
+
+        if (Array.isArray(v.strains) && v.strains.length > 0) {
+          const strainsTotal = v.strains.reduce((s, x) => s + (Number(x.quantity) || 0), 0);
+          for (const s of v.strains) {
+            const key = (s.strain || '').trim() || '—';
+            const share = strainsTotal > 0 ? (Number(s.quantity) || 0) / strainsTotal : 0;
+            const q = Math.round(remaining * share);
+            if (q <= 0) continue;
+            vegByStrain[key] = (vegByStrain[key] || 0) + q;
+            vegTotal += q;
+          }
+        } else {
+          const key = (v.strain || '').trim() || '—';
+          vegByStrain[key] = (vegByStrain[key] || 0) + remaining;
+          vegTotal += remaining;
+        }
+      }
+
+      const pipeline = {
+        cutByStrain,
+        cutTotal,
+        vegByStrain,
+        vegTotal,
+        cutCount: activeCuts.length,
+        vegCount: vegBatchesRaw.length,
+      };
       // Backward-compat fields
       const trimWeek2 = completedTasksRaw.find(t => t.type === 'trim');
       const defoliationWeek4 = completedTasksRaw.find(t => t.type === 'defoliation');
@@ -138,7 +202,8 @@ export const getRoomsSummary = async (req, res) => {
           floweringDays: pc.floweringDays,
           order: pc.order ?? 0,
           notes: pc.notes
-        }))
+        })),
+        pipeline
       };
     }));
     res.json(summary);

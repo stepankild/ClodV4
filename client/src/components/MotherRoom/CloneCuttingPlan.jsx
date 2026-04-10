@@ -27,6 +27,19 @@ function isoDate(date) {
 }
 
 /**
+ * For a given planned cycle, figure out how many clones of its strain are already
+ * in the pipeline (cut but not yet in veg + in veg but not yet in flower).
+ * Only counts the matching strain.
+ */
+function pipelineForStrain(pipeline, strain) {
+  if (!pipeline || !strain) return { cut: 0, veg: 0, total: 0 };
+  const key = String(strain).trim();
+  const cut = pipeline.cutByStrain?.[key] || 0;
+  const veg = pipeline.vegByStrain?.[key] || 0;
+  return { cut, veg, total: cut + veg };
+}
+
+/**
  * Computes the three cycle slots for a room and the cut event associated with each
  * planned cycle. Cut rule: clones are cut CUT_LEAD_DAYS (28) before the END of the
  * CURRENT cycle (for slot "next"), and 28 days before the end of the "next" cycle
@@ -155,23 +168,35 @@ export default function CloneCuttingPlan() {
     });
   }, [rooms]);
 
-  // Aggregate upcoming cuts across all rooms
+  // Aggregate upcoming cuts across all rooms. Each entry's quantity is REDUCED by
+  // whatever's already in the pipeline (cut or in veg) for that strain in that room.
   const upcomingCuts = useMemo(() => {
     const list = [];
     sortedRooms.forEach(room => {
       const { next, nextPlus } = computeCyclesForRoom(room);
+      // Track how many pipeline plants we've already "consumed" by earlier cycles
+      // of the same strain (so NEXT+1 doesn't double-count what NEXT already used).
+      const consumedPerStrain = new Map();
       [next, nextPlus].forEach(cycle => {
-        if (cycle.plantsCount > 0 && cycle.strain && cycle.cutDate) {
-          list.push({
-            roomName: room.name || `${t('motherRoom.roomShort')} ${room.roomNumber}`,
-            roomNumber: room.roomNumber,
-            strain: cycle.strain,
-            quantity: cycle.plantsCount,
-            cutDate: cycle.cutDate,
-            cutInDays: cycle.cutInDays,
-            cycleKind: cycle.kind,
-          });
-        }
+        if (!(cycle.plantsCount > 0 && cycle.strain && cycle.cutDate)) return;
+        const pipe = pipelineForStrain(room.pipeline, cycle.strain);
+        const alreadyUsed = consumedPerStrain.get(cycle.strain) || 0;
+        const pipelineAvail = Math.max(0, pipe.total - alreadyUsed);
+        const applied = Math.min(pipelineAvail, cycle.plantsCount);
+        consumedPerStrain.set(cycle.strain, alreadyUsed + applied);
+        const remaining = Math.max(0, cycle.plantsCount - applied);
+        if (remaining <= 0) return;
+        list.push({
+          roomName: room.name || `${t('motherRoom.roomShort')} ${room.roomNumber}`,
+          roomNumber: room.roomNumber,
+          strain: cycle.strain,
+          quantity: remaining,
+          plannedQuantity: cycle.plantsCount,
+          pipelineApplied: applied,
+          cutDate: cycle.cutDate,
+          cutInDays: cycle.cutInDays,
+          cycleKind: cycle.kind,
+        });
       });
     });
     list.sort((a, b) => new Date(a.cutDate) - new Date(b.cutDate));
@@ -234,6 +259,11 @@ export default function CloneCuttingPlan() {
                     <span className="font-medium truncate">{cut.strain}</span>
                     <span className="text-dark-500">×</span>
                     <span className="font-semibold">{cut.quantity}</span>
+                    {cut.pipelineApplied > 0 && (
+                      <span className="text-[9px] text-dark-500">
+                        ({t('motherRoom.ofPlanned', { planned: cut.plannedQuantity, inPipeline: cut.pipelineApplied })})
+                      </span>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 text-[10px]">
                     <span>{formatDate(cut.cutDate)}</span>
@@ -277,6 +307,18 @@ function RoomPlanRow({ room, onSave, saving, t }) {
   const key0 = `${room._id}_0`;
   const key1 = `${room._id}_1`;
 
+  // Pipeline consumption: NEXT eats from the pool first, NEXT+1 gets the leftover.
+  const nextPipe = pipelineForStrain(room.pipeline, next.strain);
+  const nextApplied = Math.min(nextPipe.total, next.plantsCount || 0);
+  const nextPipeShown = { ...nextPipe, applied: nextApplied };
+
+  const nextPlusPipe = pipelineForStrain(room.pipeline, nextPlus.strain);
+  const nextPlusAvailable = (nextPlus.strain && nextPlus.strain === next.strain)
+    ? Math.max(0, nextPlusPipe.total - nextApplied)
+    : nextPlusPipe.total;
+  const nextPlusApplied = Math.min(nextPlusAvailable, nextPlus.plantsCount || 0);
+  const nextPlusPipeShown = { ...nextPlusPipe, total: nextPlusAvailable, applied: nextPlusApplied };
+
   return (
     <div className="border border-dark-700 rounded-lg p-3 bg-dark-900/20">
       <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
@@ -293,6 +335,7 @@ function RoomPlanRow({ room, onSave, saving, t }) {
         <CurrentCycleCard cycle={current} t={t} />
         <PlannedCycleCard
           cycle={next}
+          pipeline={nextPipeShown}
           title={t('motherRoom.cycleNext')}
           cutLabel={t('motherRoom.cutDate')}
           onSave={(patch) => onSave(0, patch)}
@@ -301,6 +344,7 @@ function RoomPlanRow({ room, onSave, saving, t }) {
         />
         <PlannedCycleCard
           cycle={nextPlus}
+          pipeline={nextPlusPipeShown}
           title={t('motherRoom.cycleNextPlus')}
           cutLabel={t('motherRoom.cutDate')}
           onSave={(patch) => onSave(1, patch)}
@@ -338,7 +382,7 @@ function CurrentCycleCard({ cycle, t }) {
   );
 }
 
-function PlannedCycleCard({ cycle, title, cutLabel, onSave, saving, t }) {
+function PlannedCycleCard({ cycle, pipeline, title, cutLabel, onSave, saving, t }) {
   const [strain, setStrain] = useState(cycle.strain);
   const [plantsCount, setPlantsCount] = useState(cycle.plantsCount);
   const [plannedStartDate, setPlannedStartDate] = useState(isoDate(cycle.plannedStartDate));
@@ -375,8 +419,16 @@ function PlannedCycleCard({ cycle, title, cutLabel, onSave, saving, t }) {
   };
   useEffect(() => () => clearTimeout(saveTimer.current), []);
 
-  const overdue = cycle.cutInDays != null && cycle.cutInDays < 0;
-  const soon = cycle.cutInDays != null && cycle.cutInDays >= 0 && cycle.cutInDays <= 7;
+  // Pipeline-aware remaining to cut
+  const planned = cycle.plantsCount || 0;
+  const pipelineApplied = pipeline?.applied || 0;
+  const pipelineCut = pipeline?.cut || 0;
+  const pipelineVeg = pipeline?.veg || 0;
+  const remainingToCut = Math.max(0, planned - pipelineApplied);
+  const fullyCovered = planned > 0 && remainingToCut === 0;
+
+  const overdue = !fullyCovered && cycle.cutInDays != null && cycle.cutInDays < 0;
+  const soon = !fullyCovered && cycle.cutInDays != null && cycle.cutInDays >= 0 && cycle.cutInDays <= 7;
 
   return (
     <div className="border border-dark-700 rounded p-2 bg-dark-800/40 space-y-1.5">
@@ -419,8 +471,14 @@ function PlannedCycleCard({ cycle, title, cutLabel, onSave, saving, t }) {
       <div className="flex items-center justify-between text-[11px] pt-0.5">
         <span className="text-dark-500">{cutLabel}:</span>
         <div className="flex items-center gap-1.5">
-          <span className="text-white">{formatDate(cycle.cutDate)}</span>
-          {cycle.cutInDays != null && (
+          <span className={fullyCovered ? 'text-dark-500 line-through' : 'text-white'}>
+            {formatDate(cycle.cutDate)}
+          </span>
+          {fullyCovered ? (
+            <span className="text-[10px] px-1 rounded bg-green-900/40 text-green-400">
+              ✓ {t('motherRoom.covered')}
+            </span>
+          ) : cycle.cutInDays != null ? (
             <span className={`text-[10px] px-1 rounded ${
               overdue ? 'bg-red-900/40 text-red-400' : soon ? 'bg-amber-900/30 text-amber-400' : 'text-dark-500'
             }`}>
@@ -430,9 +488,32 @@ function PlannedCycleCard({ cycle, title, cutLabel, onSave, saving, t }) {
                   ? t('motherRoom.today')
                   : t('motherRoom.inDays', { days: cycle.cutInDays })}
             </span>
-          )}
+          ) : null}
         </div>
       </div>
+
+      {/* Pipeline status (only if there's something for this strain) */}
+      {(pipelineCut > 0 || pipelineVeg > 0) && (
+        <div className="flex items-center gap-2 text-[10px] pt-0.5 border-t border-dark-700/60">
+          {pipelineCut > 0 && (
+            <span className="text-dark-400" title={t('motherRoom.pipelineCutHint')}>
+              <span className="text-dark-500">{t('motherRoom.pipelineCut')}:</span>{' '}
+              <span className="text-white">{pipelineCut}</span>
+            </span>
+          )}
+          {pipelineVeg > 0 && (
+            <span className="text-dark-400" title={t('motherRoom.pipelineVegHint')}>
+              <span className="text-dark-500">{t('motherRoom.pipelineVeg')}:</span>{' '}
+              <span className="text-white">{pipelineVeg}</span>
+            </span>
+          )}
+          {planned > 0 && remainingToCut > 0 && (
+            <span className="text-amber-400 ml-auto">
+              {t('motherRoom.stillNeed')}: <span className="font-semibold">{remainingToCut}</span>
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

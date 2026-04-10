@@ -2175,7 +2175,14 @@
     "today": "сегодня",
     "notStarted": "Не запущен",
     "roomShort": "Комн.",
-    "roomInactive": "Не активна"
+    "roomInactive": "Не активна",
+    "pipelineCut": "Нарезано",
+    "pipelineVeg": "На веге",
+    "pipelineCutHint": "Клонов уже нарезано и ждёт вега",
+    "pipelineVegHint": "Клонов уже в вегетации для этой комнаты",
+    "stillNeed": "Нужно ещё",
+    "covered": "Покрыто",
+    "ofPlanned": "из {{planned}}, {{inPipeline}} уже в работе"
   },
   "language": {
     "ru": "RU",

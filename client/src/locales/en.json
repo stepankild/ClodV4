@@ -2176,7 +2176,14 @@
     "today": "today",
     "notStarted": "Not started",
     "roomShort": "Room",
-    "roomInactive": "Inactive"
+    "roomInactive": "Inactive",
+    "pipelineCut": "Cut",
+    "pipelineVeg": "Veg",
+    "pipelineCutHint": "Clones already cut, waiting for veg",
+    "pipelineVegHint": "Clones already in vegetation for this room",
+    "stillNeed": "Still need",
+    "covered": "Covered",
+    "ofPlanned": "of {{planned}}, {{inPipeline}} already in pipeline"
   },
   "language": {
     "ru": "RU",
