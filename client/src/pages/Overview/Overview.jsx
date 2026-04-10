@@ -8,20 +8,22 @@ import { vegBatchService } from '../../services/vegBatchService';
 
 
 const WEEKS_BEFORE_CLONE = 4;
-const DAYS_BEFORE_CUT = WEEKS_BEFORE_CLONE * 7;
+const DEFAULT_DAYS_BEFORE_CUT = WEEKS_BEFORE_CLONE * 7;
 
+// Cut date for a room's NEXT cycle. Mirrors the logic in CloneCuttingPlan:
+//   - take the room's expected harvest date as the chain anchor
+//   - if the cycle is overdue (planned end < today), clamp the anchor to today
+//   - subtract the NEXT plan's cutLeadDays (defaults to 28 if no plan)
+//   - if the resulting cut date is already in the past, clamp it to today too
 const getCutDateForRoom = (room) => {
-  if (room.plannedCycle?.plannedStartDate) {
-    const d = new Date(room.plannedCycle.plannedStartDate);
-    d.setDate(d.getDate() - DAYS_BEFORE_CUT);
-    return d;
-  }
-  if (room.isActive && room.expectedHarvestDate) {
-    const d = new Date(room.expectedHarvestDate);
-    d.setDate(d.getDate() - DAYS_BEFORE_CUT);
-    return d;
-  }
-  return null;
+  if (!room.isActive || !room.expectedHarvestDate) return null;
+  const leadDays = room.plannedCycle?.cutLeadDays ?? DEFAULT_DAYS_BEFORE_CUT;
+  const now = new Date();
+  const harvest = new Date(room.expectedHarvestDate);
+  const anchor = harvest < now ? now : harvest;
+  const cut = new Date(anchor);
+  cut.setDate(cut.getDate() - leadDays);
+  return cut < now ? now : cut;
 };
 
 const getDaysUntilCut = (cutDate) => {

@@ -65,18 +65,17 @@ const rowHasStrainData = (row) => {
 
 const orderCutHasStrainData = (cut) => getStrainsFromCut(cut).some((s) => Number(s?.quantity) > 0);
 
+// Cut date for a room's NEXT cycle — mirrors the logic in CloneCuttingPlan
+// so the main Overview, the Clones page, and the Mother Room plan all agree.
 const getCutDateForRoom = (room) => {
-  if (room.plannedCycle?.plannedStartDate) {
-    const d = new Date(room.plannedCycle.plannedStartDate);
-    d.setDate(d.getDate() - DAYS_OFFSET);
-    return d;
-  }
-  if (room.isActive && room.expectedHarvestDate) {
-    const d = new Date(room.expectedHarvestDate);
-    d.setDate(d.getDate() - DAYS_OFFSET);
-    return d;
-  }
-  return null;
+  if (!room.isActive || !room.expectedHarvestDate) return null;
+  const leadDays = room.plannedCycle?.cutLeadDays ?? DAYS_OFFSET;
+  const now = new Date();
+  const harvest = new Date(room.expectedHarvestDate);
+  const anchor = harvest < now ? now : harvest;
+  const cut = new Date(anchor);
+  cut.setDate(cut.getDate() - leadDays);
+  return cut < now ? now : cut;
 };
 
 const Clones = () => {
