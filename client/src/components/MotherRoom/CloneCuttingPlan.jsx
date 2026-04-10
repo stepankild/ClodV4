@@ -203,8 +203,10 @@ export default function CloneCuttingPlan() {
         return { ...r, plannedCycles: nextPlans, plannedCycle: nextPlannedCycle };
       }));
     } catch (err) {
-      console.error('Save plan error:', err);
-      alert(err.response?.data?.message || 'Error');
+      console.error('Save plan error:', err, err.response?.data);
+      const status = err.response?.status;
+      const msg = err.response?.data?.message || err.message || 'Error';
+      alert(`Save plan error${status ? ' (' + status + ')' : ''}: ${msg}`);
     } finally {
       setSaving(s => ({ ...s, [key]: false }));
     }

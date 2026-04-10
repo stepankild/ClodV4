@@ -38,20 +38,35 @@ const PlannedCycle = mongoose.model('PlannedCycle', plannedCycleSchema);
 const dropStaleRoomIndex = async () => {
   try {
     const indexes = await PlannedCycle.collection.listIndexes().toArray();
+    // eslint-disable-next-line no-console
+    console.log('[PlannedCycle] Current indexes:', indexes.map(i => ({ name: i.name, key: i.key, unique: i.unique })));
     for (const idx of indexes) {
       if (idx.name === '_id_') continue;
       const keys = idx.key || {};
       const keyFields = Object.keys(keys);
+      // Drop any unique index on just `room` (legacy schema)
       if (idx.unique && keyFields.length === 1 && keyFields[0] === 'room') {
         // eslint-disable-next-line no-console
         console.log(`[PlannedCycle] Dropping stale unique index: ${idx.name}`);
         try {
           await PlannedCycle.collection.dropIndex(idx.name);
+          // eslint-disable-next-line no-console
+          console.log(`[PlannedCycle] Successfully dropped ${idx.name}`);
         } catch (err) {
           // eslint-disable-next-line no-console
           console.warn(`[PlannedCycle] Failed to drop index ${idx.name}:`, err?.message);
         }
       }
+    }
+    // Make sure the new {room, order} index is built (Mongoose normally handles this,
+    // but explicitly ensure in case the legacy drop replaced it).
+    try {
+      await PlannedCycle.syncIndexes();
+      // eslint-disable-next-line no-console
+      console.log('[PlannedCycle] syncIndexes done');
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[PlannedCycle] syncIndexes failed:', err?.message);
     }
   } catch (err) {
     // eslint-disable-next-line no-console
