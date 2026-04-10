@@ -2179,7 +2179,9 @@
     "pipelineCut": "Нарезано",
     "pipelineVeg": "На веге",
     "covered": "Покрыто",
-    "batchShortHint": "Батч меньше плана на {{diff}} шт."
+    "batchShortHint": "Батч меньше плана на {{diff}} шт.",
+    "strainMismatch": "сорт",
+    "strainMismatchHint": "В плане {{planned}}, но в батче {{batch}}"
   },
   "language": {
     "ru": "RU",

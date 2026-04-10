@@ -27,34 +27,20 @@ function isoDate(date) {
 }
 
 /**
- * Assigns pipeline batches (from room.pipeline.batches) to the given planned cycles
- * in order. Rule:
- *   - Each batch is atomic — it's meant for ONE cycle, not split between them.
- *   - A batch with strain S is assigned to the FIRST upcoming cycle whose strain
- *     matches S (and that isn't already "covered" by an earlier batch).
- *   - Once assigned, the batch's quantity covers that cycle up to its plantsCount.
- *     Any surplus is considered waste (disposed), any shortage goes to "still need".
- *   - A batch already assigned to an earlier cycle can't also cover a later one.
- *
- * Returns: { assignments: Map(cycleKind -> batch | null) }.
+ * Assigns pipeline batches to the given cycles in CHRONOLOGICAL order:
+ *   - Batches are sorted oldest-first on the backend.
+ *   - The oldest batch goes to the first cycle (NEXT), the next to NEXT+1, etc.
+ *   - Strain is NOT required to match — we just flag a mismatch visually if it
+ *     differs from the planned strain.
+ *   - Assignment happens even if the cycle's plan is empty (so the user can see
+ *     "hey, there's already something in the pipeline for this slot").
  */
 function assignPipelineToCycles(pipeline, cycles) {
-  const batches = (pipeline?.batches || []).map(b => ({ ...b, used: false }));
+  const batches = pipeline?.batches || [];
   const assignments = {};
-  for (const cycle of cycles) {
-    if (!cycle?.strain || !(cycle.plantsCount > 0)) {
-      assignments[cycle.kind] = null;
-      continue;
-    }
-    const needle = String(cycle.strain).trim().toLowerCase();
-    const match = batches.find(b => !b.used && (b.strain || '').trim().toLowerCase() === needle);
-    if (match) {
-      match.used = true;
-      assignments[cycle.kind] = match;
-    } else {
-      assignments[cycle.kind] = null;
-    }
-  }
+  cycles.forEach((cycle, i) => {
+    assignments[cycle.kind] = batches[i] || null;
+  });
   return assignments;
 }
 
@@ -187,9 +173,9 @@ export default function CloneCuttingPlan() {
     });
   }, [rooms]);
 
-  // Aggregate upcoming cuts across all rooms. A cycle is "covered" if any atomic
-  // pipeline batch has been assigned to it; otherwise the full planned quantity
-  // still needs to be cut. Pipeline batches aren't split across cycles.
+  // Aggregate upcoming cuts across all rooms. A cycle is "covered" if ANY atomic
+  // pipeline batch has been assigned to it (chronologically). Otherwise, if the
+  // cycle has a planned strain + quantity, it still needs to be cut.
   const upcomingCuts = useMemo(() => {
     const list = [];
     sortedRooms.forEach(room => {
@@ -197,11 +183,7 @@ export default function CloneCuttingPlan() {
       const assignments = assignPipelineToCycles(room.pipeline, [next, nextPlus]);
       [next, nextPlus].forEach(cycle => {
         if (!(cycle.plantsCount > 0 && cycle.strain && cycle.cutDate)) return;
-        const batch = assignments[cycle.kind];
-        // If a batch is assigned, consider the cycle fully covered (short batches
-        // either get topped up in the same batch or are accepted as-is — we do not
-        // plan extra cuts for them here).
-        if (batch) return;
+        if (assignments[cycle.kind]) return; // covered
         list.push({
           roomName: room.name || `${t('motherRoom.roomShort')} ${room.roomNumber}`,
           roomNumber: room.roomNumber,
@@ -422,8 +404,10 @@ function PlannedCycleCard({ cycle, batch, title, cutLabel, onSave, saving, t }) 
 
   // A batch atomically "covers" this cycle — no splitting across cycles.
   const planned = cycle.plantsCount || 0;
-  const fullyCovered = !!batch && planned > 0;
-  const batchShort = batch && batch.quantity < planned;
+  const fullyCovered = !!batch;
+  const batchShort = batch && planned > 0 && batch.quantity < planned;
+  const strainMismatch = batch && cycle.strain && batch.strain &&
+    String(batch.strain).trim().toLowerCase() !== String(cycle.strain).trim().toLowerCase();
 
   const overdue = !fullyCovered && cycle.cutInDays != null && cycle.cutInDays < 0;
   const soon = !fullyCovered && cycle.cutInDays != null && cycle.cutInDays >= 0 && cycle.cutInDays <= 7;
@@ -492,19 +476,33 @@ function PlannedCycleCard({ cycle, batch, title, cutLabel, onSave, saving, t }) 
 
       {/* Assigned batch info (if any) */}
       {batch && (
-        <div className="flex items-center gap-1.5 text-[10px] pt-0.5 border-t border-dark-700/60">
-          <span className={`px-1 rounded ${batch.kind === 'veg' ? 'bg-green-900/40 text-green-400' : 'bg-blue-900/40 text-blue-400'}`}>
-            {batch.kind === 'veg' ? t('motherRoom.pipelineVeg') : t('motherRoom.pipelineCut')}
-          </span>
-          <span className="text-white font-semibold">{batch.quantity}</span>
-          <span className="text-dark-500">{t('motherRoom.pieces')}</span>
-          {batch.cutDate && (
-            <span className="text-dark-500 ml-auto">{formatDate(batch.cutDate)}</span>
-          )}
-          {batchShort && (
-            <span className="text-amber-500" title={t('motherRoom.batchShortHint', { diff: planned - batch.quantity })}>
-              −{planned - batch.quantity}
+        <div className="flex flex-col gap-0.5 pt-0.5 border-t border-dark-700/60">
+          <div className="flex items-center gap-1.5 text-[10px]">
+            <span className={`px-1 rounded ${batch.kind === 'veg' ? 'bg-green-900/40 text-green-400' : 'bg-blue-900/40 text-blue-400'}`}>
+              {batch.kind === 'veg' ? t('motherRoom.pipelineVeg') : t('motherRoom.pipelineCut')}
             </span>
+            <span className="text-white font-semibold">{batch.quantity}</span>
+            <span className="text-dark-500">{t('motherRoom.pieces')}</span>
+            {batch.strain && (
+              <span className="text-dark-400 truncate">{batch.strain}</span>
+            )}
+            {batch.cutDate && (
+              <span className="text-dark-500 ml-auto">{formatDate(batch.cutDate)}</span>
+            )}
+          </div>
+          {(batchShort || strainMismatch) && (
+            <div className="flex items-center gap-2 text-[10px]">
+              {batchShort && (
+                <span className="text-amber-500" title={t('motherRoom.batchShortHint', { diff: planned - batch.quantity })}>
+                  −{planned - batch.quantity}
+                </span>
+              )}
+              {strainMismatch && (
+                <span className="text-amber-500" title={t('motherRoom.strainMismatchHint', { planned: cycle.strain, batch: batch.strain })}>
+                  ⚠ {t('motherRoom.strainMismatch')}
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}

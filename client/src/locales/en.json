@@ -2180,7 +2180,9 @@
     "pipelineCut": "Cut",
     "pipelineVeg": "Veg",
     "covered": "Covered",
-    "batchShortHint": "Batch is {{diff}} pcs short of plan"
+    "batchShortHint": "Batch is {{diff}} pcs short of plan",
+    "strainMismatch": "strain",
+    "strainMismatchHint": "Planned {{planned}} but batch has {{batch}}"
   },
   "language": {
     "ru": "RU",
