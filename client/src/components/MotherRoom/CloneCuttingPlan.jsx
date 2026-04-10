@@ -437,26 +437,30 @@ function CurrentCycleCard({ cycle, t }) {
 }
 
 function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, saving, t }) {
+  // Ensure we always have at least one row so the user has an editable field
+  const ensureRows = (rows) => (rows && rows.length > 0 ? rows : [{ strain: '', quantity: 0 }]);
+
   // Local form state
-  const [strainRows, setStrainRows] = useState(cycle.strainRows);
+  const [strainRows, setStrainRows] = useState(() => ensureRows(cycle.strainRows));
   const [plannedStartDate, setPlannedStartDate] = useState(isoDate(cycle.plannedStartDate));
   const [cutLeadDays, setCutLeadDays] = useState(cycle.cutLeadDays ?? DEFAULT_CUT_LEAD_DAYS);
 
-  // Keep in sync when parent data refreshes (after a save)
-  const lastServerRef = useRef({
-    strainRows: cycle.strainRows,
-    plannedStartDate: isoDate(cycle.plannedStartDate),
-    cutLeadDays: cycle.cutLeadDays ?? DEFAULT_CUT_LEAD_DAYS,
-  });
+  // Keep in sync when parent data refreshes (after a save). We only re-sync if
+  // the incoming data is materially different from what's already in local state,
+  // so user keystrokes don't get clobbered while typing.
+  const lastSignatureRef = useRef('');
   useEffect(() => {
-    lastServerRef.current = {
-      strainRows: cycle.strainRows,
+    const incoming = {
+      strains: (cycle.strainRows || []).map(r => ({ strain: r.strain || '', quantity: Number(r.quantity) || 0 })),
       plannedStartDate: isoDate(cycle.plannedStartDate),
       cutLeadDays: cycle.cutLeadDays ?? DEFAULT_CUT_LEAD_DAYS,
     };
-    setStrainRows(cycle.strainRows);
-    setPlannedStartDate(isoDate(cycle.plannedStartDate));
-    setCutLeadDays(cycle.cutLeadDays ?? DEFAULT_CUT_LEAD_DAYS);
+    const sig = JSON.stringify(incoming);
+    if (sig === lastSignatureRef.current) return;
+    lastSignatureRef.current = sig;
+    setStrainRows(ensureRows(incoming.strains));
+    setPlannedStartDate(incoming.plannedStartDate);
+    setCutLeadDays(incoming.cutLeadDays);
   }, [cycle.strainRows, cycle.plannedStartDate, cycle.cutLeadDays]);
 
   // Debounced autosave
@@ -494,9 +498,6 @@ function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, sav
   const hasPipeline = pipelineSummary && !pipelineSummary.empty;
   const overdue = !hasPipeline && cycle.cutInDays != null && cycle.cutInDays < 0;
   const soon = !hasPipeline && cycle.cutInDays != null && cycle.cutInDays >= 0 && cycle.cutInDays <= 7;
-
-  // Ensure there's always at least one empty row to edit when plan view is shown
-  const displayRows = strainRows.length > 0 ? strainRows : [{ strain: '', quantity: 0 }];
 
   return (
     <div className="border border-dark-700 rounded p-2 bg-dark-800/40 space-y-1.5">
@@ -537,7 +538,7 @@ function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, sav
       ) : (
         // ─── Plan view: editable strain rows + dates ───
         <div className="space-y-1">
-          {displayRows.map((row, idx) => (
+          {strainRows.map((row, idx) => (
             <div key={idx} className="flex items-center gap-1">
               <StrainSelect
                 value={row.strain}
@@ -552,7 +553,7 @@ function PlannedCycleCard({ cycle, pipelineSummary, title, cutLabel, onSave, sav
                 placeholder={t('motherRoom.clonesCount')}
                 className="w-14 bg-dark-700 border border-dark-600 rounded px-1.5 py-1 text-white text-xs text-center shrink-0"
               />
-              {displayRows.length > 1 && (
+              {strainRows.length > 1 && (
                 <button
                   type="button"
                   onClick={() => removeRow(idx)}
