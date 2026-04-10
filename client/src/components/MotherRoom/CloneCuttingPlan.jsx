@@ -96,9 +96,16 @@ function summarizePipeline(pipeline) {
 
 /**
  * Computes the three cycle slots for a room and the cut event associated with each
- * planned cycle. Cut rule: clones are cut CUT_LEAD_DAYS (28) before the END of the
- * CURRENT cycle (for slot "next"), and 28 days before the end of the "next" cycle
- * (for slot "next+1").
+ * planned cycle.
+ *
+ * Cut rules:
+ *  - NEXT clones are cut `cutLeadDays` days BEFORE the current cycle ends.
+ *  - NEXT+1 clones are cut `cutLeadDays` days AFTER the next cycle moves in.
+ *    (The current cycle ends → the next cycle moves in → cutLeadDays later we
+ *    take cuttings for the cycle after that.)
+ *
+ * For the common case of 56-day cycles with 28-day lead, both rules give the
+ * same date, but they diverge if the next cycle has a non-default length.
  */
 function computeCyclesForRoom(room) {
   const now = new Date();
@@ -141,8 +148,9 @@ function computeCyclesForRoom(room) {
 
   const planOrder1 = (room.plannedCycles || []).find(p => (p.order ?? 0) === 1) || null;
   const nextPlus = makePlanned('nextPlus', planOrder1);
-  // Clones for NEXT+1 are cut `cutLeadDays` before NEXT ends
-  nextPlus.cutDate = next.endDate ? addDays(next.endDate, -nextPlus.cutLeadDays) : null;
+  // Clones for NEXT+1 are cut `cutLeadDays` AFTER the NEXT cycle moves in
+  // (which in the default chained case is the current cycle's end date).
+  nextPlus.cutDate = next.effectiveStartDate ? addDays(next.effectiveStartDate, nextPlus.cutLeadDays) : null;
   nextPlus.effectiveStartDate = nextPlus.plannedStartDate || next.endDate || null;
   nextPlus.endDate = nextPlus.effectiveStartDate ? addDays(nextPlus.effectiveStartDate, nextPlus.floweringDays) : null;
 
@@ -203,10 +211,8 @@ export default function CloneCuttingPlan() {
         return { ...r, plannedCycles: nextPlans, plannedCycle: nextPlannedCycle };
       }));
     } catch (err) {
-      console.error('Save plan error:', err, err.response?.data);
-      const status = err.response?.status;
-      const msg = err.response?.data?.message || err.message || 'Error';
-      alert(`Save plan error${status ? ' (' + status + ')' : ''}: ${msg}`);
+      console.error('Save plan error:', err);
+      alert(err.response?.data?.message || 'Error');
     } finally {
       setSaving(s => ({ ...s, [key]: false }));
     }
