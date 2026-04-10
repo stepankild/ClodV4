@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { motherRoomService } from '../../services/motherRoomService';
 import { useAuth } from '../../context/AuthContext';
 import MotherRoomMap from '../../components/MotherRoom/MotherRoomMap';
+import CloneCuttingPlan from '../../components/MotherRoom/CloneCuttingPlan';
 import StrainSelect from '../../components/StrainSelect';
 
 const HEALTH_OPTIONS = ['excellent', 'good', 'satisfactory', 'poor', 'critical'];
@@ -255,6 +256,9 @@ export default function MotherRoom() {
           onCloseSetup={() => setShowSetup(false)}
         />
       </div>
+
+      {/* Clone cutting plan — 3 cycles per room */}
+      <CloneCuttingPlan />
 
       {/* Retired plants (collapsed) */}
       {retiredPlants.length > 0 && (

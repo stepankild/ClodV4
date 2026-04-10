@@ -12,7 +12,9 @@ export const getPlans = async (req, res) => {
     const { roomId } = req.query;
     const query = { ...notDeleted };
     if (roomId) query.room = roomId;
-    const plans = await PlannedCycle.find(query).populate('room', 'name roomNumber').sort({ room: 1 });
+    const plans = await PlannedCycle.find(query)
+      .populate('room', 'name roomNumber')
+      .sort({ room: 1, order: 1 });
     res.json(plans);
   } catch (error) {
     console.error('Get plans error:', error);
@@ -20,16 +22,18 @@ export const getPlans = async (req, res) => {
   }
 };
 
-// @desc    Create or replace planned cycle for a room (one plan per room)
+// @desc    Create or replace planned cycle for a room at a specific `order` slot
 // @route   POST /api/rooms/plans
 export const createPlan = async (req, res) => {
   try {
-    const { roomId, cycleName, strain, plannedStartDate, plantsCount, floweringDays, notes } = req.body;
+    const { roomId, cycleName, strain, plannedStartDate, plantsCount, floweringDays, notes, order } = req.body;
     if (!roomId || !mongoose.Types.ObjectId.isValid(roomId)) {
       return res.status(400).json({ message: t('plans.specifyRoom', req.lang) });
     }
     const room = await FlowerRoom.findById(roomId);
     if (!room) return res.status(404).json({ message: t('rooms.notFound', req.lang) });
+
+    const orderValue = Number.isFinite(parseInt(order, 10)) ? parseInt(order, 10) : 0;
 
     const data = {
       room: roomId,
@@ -38,15 +42,17 @@ export const createPlan = async (req, res) => {
       plannedStartDate: plannedStartDate ? new Date(plannedStartDate) : null,
       plantsCount: parseInt(plantsCount, 10) || 0,
       floweringDays: parseInt(floweringDays, 10) || 56,
+      order: orderValue,
       notes: notes != null ? String(notes).trim() : ''
     };
 
+    // Upsert by {room, order}: one plan per queue slot per room.
     const plan = await PlannedCycle.findOneAndUpdate(
-      { room: roomId, ...notDeleted },
+      { room: roomId, order: orderValue, ...notDeleted },
       { $set: data },
       { new: true, upsert: true }
     );
-    await createAuditLog(req, { action: 'plan.upsert', entityType: 'PlannedCycle', entityId: plan._id, details: { roomId, cycleName: plan.cycleName, strain: plan.strain } });
+    await createAuditLog(req, { action: 'plan.upsert', entityType: 'PlannedCycle', entityId: plan._id, details: { roomId, order: orderValue, cycleName: plan.cycleName, strain: plan.strain } });
     res.status(201).json(plan);
   } catch (error) {
     console.error('Create plan error:', error);
@@ -58,7 +64,7 @@ export const createPlan = async (req, res) => {
 // @route   PUT /api/rooms/plans/:id
 export const updatePlan = async (req, res) => {
   try {
-    const { cycleName, strain, plannedStartDate, plantsCount, floweringDays, notes } = req.body;
+    const { cycleName, strain, plannedStartDate, plantsCount, floweringDays, notes, order } = req.body;
     const plan = await PlannedCycle.findOne({ _id: req.params.id, ...notDeleted });
     if (!plan) return res.status(404).json({ message: t('plans.notFound', req.lang) });
 
@@ -68,6 +74,10 @@ export const updatePlan = async (req, res) => {
     if (plantsCount !== undefined) plan.plantsCount = parseInt(plantsCount, 10) || 0;
     if (floweringDays !== undefined) plan.floweringDays = parseInt(floweringDays, 10) || 56;
     if (notes !== undefined) plan.notes = String(notes).trim();
+    if (order !== undefined) {
+      const v = parseInt(order, 10);
+      if (Number.isFinite(v)) plan.order = v;
+    }
 
     await plan.save();
     res.json(plan);

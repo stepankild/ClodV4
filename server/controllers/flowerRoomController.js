@@ -67,12 +67,13 @@ export const getRoomsSummary = async (req, res) => {
       const roomId = room._id;
       // Фильтр задач по текущему циклу (если есть cycleId)
       const cycleFilter = room.currentCycleId ? { cycleId: room.currentCycleId } : {};
-      const [completedTasksRaw, pendingTasksRaw, lastArchive, plannedCycle] = await Promise.all([
+      const [completedTasksRaw, pendingTasksRaw, lastArchive, plannedCyclesRaw] = await Promise.all([
         RoomTask.find({ room: roomId, completed: true, ...cycleFilter, ...notDeleted }).lean(),
         RoomTask.find({ room: roomId, completed: false, ...notDeleted }).lean(),
         CycleArchive.findOne({ room: roomId }).sort({ harvestDate: -1 }).lean(),
-        PlannedCycle.findOne({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).lean()
+        PlannedCycle.find({ room: roomId, $or: [{ deletedAt: null }, { deletedAt: { $exists: false } }] }).sort({ order: 1 }).lean()
       ]);
+      const plannedCycle = plannedCyclesRaw.find(p => (p.order ?? 0) === 0) || plannedCyclesRaw[0] || null;
       // Backward-compat fields
       const trimWeek2 = completedTasksRaw.find(t => t.type === 'trim');
       const defoliationWeek4 = completedTasksRaw.find(t => t.type === 'defoliation');
@@ -125,8 +126,19 @@ export const getRoomsSummary = async (req, res) => {
           plannedStartDate: plannedCycle.plannedStartDate,
           plantsCount: plannedCycle.plantsCount,
           floweringDays: plannedCycle.floweringDays,
+          order: plannedCycle.order ?? 0,
           notes: plannedCycle.notes
-        } : null
+        } : null,
+        plannedCycles: plannedCyclesRaw.map(pc => ({
+          _id: pc._id,
+          cycleName: pc.cycleName,
+          strain: pc.strain,
+          plannedStartDate: pc.plannedStartDate,
+          plantsCount: pc.plantsCount,
+          floweringDays: pc.floweringDays,
+          order: pc.order ?? 0,
+          notes: pc.notes
+        }))
       };
     }));
     res.json(summary);
