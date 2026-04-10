@@ -6,6 +6,10 @@ const irrigationLogSchema = new mongoose.Schema({
   trigger: { type: String, default: 'manual' },    // schedule, manual, api
   scheduleTime: { type: String, default: null },    // which schedule triggered it (HH:MM)
   duration: { type: Number, default: null },         // planned duration in minutes
+  // For ON entries: when the pump should be turned off. Used by the scheduler
+  // tick to reconcile missed off-events (e.g. after a server restart wiped
+  // the in-memory setTimeout). Null on manual events and on OFF entries.
+  expectedOffAt: { type: Date, default: null },
   timestamp: { type: Date, default: Date.now }
 });
 
