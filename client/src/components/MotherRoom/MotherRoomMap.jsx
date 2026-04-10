@@ -741,31 +741,29 @@ export default function MotherRoomMap({
         </h4>
       </div>
 
-      {/* Map: ряды горизонтально, столы в ряду стекаются вертикально */}
-      <div className="overflow-x-auto pb-2">
-        <div className="flex gap-4 min-w-min">
-          {tablesByRow.map(({ row, rowIdx, tables }) => {
-            const rowCellCount = tables.reduce(
-              (s, tbl) => s + plantPositions.filter(p => p.row === tbl.flatIdx).length,
-              0
-            );
-            const rowTotalSpots = row.tablesCount * row.plantsPerTable;
+      {/* Map: ряды стекаются вертикально, подпись ряда слева, столы идут горизонтально вправо */}
+      <div className="flex flex-col gap-5 pb-2">
+        {tablesByRow.map(({ row, rowIdx, tables }) => {
+          const rowCellCount = tables.reduce(
+            (s, tbl) => s + plantPositions.filter(p => p.row === tbl.flatIdx).length,
+            0
+          );
+          const rowTotalSpots = row.tablesCount * row.plantsPerTable;
 
-            return (
-              <div key={rowIdx} className="flex flex-col items-center shrink-0">
-                <div className="flex items-center gap-1 mb-1.5">
-                  <span className="text-xs text-dark-300 font-medium">
-                    {row.name || `${t('motherRoom.rowDefault', 'Ряд')} ${rowIdx + 1}`}
-                  </span>
-                  <span className="text-[10px] text-dark-500">{rowCellCount}/{rowTotalSpots}</span>
-                </div>
-                <div className="flex flex-col gap-3">
-                  {tables.map(table => renderTable(table))}
-                </div>
+          return (
+            <div key={rowIdx} className="flex items-start gap-3">
+              <div className="flex flex-col items-end pt-4 shrink-0 w-16">
+                <span className="text-xs text-dark-300 font-medium whitespace-nowrap">
+                  {row.name || `${t('motherRoom.rowDefault', 'Ряд')} ${rowIdx + 1}`}
+                </span>
+                <span className="text-[10px] text-dark-500">{rowCellCount}/{rowTotalSpots}</span>
               </div>
-            );
-          })}
-        </div>
+              <div className="flex gap-3 overflow-x-auto pb-1 flex-1 min-w-0">
+                {tables.map(table => renderTable(table))}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {/* Health legend */}
