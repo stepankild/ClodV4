@@ -1,9 +1,17 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import MotherPlantCell, { HEALTH_COLORS } from './MotherPlantCell';
+import { HEALTH_COLORS } from './MotherPlantCell';
 import StrainSelect from '../StrainSelect';
 
 const DEFAULT_DEAD_SPOTS = [2];
+
+// Short abbreviation shown on chip
+function strainLabel(strain) {
+  if (!strain) return '?';
+  const trimmed = String(strain).trim();
+  if (!trimmed) return '?';
+  return trimmed.length > 4 ? trimmed.slice(0, 4) : trimmed;
+}
 
 function daysAgo(date) {
   if (!date) return null;
@@ -160,6 +168,13 @@ export default function MotherRoomMap({
 
   const unplacedPlants = plants.filter(p => !p.retiredAt && !placedPlantIds.has(p._id));
 
+  // Next free position slot on a table (tables are slot-less, but we still store
+  // unique `position` per chip to key plantPositions entries)
+  const nextPositionOnTable = (row, positions = plantPositions) => {
+    const used = positions.filter(p => p.row === row).map(p => p.position);
+    return used.length > 0 ? Math.max(...used) + 1 : 0;
+  };
+
   // ============ DRAG & DROP HANDLERS ============
 
   const handlePaletteDragStart = (e, plantId) => {
@@ -169,7 +184,7 @@ export default function MotherRoomMap({
     e.dataTransfer.setData('text/plain', serializeDragPayload({ type: 'palette', plantId }));
   };
 
-  const handleCellDragStart = (e, row, position, plantId) => {
+  const handleChipDragStart = (e, row, position, plantId) => {
     if (!canManage) return;
     e.stopPropagation();
     setDragging({ plantId, from: { row, position } });
@@ -182,44 +197,47 @@ export default function MotherRoomMap({
     setDropTarget(null);
   };
 
-  const handleCellDragOver = (e, row, position) => {
+  const handleTableDragOver = (e, row) => {
     if (!canManage || !dragging) return;
-    // Only accept drop on empty cell
-    const key = `${row}:${position}`;
-    if (positionMap[key]) return;
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    setDropTarget({ row, position });
+    setDropTarget({ row });
   };
 
-  const handleCellDragLeave = () => {
+  const handleTableDragLeave = () => {
     setDropTarget(null);
   };
 
-  const handleCellDrop = (e, row, position) => {
+  const handleTableDrop = (e, row) => {
     if (!canManage) return;
     e.preventDefault();
     e.stopPropagation();
     const payload = parseDragPayload(e) || dragging;
-    if (!payload) return;
-    const key = `${row}:${position}`;
-    if (positionMap[key]) {
-      // Occupied — ignore
+    if (!payload) {
       setDropTarget(null);
       setDragging(null);
       return;
     }
     const plantId = typeof payload.plantId === 'object' ? (payload.plantId?._id || payload.plantId) : payload.plantId;
 
+    const isFromCell = payload.type === 'cell' || (payload.from && typeof payload.from === 'object');
+
     let newPositions;
-    if (payload.type === 'cell' || (payload.from && typeof payload.from === 'object')) {
+    if (isFromCell) {
       const fromRow = payload.fromRow ?? payload.from.row;
       const fromPos = payload.fromPos ?? payload.from.position;
-      newPositions = plantPositions
-        .filter(p => !(p.row === fromRow && p.position === fromPos))
-        .concat([{ row, position, plantId }]);
+      if (fromRow === row) {
+        // Same table — no-op (chips have no fixed slots)
+        setDropTarget(null);
+        setDragging(null);
+        return;
+      }
+      const withoutOld = plantPositions.filter(p => !(p.row === fromRow && p.position === fromPos));
+      const nextPos = nextPositionOnTable(row, withoutOld);
+      newPositions = withoutOld.concat([{ row, position: nextPos, plantId }]);
     } else {
-      newPositions = [...plantPositions, { row, position, plantId }];
+      const nextPos = nextPositionOnTable(row);
+      newPositions = [...plantPositions, { row, position: nextPos, plantId }];
     }
     setPlantPositions(newPositions);
     scheduleSave(motherRows, newPositions);
@@ -258,37 +276,39 @@ export default function MotherRoomMap({
 
   // ============ CLICK HANDLERS (fallback & popover) ============
 
-  const handleCellClick = (e, row, position) => {
-    if (!canManage) {
-      // View-only: if there's a plant, open detail popover read-only
-      const key = `${row}:${position}`;
-      const plantId = positionMap[key];
-      if (plantId) {
-        setPopover({ cellKey: key, rect: e.currentTarget.getBoundingClientRect(), plantId });
-      }
-      return;
-    }
-    const key = `${row}:${position}`;
-    const plantId = positionMap[key];
+  // Click on a chip — open details popover
+  const handleChipClick = (e, row, position, plantId) => {
+    e.stopPropagation();
+    setPopover({
+      cellKey: `${row}:${position}`,
+      rect: e.currentTarget.getBoundingClientRect(),
+      plantId,
+    });
+  };
 
-    if (plantId) {
-      // Occupied — open plant detail popover
-      setPopover({ cellKey: key, rect: e.currentTarget.getBoundingClientRect(), plantId });
-      return;
-    }
+  // Click on the empty table area (not on a chip)
+  const handleTableAreaClick = (e, row) => {
+    // Only handle clicks directly on the table outline container
+    if (e.target !== e.currentTarget) return;
+    if (!canManage) return;
 
-    // Empty cell
+    // Touch-fallback: if a palette chip is selected, place it on this table
     if (activePlantId && !placedPlantIds.has(activePlantId)) {
-      // Touch fallback: place selected palette plant
-      const newPositions = [...plantPositions, { row, position, plantId: activePlantId }];
+      const nextPos = nextPositionOnTable(row);
+      const newPositions = [...plantPositions, { row, position: nextPos, plantId: activePlantId }];
       setPlantPositions(newPositions);
       scheduleSave(motherRows, newPositions);
       setActivePlantId(null);
       return;
     }
 
-    // Open quick-create popover
-    setPopover({ cellKey: key, rect: e.currentTarget.getBoundingClientRect(), plantId: null });
+    // Otherwise open quick-create popover bound to this table
+    setPopover({
+      cellKey: `${row}:new`,
+      tableRow: row,
+      rect: e.currentTarget.getBoundingClientRect(),
+      plantId: null,
+    });
   };
 
   const handlePaletteChipClick = (plantId) => {
@@ -310,10 +330,11 @@ export default function MotherRoomMap({
 
   const handleQuickCreateSubmit = async (form) => {
     if (!popover || popover.plantId) return;
-    const [row, position] = popover.cellKey.split(':').map(Number);
+    const row = popover.tableRow ?? Number(popover.cellKey.split(':')[0]);
     const created = await onQuickCreate({ name: form.name.trim(), strain: form.strain });
     if (created) {
-      const newPositions = [...plantPositions, { row, position, plantId: created._id }];
+      const nextPos = nextPositionOnTable(row);
+      const newPositions = [...plantPositions, { row, position: nextPos, plantId: created._id }];
       setPlantPositions(newPositions);
       scheduleSave(motherRows, newPositions);
     }
@@ -406,15 +427,8 @@ export default function MotherRoomMap({
       deadSpots: r.deadSpots || [],
     }));
     const totalNewTables = newRows.reduce((s, r) => s + r.tablesCount, 0);
-    const cleaned = plantPositions.filter(p => {
-      if (p.row >= totalNewTables) return false;
-      let remaining = p.row;
-      for (const r of newRows) {
-        if (remaining < r.tablesCount) return p.position < r.plantsPerTable;
-        remaining -= r.tablesCount;
-      }
-      return false;
-    });
+    // Tables are slot-less now: only drop positions whose table no longer exists
+    const cleaned = plantPositions.filter(p => p.row < totalNewTables);
     setMotherRows(newRows);
     setPlantPositions(cleaned);
     scheduleSave(newRows, cleaned);
@@ -570,69 +584,84 @@ export default function MotherRoomMap({
   }));
 
   const renderTable = (table) => {
-    const { flatIdx, tableCols, tableRows: tRows, deadSpots } = table;
+    const { flatIdx, tableCols, tableRows: tRows } = table;
 
-    // Build mapping from original grid index to sequential position (stored in DB)
-    let posCounter = 0;
-    const gridToPosMap = {};
-    for (let gi = 0; gi < tableCols * tRows; gi++) {
-      if (!deadSpots.has(gi)) {
-        gridToPosMap[gi] = posCounter++;
-      }
-    }
+    // Table outline size — proportional to original cols × rows, long side horizontal
+    const longDim = Math.max(tableCols, tRows);
+    const shortDim = Math.min(tableCols, tRows);
+    const CELL = 30;
+    const PAD = 12;
+    const minWidth = longDim * CELL + PAD * 2;
+    const minHeight = shortDim * CELL + PAD * 2;
 
-    // Always render with the longer dimension horizontal.
-    // If rows > cols, transpose display: (displayRow, displayCol) -> (origRow=displayCol, origCol=displayRow).
-    const isTransposed = tRows > tableCols;
-    const displayCols = isTransposed ? tRows : tableCols;
-    const displayRows = isTransposed ? tableCols : tRows;
+    // Plants currently placed on this table
+    const chips = plantPositions
+      .filter(p => p.row === flatIdx)
+      .map(p => {
+        const pid = typeof p.plantId === 'object' ? (p.plantId?._id || p.plantId) : p.plantId;
+        return {
+          position: p.position,
+          plantId: String(pid),
+          plant: plantMap[String(pid)] || (typeof p.plantId === 'object' ? p.plantId : null),
+        };
+      });
+
+    const isTableDropTarget = dropTarget && typeof dropTarget === 'object' && dropTarget.row === flatIdx;
+    const isSelectedForPlace = !!activePlantId && canManage;
 
     return (
       <div key={flatIdx} className="flex flex-col items-center shrink-0">
-        <span className="text-[10px] text-dark-500 font-medium mb-0.5">{table.tableInRow + 1}</span>
+        <span className="text-[10px] text-dark-500 font-medium mb-0.5">
+          {table.tableInRow + 1} · {chips.length}
+        </span>
+        <div
+          onClick={(e) => handleTableAreaClick(e, flatIdx)}
+          onDragOver={(e) => handleTableDragOver(e, flatIdx)}
+          onDragLeave={handleTableDragLeave}
+          onDrop={(e) => handleTableDrop(e, flatIdx)}
+          style={{ minWidth, minHeight }}
+          className={`
+            border-2 rounded-md p-2
+            flex flex-wrap gap-1 content-start
+            transition
+            ${canManage ? 'cursor-pointer' : 'cursor-default'}
+            ${isTableDropTarget
+              ? 'border-primary-400 bg-primary-500/15 ring-1 ring-primary-400'
+              : isSelectedForPlace
+                ? 'border-primary-500/60 bg-primary-500/5 hover:border-primary-500'
+                : 'border-dark-600 bg-dark-900/30 hover:border-dark-500'}
+          `}
+        >
+          {chips.map((chip) => {
+            const plant = chip.plant;
+            if (!plant) return null;
+            const color = HEALTH_COLORS[plant.health] || HEALTH_COLORS.good;
+            const isDragSource = dragging && dragging.plantId === chip.plantId && dragging.from && dragging.from.row === flatIdx && dragging.from.position === chip.position;
 
-        <div className="flex flex-col" style={{ gap: '2px' }}>
-          {Array.from({ length: displayRows }, (_, dRow) => (
-            <div key={dRow} className="flex" style={{ gap: '2px' }}>
-              {Array.from({ length: displayCols }, (_, dCol) => {
-                // Map display (dRow, dCol) back to original grid index
-                const origRow = isTransposed ? dCol : dRow;
-                const origCol = isTransposed ? dRow : dCol;
-                const gridIdx = origRow * tableCols + origCol;
-                const isDead = deadSpots.has(gridIdx);
-                if (isDead) return <div key={dCol} className="w-[22px] h-[22px] sm:w-[26px] sm:h-[26px]" />;
-
-                const posIdx = gridToPosMap[gridIdx];
-                const key = `${flatIdx}:${posIdx}`;
-                const plantId = positionMap[key];
-                const plant = plantId ? plantMap[plantId] : null;
-
-                const isDragSource = dragging && dragging.plantId === plantId && dragging.from && dragging.from.row === flatIdx && dragging.from.position === posIdx;
-                const isThisDropTarget = dropTarget && typeof dropTarget === 'object' && dropTarget.row === flatIdx && dropTarget.position === posIdx;
-
-                return (
-                  <MotherPlantCell
-                    key={dCol}
-                    plantName={plant?.name}
-                    strainLabel={plant?.strain}
-                    health={plant?.health || 'good'}
-                    isEmpty={!plantId}
-                    isActive={!plantId && !!activePlantId}
-                    isDragging={isDragSource}
-                    isDropTarget={isThisDropTarget}
-                    draggable={!!plantId && canManage}
-                    onClick={(e) => handleCellClick(e, flatIdx, posIdx)}
-                    onDragStart={plantId ? (e) => handleCellDragStart(e, flatIdx, posIdx, plantId) : undefined}
-                    onDragEnd={handleDragEnd}
-                    onDragOver={(e) => handleCellDragOver(e, flatIdx, posIdx)}
-                    onDragLeave={handleCellDragLeave}
-                    onDrop={(e) => handleCellDrop(e, flatIdx, posIdx)}
-                    micro
-                  />
-                );
-              })}
-            </div>
-          ))}
+            return (
+              <div
+                key={chip.position}
+                draggable={canManage}
+                onDragStart={(e) => handleChipDragStart(e, flatIdx, chip.position, chip.plantId)}
+                onDragEnd={handleDragEnd}
+                onClick={(e) => handleChipClick(e, flatIdx, chip.position, chip.plantId)}
+                title={`${plant.name || ''}${plant.strain ? ` · ${plant.strain}` : ''}`}
+                className={`
+                  h-7 min-w-[32px] px-1.5 rounded border
+                  flex items-center justify-center
+                  text-[10px] font-bold select-none transition
+                  ${color.bg} ${color.border} ${color.text}
+                  ${canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
+                  ${isDragSource ? 'opacity-40' : 'hover:brightness-125 hover:scale-105'}
+                `}
+              >
+                {strainLabel(plant.strain)}
+              </div>
+            );
+          })}
+          {chips.length === 0 && canManage && (
+            <span className="text-[10px] text-dark-600 pointer-events-none">+</span>
+          )}
         </div>
       </div>
     );
