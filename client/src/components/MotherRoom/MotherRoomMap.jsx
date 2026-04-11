@@ -70,6 +70,12 @@ export default function MotherRoomMap({
   // Touch fallback: click-to-select from palette, then click empty cell to place
   const [activePlantId, setActivePlantId] = useState(null);
 
+  // Move mode: when user taps "Переместить" on a chip popover, the chip is
+  // picked up. The next tap on any table area (or table) drops it at that
+  // point. Works purely via clicks so it's usable on touch devices where the
+  // HTML5 drag-and-drop API isn't supported.
+  const [movingChip, setMovingChip] = useState(null); // { plantId, fromRow, fromPos }
+
   // Drag state
   const [dragging, setDragging] = useState(null); // { plantId, from: 'palette' | {row, position} }
   const [dropTarget, setDropTarget] = useState(null); // 'palette' | {row, position}
@@ -364,6 +370,8 @@ export default function MotherRoomMap({
   // Click on a chip — open details popover
   const handleChipClick = (e, row, position, plantId) => {
     e.stopPropagation();
+    // Opening a popover cancels any pending move — keeps the state predictable.
+    if (movingChip) setMovingChip(null);
     setPopover({
       cellKey: `${row}:${position}`,
       rect: e.currentTarget.getBoundingClientRect(),
@@ -378,6 +386,26 @@ export default function MotherRoomMap({
     if (!canManage) return;
 
     const coords = computeClickCoords(e, e.currentTarget);
+
+    // Move-mode: a chip was picked up via the detail popover. Drop it here.
+    if (movingChip) {
+      const withoutOld = plantPositions.filter(
+        p => !(p.row === movingChip.fromRow && p.position === movingChip.fromPos)
+      );
+      const sameTable = movingChip.fromRow === row;
+      const nextPos = sameTable ? movingChip.fromPos : nextPositionOnTable(row, withoutOld);
+      const newPositions = withoutOld.concat([{
+        row,
+        position: nextPos,
+        plantId: movingChip.plantId,
+        x: coords.x,
+        y: coords.y,
+      }]);
+      setPlantPositions(newPositions);
+      scheduleSave(motherRows, newPositions);
+      setMovingChip(null);
+      return;
+    }
 
     // Touch-fallback: if a palette chip is selected, place it on this table
     if (activePlantId && !placedPlantIds.has(activePlantId)) {
@@ -405,6 +433,16 @@ export default function MotherRoomMap({
       plantId: null,
     });
   };
+
+  // Start a "move mode": next tap on a table area drops the chip there.
+  const handlePopoverMove = () => {
+    if (!popover?.cellKey || !popover?.plantId) return;
+    const [row, position] = popover.cellKey.split(':').map(Number);
+    setMovingChip({ plantId: popover.plantId, fromRow: row, fromPos: position });
+    closePopover();
+  };
+
+  const handleCancelMove = () => setMovingChip(null);
 
   const handlePaletteChipClick = (plantId) => {
     if (!canManage) return;
@@ -760,6 +798,7 @@ export default function MotherRoomMap({
             if (!plant) return null;
             const color = HEALTH_COLORS[plant.health] || HEALTH_COLORS.good;
             const isDragSource = dragging && dragging.plantId === chip.plantId && dragging.from && dragging.from.row === flatIdx && dragging.from.position === chip.position;
+            const isMoveSource = movingChip && movingChip.plantId === chip.plantId && movingChip.fromRow === flatIdx && movingChip.fromPos === chip.position;
 
             return (
               <div
@@ -791,7 +830,8 @@ export default function MotherRoomMap({
                   text-[10px] font-bold select-none transition
                   ${color.bg} ${color.border} ${color.text}
                   ${canManage ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
-                  ${isDragSource ? 'opacity-40' : 'hover:brightness-125 hover:z-10'}
+                  ${isDragSource || isMoveSource ? 'opacity-40' : 'hover:brightness-125 hover:z-10'}
+                  ${isMoveSource ? 'ring-2 ring-primary-400' : ''}
                 `}
               >
                 {strainLabel(plant.strain)}
@@ -910,6 +950,7 @@ export default function MotherRoomMap({
               onRetire={handlePopoverRetire}
               onDelete={handlePopoverDelete}
               onRemoveFromMap={handleRemoveFromMap}
+              onMove={handlePopoverMove}
               t={t}
             />
           )}
@@ -918,8 +959,33 @@ export default function MotherRoomMap({
     );
   };
 
+  // Find the chip currently being moved (if any), to highlight it on the map
+  const movingPlant = movingChip ? plantMap[movingChip.plantId] : null;
+
   return (
     <div className="space-y-3">
+      {/* Move-mode banner */}
+      {movingChip && (
+        <div className="bg-primary-900/40 border border-primary-600 rounded-lg px-3 py-2 flex items-center gap-2 text-xs">
+          <span className="text-primary-300">↔</span>
+          <span className="text-primary-100 flex-1 min-w-0 truncate">
+            {t('motherRoom.movingChipHint')}
+            {movingPlant && (
+              <span className="ml-2 text-white font-semibold">
+                {movingPlant.name}{movingPlant.strain ? ` · ${movingPlant.strain}` : ''}
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={handleCancelMove}
+            className="text-primary-300 hover:text-white text-xs px-2 py-0.5 rounded border border-primary-600/60 hover:bg-primary-800/40 transition"
+          >
+            {t('common.cancel')}
+          </button>
+        </div>
+      )}
+
       {/* Palette */}
       <div
         onDragOver={handlePaletteDragOver}
@@ -1094,7 +1160,7 @@ function QuickCreateForm({ onSubmit, onCancel, t }) {
   );
 }
 
-function PlantDetailCard({ plant, canManage, onEdit, onPrune, onRetire, onDelete, onRemoveFromMap, t }) {
+function PlantDetailCard({ plant, canManage, onEdit, onPrune, onRetire, onDelete, onRemoveFromMap, onMove, t }) {
   if (!plant) return <div className="text-dark-400 text-sm">—</div>;
   const color = HEALTH_COLORS[plant.health] || HEALTH_COLORS.good;
   const age = daysAgo(plant.plantedDate);
@@ -1137,6 +1203,11 @@ function PlantDetailCard({ plant, canManage, onEdit, onPrune, onRetire, onDelete
 
       {canManage && (
         <div className="flex flex-wrap gap-1 pt-1.5 border-t border-dark-700">
+          <button type="button" onClick={onMove}
+            className="px-2 py-1 text-[11px] bg-primary-600/20 text-primary-300 border border-primary-600/50 rounded hover:bg-primary-600/30 transition"
+            title={t('motherRoom.moveHint')}>
+            ↔ {t('motherRoom.move')}
+          </button>
           <button type="button" onClick={onPrune}
             className="px-2 py-1 text-[11px] bg-green-600/20 text-green-400 border border-green-700/50 rounded hover:bg-green-600/30 transition">
             {t('motherRoom.recordPrune')}
