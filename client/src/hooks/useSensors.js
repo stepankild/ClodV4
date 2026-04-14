@@ -139,13 +139,22 @@ function _attachListener() {
  *
  * @returns {Object} zones — { 'zone-1': { online, lastData, lastSeen }, ... }
  */
+// Periodic REST polling as ultimate fallback (every 30s)
+let _pollingInterval = null;
+
+function _startPolling() {
+  if (_pollingInterval) return;
+  _pollingInterval = setInterval(_fetchZonesViaRest, 30000);
+}
+
 export function useSensors() {
   const [zones, setZones] = useState(_cache);
 
   useEffect(() => {
     _attachListener();
+    _startPolling(); // Always poll as backup, regardless of socket state
 
-    // Sync from cache on mount (in case cache was updated before this component mounted)
+    // Sync from cache on mount
     if (Object.keys(_cache).length > 0 && Object.keys(zones).length === 0) {
       setZones(_cache);
     }

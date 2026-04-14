@@ -58,6 +58,7 @@ const ZoneDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [visibleSeries, setVisibleSeries] = useState({});
+  const [tick, setTick] = useState(0); // forces re-render for "X min ago" text
   const [editingSensor, setEditingSensor] = useState(null);
   const [editName, setEditName] = useState('');
   const [savingName, setSavingName] = useState(false);
@@ -70,6 +71,12 @@ const ZoneDetail = () => {
   const [alertTestResult, setAlertTestResult] = useState(null);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const liveData = useSensors();
+
+  // Tick every 15s to update "X min ago" text
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     loadZone();
