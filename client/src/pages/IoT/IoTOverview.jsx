@@ -10,10 +10,17 @@ const IoTOverview = () => {
   const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tick, setTick] = useState(0);
   const liveData = useSensors();
 
   useEffect(() => {
     loadZones();
+  }, []);
+
+  // Force re-render every 15s to keep "X min ago" text accurate
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 15000);
+    return () => clearInterval(timer);
   }, []);
 
   const loadZones = async () => {
