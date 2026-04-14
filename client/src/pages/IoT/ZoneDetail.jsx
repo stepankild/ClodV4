@@ -228,10 +228,27 @@ const ZoneDetail = () => {
   };
 
   // Per-sensor last seen timestamps (from readings history)
+  // Per-sensor "last seen" — uses live lastSeen (updates every 30s via REST polling)
+  // Falls back to last reading timestamp from chart data
   const sensorLastSeen = useMemo(() => {
-    if (!readings.length) return {};
+    const liveTs = live?.lastSeen ? new Date(live.lastSeen).getTime() : null;
     const result = {};
-    // Readings are sorted ascending — iterate from end to find most recent
+
+    // If we have live data, use live lastSeen for each sensor that has a value
+    if (liveTs && lastData) {
+      if (lastData.humidity != null) result.humidity = liveTs;
+      if (lastData.humidity_sht45 != null) result.humidity_sht45 = liveTs;
+      if (lastData.co2 != null) result.co2 = liveTs;
+      if (lastData.light != null) result.light = liveTs;
+      if (lastData.temperature != null) result.temperature = liveTs;
+      lastData.temperatures?.forEach(t => {
+        if (t.value != null) result[`temp-${t.sensorId}`] = liveTs;
+      });
+      return result;
+    }
+
+    // Fallback: use readings (chart data) for initial load
+    if (!readings.length) return {};
     const findLast = (key, getter) => {
       for (let i = readings.length - 1; i >= 0; i--) {
         if (getter(readings[i]) != null) {
@@ -245,14 +262,13 @@ const ZoneDetail = () => {
     findLast('co2', r => r.co2);
     findLast('light', r => r.light);
     findLast('temperature', r => r.temperature);
-    // Per-sensor temperatures
     const allSensorIds = new Set();
     readings.forEach(r => r.temperatures?.forEach(t => allSensorIds.add(t.sensorId)));
     allSensorIds.forEach(sensorId => {
       findLast(`temp-${sensorId}`, r => r.temperatures?.find(x => x.sensorId === sensorId)?.value);
     });
     return result;
-  }, [readings]);
+  }, [live?.lastSeen, lastData, readings]);
 
   const getTimeAgo = (ts) => {
     if (!ts) return null;
