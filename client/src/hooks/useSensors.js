@@ -32,16 +32,16 @@ async function _fetchZonesViaRest() {
 
     _updateCache(prev => {
       const merged = { ...prev };
+      const now = new Date().toISOString();
       for (const zone of zones) {
         const existing = prev[zone.zoneId];
         const newData = zone.lastData;
-        const hasNewData = newData && JSON.stringify(newData) !== JSON.stringify(existing?.lastData);
         merged[zone.zoneId] = {
           ...existing,
           online: zone.piStatus?.online ?? false,
           lastData: newData || existing?.lastData || null,
-          // Update lastSeen to NOW if we got new data, otherwise keep server's value
-          lastSeen: hasNewData ? new Date().toISOString() : (zone.piStatus?.lastSeen || existing?.lastSeen || null),
+          // Always use current time as lastSeen — we just confirmed server has fresh data
+          lastSeen: (zone.piStatus?.online && newData) ? now : (zone.piStatus?.lastSeen || existing?.lastSeen || null),
         };
       }
       return merged;
