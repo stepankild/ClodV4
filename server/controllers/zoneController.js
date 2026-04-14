@@ -6,6 +6,7 @@ import IrrigationLog from '../models/IrrigationLog.js';
 import AlertConfig from '../models/AlertConfig.js';
 import AlertLog from '../models/AlertLog.js';
 import { sendTestAlert, sendDailySummaryNow } from '../schedulers/alerts.js';
+import { syncPump } from '../schedulers/humidifier.js';
 import { getZoneStates, getZoneState } from '../mqtt/index.js';
 
 // @desc    Get all zones with status and latest reading
@@ -348,6 +349,8 @@ export const controlHumidifier = async (req, res) => {
       }
       // Log manual action
       await HumidifierLog.create({ zoneId, action, trigger: 'manual' });
+      // Sync pump after manual humidifier change
+      syncPump().catch(e => console.error('syncPump error:', e.message));
     }
 
     // Build update object
@@ -361,6 +364,11 @@ export const controlHumidifier = async (req, res) => {
       { $set: update },
       { new: true }
     );
+
+    // Sync pump after mode change
+    if (req.body.mode) {
+      syncPump().catch(e => console.error('syncPump error:', e.message));
+    }
 
     res.json({
       ok: true,

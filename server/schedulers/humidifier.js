@@ -5,6 +5,10 @@ import HumidifierLog from '../models/HumidifierLog.js';
 // Track current state to avoid spamming HA with duplicate commands
 const zoneStates = new Map(); // zoneId -> 'on' | 'off' | null
 
+// Pump entity — must be ON when any humidifier is ON
+const PUMP_ENTITY_ID = 'switch.cuco_v2eur_189e_switch';
+let pumpState = null; // 'on' | 'off' | null
+
 /**
  * Seed zoneStates from the last log entry for each auto-mode zone.
  * Prevents phantom OFF commands after Railway restart.
@@ -71,6 +75,45 @@ async function getCurrentHumidity(zoneId) {
 }
 
 /**
+ * Sync pump state: ON if any humidifier is ON, OFF if all are OFF.
+ * Checks both auto-mode states (zoneStates map) and manual-on zones.
+ */
+async function syncPump() {
+  try {
+    // Check if any zone has humidifier ON (auto or manual_on)
+    const allZones = await Zone.find({
+      'config.humidifierMode': { $exists: true }
+    }).lean();
+
+    let anyOn = false;
+
+    for (const zone of allZones) {
+      const mode = zone.config?.humidifierMode;
+      if (mode === 'manual_on') {
+        anyOn = true;
+        break;
+      }
+      if (mode === 'auto' && zoneStates.get(zone.zoneId) === 'on') {
+        anyOn = true;
+        break;
+      }
+    }
+
+    const desiredPump = anyOn ? 'on' : 'off';
+
+    if (pumpState !== desiredPump) {
+      console.log(`[humidifier] Pump ${PUMP_ENTITY_ID}: ${pumpState} -> ${desiredPump} (any humidifier on: ${anyOn})`);
+      const ok = await haSwitch(PUMP_ENTITY_ID, desiredPump);
+      if (ok) {
+        pumpState = desiredPump;
+      }
+    }
+  } catch (e) {
+    console.error('[humidifier] syncPump error:', e.message);
+  }
+}
+
+/**
  * Check humidity for all auto-mode zones and control humidifiers
  */
 async function checkHumidity() {
@@ -81,7 +124,8 @@ async function checkHumidity() {
       const { zoneId } = zone;
       const rhLow = zone.config?.rhLow ?? 60;
       const rhHigh = zone.config?.rhHigh ?? 70;
-      const entityId = zone.config?.humidifierEntityId || 'switch.cuco_v2eur_189e_switch';
+      const entityId = zone.config?.humidifierEntityId;
+      if (!entityId) continue; // no plug configured
 
       const humidity = await getCurrentHumidity(zoneId);
       if (humidity == null) continue; // no fresh data, skip
@@ -106,6 +150,9 @@ async function checkHumidity() {
         }
       }
     }
+
+    // After all humidifier checks, sync pump
+    await syncPump();
   } catch (e) {
     console.error('[humidifier] Scheduler error:', e.message);
   }
@@ -114,10 +161,17 @@ async function checkHumidity() {
 /**
  * Initialize the humidifier scheduler (runs every 30 seconds)
  */
+/**
+ * Exported for use by controlHumidifier API — sync pump after manual on/off
+ */
+export { syncPump };
+
 export async function initHumidifierScheduler() {
   await seedStatesFromLog();
-  console.log('[humidifier] Scheduler started (30s interval, SHT45 preferred)');
+  // Seed pump state: if any humidifier was last ON, pump should be ON
+  const anyOn = [...zoneStates.values()].includes('on');
+  pumpState = anyOn ? 'on' : 'off';
+  console.log(`[humidifier] Scheduler started (30s interval, pump=${pumpState})`);
   setInterval(checkHumidity, 30 * 1000);
-  // Small delay before first check so seed has time to complete
   setTimeout(checkHumidity, 5000);
 }
