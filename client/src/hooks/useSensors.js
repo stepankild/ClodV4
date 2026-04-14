@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { connectScale, onScaleEvent } from '../services/scaleSocket';
 import api from '../services/api';
 
