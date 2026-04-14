@@ -34,15 +34,15 @@ async function _fetchZonesViaRest() {
       const merged = { ...prev };
       for (const zone of zones) {
         const existing = prev[zone.zoneId];
-        // Only fill in if we don't already have fresh socket data
-        if (!existing?.lastData || !existing?.online) {
-          merged[zone.zoneId] = {
-            ...existing,
-            online: zone.piStatus?.online ?? false,
-            lastData: zone.lastData || existing?.lastData || null,
-            lastSeen: zone.piStatus?.lastSeen || existing?.lastSeen || null,
-          };
-        }
+        const newData = zone.lastData;
+        const hasNewData = newData && JSON.stringify(newData) !== JSON.stringify(existing?.lastData);
+        merged[zone.zoneId] = {
+          ...existing,
+          online: zone.piStatus?.online ?? false,
+          lastData: newData || existing?.lastData || null,
+          // Update lastSeen to NOW if we got new data, otherwise keep server's value
+          lastSeen: hasNewData ? new Date().toISOString() : (zone.piStatus?.lastSeen || existing?.lastSeen || null),
+        };
       }
       return merged;
     });
