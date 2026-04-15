@@ -178,10 +178,14 @@ def main():
         print(f"[Buffer] {buffered} pending API call(s) from previous session")
 
     # MQTT callbacks
+    # Zigbee sensor → zone mapping (friendly_name → {zoneId, location})
+    zigbee_sensors = config.get("zigbee_sensors", {})
+
     def on_connect(client, userdata, flags, rc):
         if rc == 0:
-            print(f"[MQTT] Connected, subscribing to grow/#")
+            print(f"[MQTT] Connected, subscribing to grow/# and zigbee2mqtt/#")
             client.subscribe("grow/#")
+            client.subscribe("zigbee2mqtt/#")
         else:
             print(f"[MQTT] Connect failed: rc={rc}")
 
@@ -225,6 +229,56 @@ def main():
                         print(f"[{zone_id}] status: {'online' if payload.get('online') else 'offline'}")
                     else:
                         print(f"[{zone_id}] status update failed ({status})")
+
+            # zigbee2mqtt/{friendly_name} — Zigbee sensor data
+            if parts[0] == "zigbee2mqtt" and len(parts) == 2:
+                device_name = parts[1]
+                # Skip bridge/system topics
+                if device_name in ("bridge", ""):
+                    return
+                sensor_cfg = zigbee_sensors.get(device_name)
+                if not sensor_cfg:
+                    return  # unknown device, ignore
+
+                payload = json.loads(msg.payload.decode())
+                temp = payload.get("temperature")
+                humidity = payload.get("humidity")
+                battery = payload.get("battery")
+
+                if temp is None and humidity is None:
+                    return  # no sensor data (e.g. just linkquality)
+
+                # Build sensor reading in portal format
+                zone_id = sensor_cfg["zone_id"]
+                location = sensor_cfg.get("location", device_name)
+                reading = {
+                    "zoneId": zone_id,
+                    "source": "zigbee",
+                    "zigbee_device": device_name,
+                    "zigbee_sensors": [{
+                        "device": device_name,
+                        "location": location,
+                        "temperature": temp,
+                        "humidity": humidity,
+                        "battery": battery,
+                    }]
+                }
+                payload_json = json.dumps(reading)
+                status, body = post_to_api(api_url, api_key, "/api/sensor-data", payload_json)
+
+                parts_str = []
+                if temp is not None:
+                    parts_str.append(f"T={temp}°C")
+                if humidity is not None:
+                    parts_str.append(f"RH={humidity}%")
+                if battery is not None:
+                    parts_str.append(f"bat={battery}%")
+
+                if 200 <= status < 300:
+                    print(f"[zigbee:{device_name}] {' '.join(parts_str)} -> {status}")
+                else:
+                    size = buffer.push("/api/sensor-data", payload_json)
+                    print(f"[zigbee:{device_name}] {' '.join(parts_str)} -> BUFFERED ({status})")
 
         except json.JSONDecodeError:
             print(f"[MQTT] Invalid JSON on {msg.topic}")

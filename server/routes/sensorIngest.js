@@ -26,6 +26,59 @@ router.post('/', requireApiKey, async (req, res) => {
     for (const data of readings) {
       if (!data.zoneId) continue;
 
+      // Handle Zigbee sensor data (propagators etc.)
+      // zigbee_sensors: [{device, location, temperature, humidity, battery}]
+      if (data.zigbee_sensors?.length) {
+        for (const zs of data.zigbee_sensors) {
+          if (zs.temperature == null && zs.humidity == null) continue;
+          const zigbeeReading = await SensorReading.create({
+            zoneId: data.zoneId,
+            timestamp: new Date(),
+            temperatures: zs.temperature != null ? [{
+              sensorId: `zigbee-${zs.device}`,
+              location: zs.location || zs.device,
+              value: zs.temperature
+            }] : [],
+            humidity: null,
+            humidity_sht45: null,
+            temperature: null,
+            co2: null,
+            light: null,
+            zigbee_humidity: zs.humidity ?? null,
+            zigbee_battery: zs.battery ?? null,
+          });
+
+          // Auto-register Zigbee sensor
+          const zone = await Zone.findOne({ zoneId: data.zoneId });
+          if (zone) {
+            const sensorId = `zigbee-${zs.device}`;
+            const exists = zone.sensors.some(s => s.sensorId === sensorId);
+            if (!exists) {
+              await Zone.updateOne(
+                { zoneId: data.zoneId },
+                { $push: { sensors: { type: 'zigbee', sensorId, location: zs.location || zs.device, enabled: true } } }
+              );
+            }
+          }
+
+          // Broadcast to browsers
+          if (io) {
+            io.emit('sensor:zigbee', {
+              zoneId: data.zoneId,
+              device: zs.device,
+              location: zs.location,
+              temperature: zs.temperature,
+              humidity: zs.humidity,
+              battery: zs.battery,
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          console.log(`[zigbee] ${zs.device}: T=${zs.temperature}°C RH=${zs.humidity}% -> saved`);
+        }
+        continue; // Zigbee readings handled separately
+      }
+
       const reading = await SensorReading.create({
         zoneId: data.zoneId,
         timestamp: data.timestamp || new Date(),
