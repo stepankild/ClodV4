@@ -643,6 +643,64 @@ const ZoneDetail = () => {
         })()}
       </div>
 
+      {/* Zigbee propagator sensors — always show for zones with propagators configured */}
+      {zone?.zigbeeDevices || Object.keys(zigbeeDevices).length > 0 ? (
+        <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
+          <h2 className="text-lg font-semibold text-dark-200 mb-3 flex items-center gap-2">
+            <span>🌱</span> Пропагаторы
+          </h2>
+          {Object.keys(zigbeeDevices).length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {Object.entries(zigbeeDevices).map(([device, data]) => {
+                const lastSeen = data.lastSeen ? new Date(data.lastSeen) : null;
+                const ageSec = lastSeen ? Math.floor((Date.now() - lastSeen.getTime()) / 1000) : null;
+                let agoText = null;
+                if (ageSec != null) {
+                  if (ageSec < 90) agoText = t('iot.justNow');
+                  else if (ageSec < 3600) agoText = `${Math.floor(ageSec / 60)} ${t('iot.minAgo')}`;
+                  else agoText = `${Math.floor(ageSec / 3600)} ${t('iot.hAgo')}`;
+                }
+                const isStale = ageSec != null && ageSec > 900;
+
+                return (
+                  <div key={device} className={`bg-dark-900 border rounded-lg p-3 ${isStale ? 'border-yellow-700' : 'border-dark-600'}`}>
+                    <div className="text-xs text-dark-500 mb-2 flex items-center justify-between">
+                      <span className="font-medium">{data.location || device}</span>
+                      {data.battery != null && (
+                        <span className={`text-[10px] ${data.battery > 20 ? 'text-dark-600' : 'text-red-400'}`}>
+                          🔋{data.battery}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-baseline gap-3">
+                      {data.temperature != null && (
+                        <div>
+                          <span className="text-xl font-bold text-cyan-400">{data.temperature.toFixed(1)}</span>
+                          <span className="text-xs text-dark-500">°C</span>
+                        </div>
+                      )}
+                      {data.humidity != null && (
+                        <div>
+                          <span className="text-xl font-bold text-blue-400">{data.humidity.toFixed(1)}</span>
+                          <span className="text-xs text-dark-500">%</span>
+                        </div>
+                      )}
+                    </div>
+                    {agoText && (
+                      <div className={`text-[10px] mt-1 ${isStale ? 'text-yellow-500' : 'text-dark-600'}`}>
+                        {agoText}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-dark-500">Ожидание данных с датчиков...</div>
+          )}
+        </div>
+      ) : null}
+
       {/* Light cycle (photoperiod) */}
       {lightCycle && (
         <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 mb-6">
@@ -765,60 +823,6 @@ const ZoneDetail = () => {
           </ResponsiveContainer>
         )}
       </div>
-
-      {/* Zigbee propagator sensors */}
-      {Object.keys(zigbeeDevices).length > 0 && (
-        <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
-          <h2 className="text-lg font-semibold text-dark-200 mb-3 flex items-center gap-2">
-            <span>🌱</span> Пропагаторы
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {Object.entries(zigbeeDevices).map(([device, data]) => {
-              const lastSeen = data.lastSeen ? new Date(data.lastSeen) : null;
-              const ageSec = lastSeen ? Math.floor((Date.now() - lastSeen.getTime()) / 1000) : null;
-              let agoText = null;
-              if (ageSec != null) {
-                if (ageSec < 90) agoText = t('iot.justNow');
-                else if (ageSec < 3600) agoText = `${Math.floor(ageSec / 60)} ${t('iot.minAgo')}`;
-                else agoText = `${Math.floor(ageSec / 3600)} ${t('iot.hAgo')}`;
-              }
-              const isStale = ageSec != null && ageSec > 900; // >15 min = stale
-
-              return (
-                <div key={device} className={`bg-dark-900 border rounded-lg p-3 ${isStale ? 'border-yellow-700' : 'border-dark-600'}`}>
-                  <div className="text-xs text-dark-500 mb-2 flex items-center justify-between">
-                    <span className="font-medium">{data.location || device}</span>
-                    {data.battery != null && (
-                      <span className={`text-[10px] ${data.battery > 20 ? 'text-dark-600' : 'text-red-400'}`}>
-                        🔋{data.battery}%
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-baseline gap-3">
-                    {data.temperature != null && (
-                      <div>
-                        <span className="text-xl font-bold text-cyan-400">{data.temperature.toFixed(1)}</span>
-                        <span className="text-xs text-dark-500">°C</span>
-                      </div>
-                    )}
-                    {data.humidity != null && (
-                      <div>
-                        <span className="text-xl font-bold text-blue-400">{data.humidity.toFixed(1)}</span>
-                        <span className="text-xs text-dark-500">%</span>
-                      </div>
-                    )}
-                  </div>
-                  {agoText && (
-                    <div className={`text-[10px] mt-1 ${isStale ? 'text-yellow-500' : 'text-dark-600'}`}>
-                      {agoText}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
 
       {/* Humidifier control */}
       <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
