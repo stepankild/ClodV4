@@ -211,7 +211,7 @@ const io = initializeSocket(server, allowedOrigins);
 app.set('io', io);
 
 // Initialize MQTT client for IoT sensor data
-import { initializeMqtt } from './mqtt/index.js';
+import { initializeMqtt, loadZigbeeStatesFromDb } from './mqtt/index.js';
 initializeMqtt(io);
 
 // Initialize schedulers
@@ -223,7 +223,8 @@ import { initAlertScheduler } from './schedulers/alerts.js';
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT} (frontend: ${hasFrontend ? 'yes' : 'no'})`);
   connectDB().then(async () => {
-    // Start schedulers after DB is connected
+    // Load persisted zigbee states + start schedulers after DB is connected
+    loadZigbeeStatesFromDb();
     initIrrigationScheduler();
     initHumidifierScheduler();
     initAlertScheduler();

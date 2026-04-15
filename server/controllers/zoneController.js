@@ -57,8 +57,9 @@ export const getZone = async (req, res) => {
       .sort({ timestamp: -1 }).lean();
     zone.lastData = live?.lastData ?? lastReading ?? null;
 
-    // Attach Zigbee device data (propagators etc.)
-    zone.zigbeeDevices = getZigbeeDevices(zone.zoneId);
+    // Attach Zigbee device data — in-memory (live) merged with MongoDB (persisted)
+    const liveZigbee = getZigbeeDevices(zone.zoneId);
+    zone.zigbeeDevices = { ...(zone.zigbeeDevices || {}), ...liveZigbee };
 
     res.json(zone);
   } catch (error) {

@@ -20,6 +20,28 @@ export function setZigbeeData(zoneId, device, data) {
     ...data,
     lastSeen: new Date().toISOString(),
   };
+  // Persist to MongoDB (fire-and-forget)
+  Zone.updateOne(
+    { zoneId },
+    { $set: { [`zigbeeDevices.${device}`]: devices[device] } }
+  ).catch(e => console.error(`[zigbee] DB save error: ${e.message}`));
+}
+
+/**
+ * Load zigbee device states from MongoDB on startup
+ */
+export async function loadZigbeeStatesFromDb() {
+  try {
+    const zones = await Zone.find({ zigbeeDevices: { $exists: true, $ne: {} } }).lean();
+    for (const zone of zones) {
+      if (zone.zigbeeDevices && Object.keys(zone.zigbeeDevices).length > 0) {
+        zigbeeStates.set(zone.zoneId, zone.zigbeeDevices);
+        console.log(`[zigbee] Loaded ${Object.keys(zone.zigbeeDevices).length} devices for ${zone.zoneId}`);
+      }
+    }
+  } catch (e) {
+    console.error(`[zigbee] loadFromDb error: ${e.message}`);
+  }
 }
 
 const ZONE_OFFLINE_TIMEOUT_MS = 90000; // 90 seconds without data = offline
