@@ -97,7 +97,8 @@ router.post('/', requireApiKey, async (req, res) => {
         }
       }
       if (data.co2 != null) {
-        sensorUpdates.push({ type: 'stcc4', sensorId: 'stcc4', location: 'co2', enabled: true });
+        const co2Type = data.source === 'scd41' ? 'scd41' : 'stcc4';
+        sensorUpdates.push({ type: co2Type, sensorId: co2Type, location: 'co2', enabled: true });
       }
       if (data.light != null) {
         sensorUpdates.push({ type: 'bh1750', sensorId: 'bh1750', location: 'light', enabled: true });
