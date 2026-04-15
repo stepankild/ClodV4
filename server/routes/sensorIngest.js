@@ -97,8 +97,8 @@ router.post('/', requireApiKey, async (req, res) => {
         }
       }
       if (data.co2 != null) {
-        const co2Type = data.source === 'scd41' ? 'scd41' : 'stcc4';
-        sensorUpdates.push({ type: co2Type, sensorId: co2Type, location: 'co2', enabled: true });
+        // Don't auto-register CO2 sensor — it's already registered during zone setup
+        // (avoids stcc4/scd41 confusion on auto-detect)
       }
       if (data.light != null) {
         sensorUpdates.push({ type: 'bh1750', sensorId: 'bh1750', location: 'light', enabled: true });
