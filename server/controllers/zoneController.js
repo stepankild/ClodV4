@@ -147,7 +147,7 @@ export const getReadings = async (req, res) => {
     } else if (rangeHours > 24 * 7) {
       intervalMinutes = 120; // 2h for >7d
     } else if (rangeHours > 24) {
-      intervalMinutes = 10; // 10min for >24h
+      intervalMinutes = 5; // 5min for >24h
     } else if (rangeHours > 6) {
       intervalMinutes = 5; // 5min for >6h
     }
