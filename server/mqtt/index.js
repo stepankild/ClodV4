@@ -5,6 +5,45 @@ import Zone from '../models/Zone.js';
 // ── In-memory zone states ──
 const zoneStates = new Map();
 
+// ── Zigbee device states (propagators etc.) ──
+// zoneId → { deviceName → { temperature, humidity, battery, lastSeen } }
+const zigbeeStates = new Map();
+
+export function getZigbeeDevices(zoneId) {
+  return zigbeeStates.get(zoneId) || {};
+}
+
+export function setZigbeeData(zoneId, device, data) {
+  if (!zigbeeStates.has(zoneId)) zigbeeStates.set(zoneId, {});
+  const devices = zigbeeStates.get(zoneId);
+  devices[device] = {
+    ...data,
+    lastSeen: new Date().toISOString(),
+  };
+  // Persist to MongoDB (fire-and-forget)
+  Zone.updateOne(
+    { zoneId },
+    { $set: { [`zigbeeDevices.${device}`]: devices[device] } }
+  ).catch(e => console.error(`[zigbee] DB save error: ${e.message}`));
+}
+
+/**
+ * Load zigbee device states from MongoDB on startup
+ */
+export async function loadZigbeeStatesFromDb() {
+  try {
+    const zones = await Zone.find({ zigbeeDevices: { $exists: true, $ne: {} } }).lean();
+    for (const zone of zones) {
+      if (zone.zigbeeDevices && Object.keys(zone.zigbeeDevices).length > 0) {
+        zigbeeStates.set(zone.zoneId, zone.zigbeeDevices);
+        console.log(`[zigbee] Loaded ${Object.keys(zone.zigbeeDevices).length} devices for ${zone.zoneId}`);
+      }
+    }
+  } catch (e) {
+    console.error(`[zigbee] loadFromDb error: ${e.message}`);
+  }
+}
+
 const ZONE_OFFLINE_TIMEOUT_MS = 90000; // 90 seconds without data = offline
 const zoneTimers = new Map();
 

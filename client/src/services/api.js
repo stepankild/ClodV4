@@ -66,10 +66,14 @@ async function doRefresh() {
   const { accessToken, refreshToken: newRefreshToken } = response.data;
   localStorage.setItem('accessToken', accessToken);
   // Обновляем refreshToken только если сервер вернул другой (backward compat).
-  // Сейчас сервер не ротирует refresh token, но на всякий случай.
   if (newRefreshToken && newRefreshToken !== refreshToken) {
     localStorage.setItem('refreshToken', newRefreshToken);
   }
+  // Update WebSocket auth so it reconnects with fresh token
+  try {
+    const { updateScaleAuth } = await import('./scaleSocket.js');
+    updateScaleAuth(accessToken);
+  } catch { /* socket not initialized yet */ }
   return accessToken;
 }
 

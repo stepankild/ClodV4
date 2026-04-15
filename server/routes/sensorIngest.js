@@ -2,7 +2,7 @@ import express from 'express';
 import SensorReading from '../models/SensorReading.js';
 import Zone from '../models/Zone.js';
 import HumidifierLog from '../models/HumidifierLog.js';
-import { setZoneOnlineFromHttp } from '../mqtt/index.js';
+import { setZoneOnlineFromHttp, setZigbeeData } from '../mqtt/index.js';
 
 const router = express.Router();
 
@@ -25,6 +25,38 @@ router.post('/', requireApiKey, async (req, res) => {
 
     for (const data of readings) {
       if (!data.zoneId) continue;
+
+      // Handle Zigbee sensor data (propagators etc.)
+      // zigbee_sensors: [{device, location, temperature, humidity, battery}]
+      if (data.zigbee_sensors?.length) {
+        for (const zs of data.zigbee_sensors) {
+          if (zs.temperature == null && zs.humidity == null) continue;
+
+          // Store in memory for live display
+          setZigbeeData(data.zoneId, zs.device, {
+            location: zs.location || zs.device,
+            temperature: zs.temperature,
+            humidity: zs.humidity,
+            battery: zs.battery,
+          });
+
+          // Broadcast to browsers
+          if (io) {
+            io.emit('sensor:zigbee', {
+              zoneId: data.zoneId,
+              device: zs.device,
+              location: zs.location || zs.device,
+              temperature: zs.temperature,
+              humidity: zs.humidity,
+              battery: zs.battery,
+              timestamp: new Date().toISOString(),
+            });
+          }
+
+          console.log(`[zigbee] ${zs.device}: T=${zs.temperature}°C RH=${zs.humidity}%`);
+        }
+        continue;
+      }
 
       const reading = await SensorReading.create({
         zoneId: data.zoneId,
@@ -65,7 +97,8 @@ router.post('/', requireApiKey, async (req, res) => {
         }
       }
       if (data.co2 != null) {
-        sensorUpdates.push({ type: 'stcc4', sensorId: 'stcc4', location: 'co2', enabled: true });
+        // Don't auto-register CO2 sensor — it's already registered during zone setup
+        // (avoids stcc4/scd41 confusion on auto-detect)
       }
       if (data.light != null) {
         sensorUpdates.push({ type: 'bh1750', sensorId: 'bh1750', location: 'light', enabled: true });

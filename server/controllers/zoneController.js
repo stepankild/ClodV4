@@ -6,7 +6,8 @@ import IrrigationLog from '../models/IrrigationLog.js';
 import AlertConfig from '../models/AlertConfig.js';
 import AlertLog from '../models/AlertLog.js';
 import { sendTestAlert, sendDailySummaryNow } from '../schedulers/alerts.js';
-import { getZoneStates, getZoneState } from '../mqtt/index.js';
+import { syncPump } from '../schedulers/humidifier.js';
+import { getZoneStates, getZoneState, getZigbeeDevices } from '../mqtt/index.js';
 
 // @desc    Get all zones with status and latest reading
 // @route   GET /api/zones
@@ -28,6 +29,7 @@ export const getZones = async (req, res) => {
           lastSeen: live?.lastSeen ?? zone.piStatus?.lastSeen,
         },
         lastData: live?.lastData ?? lastReading ?? null,
+        zigbeeDevices: getZigbeeDevices(zone.zoneId),
       };
     }));
 
@@ -54,6 +56,10 @@ export const getZone = async (req, res) => {
     const lastReading = await SensorReading.findOne({ zoneId: zone.zoneId })
       .sort({ timestamp: -1 }).lean();
     zone.lastData = live?.lastData ?? lastReading ?? null;
+
+    // Attach Zigbee device data — in-memory (live) merged with MongoDB (persisted)
+    const liveZigbee = getZigbeeDevices(zone.zoneId);
+    zone.zigbeeDevices = { ...(zone.zigbeeDevices || {}), ...liveZigbee };
 
     res.json(zone);
   } catch (error) {
@@ -284,13 +290,12 @@ export const getDisplayData = async (req, res) => {
     // VPD calculation
     let vpd = null;
     if (data) {
-      const canopyT = data.temperatures?.find(t => t.location === 'canopy')?.value;
-      const airT = data.temperature;
+      const sht45T = data.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+      const airT = sht45T ?? data.temperature;
       const rh = data.humidity_sht45 ?? data.humidity;
-      if (canopyT != null && airT != null && rh != null) {
-        const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
-        const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
-        vpd = Math.max(0, svpLeaf - svpAir * rh / 100);
+      if (airT != null && rh != null) {
+        const svp = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+        vpd = Math.max(0, svp * (1 - rh / 100));
         vpd = Math.round(vpd * 100) / 100;
       }
     }
@@ -348,6 +353,8 @@ export const controlHumidifier = async (req, res) => {
       }
       // Log manual action
       await HumidifierLog.create({ zoneId, action, trigger: 'manual' });
+      // Sync pump after manual humidifier change
+      syncPump().catch(e => console.error('syncPump error:', e.message));
     }
 
     // Build update object
@@ -361,6 +368,11 @@ export const controlHumidifier = async (req, res) => {
       { $set: update },
       { new: true }
     );
+
+    // Sync pump after mode change
+    if (req.body.mode) {
+      syncPump().catch(e => console.error('syncPump error:', e.message));
+    }
 
     res.json({
       ok: true,

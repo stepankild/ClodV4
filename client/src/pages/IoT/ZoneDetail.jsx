@@ -33,12 +33,12 @@ const saveChartPrefs = (zoneId, prefs) => {
   } catch { /* ignore */ }
 };
 
-// VPD: leafTemp (canopy) + airTemp + humidity → kPa
-const calcVpd = (leafTemp, airTemp, rh) => {
-  if (leafTemp == null || airTemp == null || rh == null) return null;
-  const svpLeaf = 0.6108 * Math.exp(17.27 * leafTemp / (leafTemp + 237.3));
-  const svpAir = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
-  return Math.max(0, svpLeaf - svpAir * rh / 100);
+// VPD: airTemp + humidity → kPa
+// VPD = SVP × (1 - RH/100)
+const calcVpd = (airTemp, rh) => {
+  if (airTemp == null || rh == null) return null;
+  const svp = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
+  return Math.max(0, svp * (1 - rh / 100));
 };
 
 const vpdColor = (val) => {
@@ -58,6 +58,7 @@ const ZoneDetail = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [visibleSeries, setVisibleSeries] = useState({});
+  const [tick, setTick] = useState(0); // forces re-render for "X min ago" text
   const [editingSensor, setEditingSensor] = useState(null);
   const [editName, setEditName] = useState('');
   const [savingName, setSavingName] = useState(false);
@@ -70,6 +71,12 @@ const ZoneDetail = () => {
   const [alertTestResult, setAlertTestResult] = useState(null);
   const [alertsOpen, setAlertsOpen] = useState(false);
   const liveData = useSensors();
+
+  // Tick every 15s to update "X min ago" text
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 15000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     loadZone();
@@ -179,6 +186,7 @@ const ZoneDetail = () => {
   const live = liveData[zoneId];
   const isOnline = live?.online ?? zone?.piStatus?.online ?? false;
   const lastData = live?.lastData || zone?.lastData;
+  const zigbeeDevices = live?.zigbeeDevices || zone?.zigbeeDevices || {};
 
   const currentTemps = useMemo(() => {
     if (!lastData?.temperatures?.length) return [];
@@ -221,10 +229,27 @@ const ZoneDetail = () => {
   };
 
   // Per-sensor last seen timestamps (from readings history)
+  // Per-sensor "last seen" — uses live lastSeen (updates every 30s via REST polling)
+  // Falls back to last reading timestamp from chart data
   const sensorLastSeen = useMemo(() => {
-    if (!readings.length) return {};
+    const liveTs = live?.lastSeen ? new Date(live.lastSeen).getTime() : null;
     const result = {};
-    // Readings are sorted ascending — iterate from end to find most recent
+
+    // If we have live data, use live lastSeen for each sensor that has a value
+    if (liveTs && lastData) {
+      if (lastData.humidity != null) result.humidity = liveTs;
+      if (lastData.humidity_sht45 != null) result.humidity_sht45 = liveTs;
+      if (lastData.co2 != null) result.co2 = liveTs;
+      if (lastData.light != null) result.light = liveTs;
+      if (lastData.temperature != null) result.temperature = liveTs;
+      lastData.temperatures?.forEach(t => {
+        if (t.value != null) result[`temp-${t.sensorId}`] = liveTs;
+      });
+      return result;
+    }
+
+    // Fallback: use readings (chart data) for initial load
+    if (!readings.length) return {};
     const findLast = (key, getter) => {
       for (let i = readings.length - 1; i >= 0; i--) {
         if (getter(readings[i]) != null) {
@@ -238,14 +263,13 @@ const ZoneDetail = () => {
     findLast('co2', r => r.co2);
     findLast('light', r => r.light);
     findLast('temperature', r => r.temperature);
-    // Per-sensor temperatures
     const allSensorIds = new Set();
     readings.forEach(r => r.temperatures?.forEach(t => allSensorIds.add(t.sensorId)));
     allSensorIds.forEach(sensorId => {
       findLast(`temp-${sensorId}`, r => r.temperatures?.find(x => x.sensorId === sensorId)?.value);
     });
     return result;
-  }, [readings]);
+  }, [live?.lastSeen, lastData, readings]);
 
   const getTimeAgo = (ts) => {
     if (!ts) return null;
@@ -415,11 +439,11 @@ const ZoneDetail = () => {
           point[`temp-${temp.sensorId}`] = temp.value;
         });
       }
-      // Compute VPD from canopy + air temp + humidity
-      const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
-      const airT = r.temperature;
+      // Compute VPD from air temp (SHT45 preferred) + humidity
+      const sht45T = r.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+      const airT = sht45T ?? r.temperature;
       const rh = r.humidity_sht45 ?? r.humidity;
-      point.vpd = calcVpd(canopyT, airT, rh);
+      point.vpd = calcVpd(airT, rh);
       return point;
     });
   }, [readings]);
@@ -427,7 +451,7 @@ const ZoneDetail = () => {
   // Light cycle stats (day/night hours) from last 24h readings
   const lightCycle = useMemo(() => {
     if (!readings.length) return null;
-    const LIGHT_THRESHOLD = 10; // lux — below = night
+    const LIGHT_THRESHOLD = 50; // lux — below = night (same as alerts.js)
     const withLight = readings.filter(r => r.light != null);
     if (withLight.length < 2) return null;
 
@@ -605,10 +629,10 @@ const ZoneDetail = () => {
         )}
 
         {(() => {
-          const canopyT = lastData?.temperatures?.find(t => t.location === 'canopy')?.value;
-          const airT = lastData?.temperature;
+          const sht45T = lastData?.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+          const airT = sht45T ?? lastData?.temperature;
           const rh = lastData?.humidity_sht45 ?? lastData?.humidity;
-          const vpd = calcVpd(canopyT, airT, rh);
+          const vpd = calcVpd(airT, rh);
           if (vpd == null) return null;
           return (
             <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">
@@ -618,6 +642,64 @@ const ZoneDetail = () => {
           );
         })()}
       </div>
+
+      {/* Zigbee propagator sensors — always show for zones with propagators configured */}
+      {Object.keys(zigbeeDevices).length > 0 || Object.keys(zone?.zigbeeDevices || {}).length > 0 ? (
+        <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
+          <h2 className="text-lg font-semibold text-dark-200 mb-3 flex items-center gap-2">
+            <span>🌱</span> Пропагаторы
+          </h2>
+          {Object.keys(zigbeeDevices).length > 0 ? (
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {Object.entries(zigbeeDevices).map(([device, data]) => {
+                const lastSeen = data.lastSeen ? new Date(data.lastSeen) : null;
+                const ageSec = lastSeen ? Math.floor((Date.now() - lastSeen.getTime()) / 1000) : null;
+                let agoText = null;
+                if (ageSec != null) {
+                  if (ageSec < 90) agoText = t('iot.justNow');
+                  else if (ageSec < 3600) agoText = `${Math.floor(ageSec / 60)} ${t('iot.minAgo')}`;
+                  else agoText = `${Math.floor(ageSec / 3600)} ${t('iot.hAgo')}`;
+                }
+                const isStale = ageSec != null && ageSec > 900;
+
+                return (
+                  <div key={device} className={`bg-dark-900 border rounded-lg p-3 ${isStale ? 'border-yellow-700' : 'border-dark-600'}`}>
+                    <div className="text-xs text-dark-500 mb-2 flex items-center justify-between">
+                      <span className="font-medium">{data.location || device}</span>
+                      {data.battery != null && (
+                        <span className={`text-[10px] ${data.battery > 20 ? 'text-dark-600' : 'text-red-400'}`}>
+                          🔋{data.battery}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-baseline gap-3">
+                      {data.temperature != null && (
+                        <div>
+                          <span className="text-xl font-bold text-cyan-400">{data.temperature.toFixed(1)}</span>
+                          <span className="text-xs text-dark-500">°C</span>
+                        </div>
+                      )}
+                      {data.humidity != null && (
+                        <div>
+                          <span className="text-xl font-bold text-blue-400">{data.humidity.toFixed(1)}</span>
+                          <span className="text-xs text-dark-500">%</span>
+                        </div>
+                      )}
+                    </div>
+                    {agoText && (
+                      <div className={`text-[10px] mt-1 ${isStale ? 'text-yellow-500' : 'text-dark-600'}`}>
+                        {agoText}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-sm text-dark-500">Ожидание данных с датчиков...</div>
+          )}
+        </div>
+      ) : null}
 
       {/* Light cycle (photoperiod) */}
       {lightCycle && (

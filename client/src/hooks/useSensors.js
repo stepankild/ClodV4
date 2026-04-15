@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { connectScale, onScaleEvent } from '../services/scaleSocket';
 import api from '../services/api';
 
@@ -32,17 +32,17 @@ async function _fetchZonesViaRest() {
 
     _updateCache(prev => {
       const merged = { ...prev };
+      const now = new Date().toISOString();
       for (const zone of zones) {
         const existing = prev[zone.zoneId];
-        // Only fill in if we don't already have fresh socket data
-        if (!existing?.lastData || !existing?.online) {
-          merged[zone.zoneId] = {
-            ...existing,
-            online: zone.piStatus?.online ?? false,
-            lastData: zone.lastData || existing?.lastData || null,
-            lastSeen: zone.piStatus?.lastSeen || existing?.lastSeen || null,
-          };
-        }
+        const newData = zone.lastData;
+        merged[zone.zoneId] = {
+          ...existing,
+          online: zone.piStatus?.online ?? false,
+          lastData: newData || existing?.lastData || null,
+          lastSeen: (zone.piStatus?.online && newData) ? now : (zone.piStatus?.lastSeen || existing?.lastSeen || null),
+          zigbeeDevices: zone.zigbeeDevices || existing?.zigbeeDevices || {},
+        };
       }
       return merged;
     });
@@ -119,6 +119,28 @@ function _attachListener() {
         }));
         break;
 
+      case 'sensor_zigbee':
+        // Zigbee device update (propagators etc.)
+        _updateCache(prev => {
+          const zoneData = prev[data.zoneId] || {};
+          const zigbeeDevices = { ...(zoneData.zigbeeDevices || {}) };
+          zigbeeDevices[data.device] = {
+            location: data.location,
+            temperature: data.temperature,
+            humidity: data.humidity,
+            battery: data.battery,
+            lastSeen: data.timestamp || new Date().toISOString(),
+          };
+          return {
+            ...prev,
+            [data.zoneId]: {
+              ...zoneData,
+              zigbeeDevices,
+            }
+          };
+        });
+        break;
+
       case 'socketConnected':
         // Socket reconnected — fetch latest from REST in case we missed data
         _fetchZonesViaRest();
@@ -139,13 +161,22 @@ function _attachListener() {
  *
  * @returns {Object} zones — { 'zone-1': { online, lastData, lastSeen }, ... }
  */
+// Periodic REST polling as ultimate fallback (every 30s)
+let _pollingInterval = null;
+
+function _startPolling() {
+  if (_pollingInterval) return;
+  _pollingInterval = setInterval(_fetchZonesViaRest, 30000);
+}
+
 export function useSensors() {
   const [zones, setZones] = useState(_cache);
 
   useEffect(() => {
     _attachListener();
+    _startPolling(); // Always poll as backup, regardless of socket state
 
-    // Sync from cache on mount (in case cache was updated before this component mounted)
+    // Sync from cache on mount
     if (Object.keys(_cache).length > 0 && Object.keys(zones).length === 0) {
       setZones(_cache);
     }

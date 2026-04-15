@@ -158,14 +158,13 @@ function getMetricValue(reading, metric) {
     case 'co2': return reading.co2;
     case 'light': return reading.light;
     case 'vpd': {
-      // Calculate VPD from canopy temp + air temp + humidity
-      const canopyT = reading.temperatures?.find(t => t.location === 'canopy')?.value;
-      const airT = reading.temperature;
+      // VPD = SVP × (1 - RH/100), SHT45 air temp preferred
+      const sht45T = reading.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+      const airT = sht45T ?? reading.temperature;
       const rh = reading.humidity_sht45 ?? reading.humidity;
-      if (canopyT == null || airT == null || rh == null) return null;
-      const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
-      const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
-      return Math.max(0, svpLeaf - svpAir * rh / 100);
+      if (airT == null || rh == null) return null;
+      const svp = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+      return Math.max(0, svp * (1 - rh / 100));
     }
     default: return null;
   }
@@ -445,13 +444,12 @@ async function buildZoneSummary(zone, yesterday, todayStart) {
 
   // ── VPD ──
   const calcVpd = (r) => {
-    const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
-    const airT = r.temperature;
+    const sht45T = r.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+    const airT = sht45T ?? r.temperature;
     const rh = r.humidity_sht45 ?? r.humidity;
-    if (canopyT == null || airT == null || rh == null) return null;
-    const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
-    const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
-    return Math.max(0, svpLeaf - svpAir * rh / 100);
+    if (airT == null || rh == null) return null;
+    const svp = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+    return Math.max(0, svp * (1 - rh / 100));
   };
   const vpds = readings.map(calcVpd).filter(v => v != null);
 

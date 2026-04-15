@@ -10,10 +10,17 @@ const IoTOverview = () => {
   const [zones, setZones] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tick, setTick] = useState(0);
   const liveData = useSensors();
 
   useEffect(() => {
     loadZones();
+  }, []);
+
+  // Force re-render every 15s to keep "X min ago" text accurate
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 15000);
+    return () => clearInterval(timer);
   }, []);
 
   const loadZones = async () => {
@@ -88,21 +95,17 @@ const IoTOverview = () => {
     return 'text-green-400';
   };
 
-  // VPD calculation: leaf temp (canopy DS18B20) + humidity
-  // SVP = 0.6108 * exp(17.27 * T / (T + 237.3)) kPa
-  // VPD = SVP(leaf) - SVP(air) * RH/100
+  // VPD = SVP × (1 - RH/100), using SHT45 air temp preferred
   const calcVpd = (zone) => {
     const data = getData(zone);
     if (!data) return null;
     const rh = data.humidity_sht45 ?? data.humidity;
     if (rh == null) return null;
-    // Leaf temp = canopy DS18B20, air temp = ambient (SHT45 or STCC4)
-    const leafTemp = data.temperatures?.find(t => t.location === 'canopy')?.value;
-    const airTemp = data.temperature ?? data.temperatures?.find(t => t.sensorId === 'sht45')?.value;
-    if (leafTemp == null || airTemp == null) return null;
-    const svpLeaf = 0.6108 * Math.exp(17.27 * leafTemp / (leafTemp + 237.3));
-    const svpAir = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
-    return Math.max(0, svpLeaf - svpAir * rh / 100);
+    const sht45Temp = data.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+    const airTemp = sht45Temp ?? data.temperature;
+    if (airTemp == null) return null;
+    const svp = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
+    return Math.max(0, svp * (1 - rh / 100));
   };
 
   const vpdColor = (val) => {

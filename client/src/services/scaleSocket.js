@@ -60,6 +60,9 @@ export function connectScale() {
   socket.on('sensor:zones', (data) => {
     listeners.forEach(cb => cb('sensor_zones', data));
   });
+  socket.on('sensor:zigbee', (data) => {
+    listeners.forEach(cb => cb('sensor_zigbee', data));
+  });
 
   socket.on('connect', () => {
     listeners.forEach(cb => cb('socketConnected', {}));

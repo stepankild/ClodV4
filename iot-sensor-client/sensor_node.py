@@ -117,7 +117,7 @@ def read_ds18b20_sensors(sensor_config):
     """Read all DS18B20 sensors from 1-Wire bus."""
     results = []
     for sensor in sensor_config:
-        sensor_id = sensor["id"]
+        sensor_id = sensor.get("sensor_id") or sensor.get("id")
         location = sensor.get("location", "unknown")
         temp_path = W1_DEVICES_PATH / sensor_id / "temperature"
         try:
@@ -307,6 +307,255 @@ def read_stcc4():
             _stcc4_fail_count = 0
     else:
         _stcc4_fail_count = 0
+    return result
+
+
+# ── SCD41 (I2C CO2 + T + RH) ──
+# Sensirion SCD41 — photoacoustic NDIR CO2 sensor
+# I2C address: 0x62, Sensirion CRC-8 protocol
+
+class SCD41:
+    """SCD41 CO2/Temp/RH sensor via raw I2C (smbus2)."""
+
+    ADDR = 0x62
+    CMD_START_PERIODIC = (0x21, 0xB1)
+    CMD_STOP_PERIODIC  = (0x3F, 0x86)
+    CMD_READ_MEASUREMENT = (0xEC, 0x05)
+    CMD_DATA_READY     = (0xE4, 0xB8)
+    CMD_WAKE_UP        = (0x36, 0xF6)
+    CMD_SET_TEMP_OFFSET = (0x24, 0x1D)
+    CMD_GET_TEMP_OFFSET = (0x23, 0x18)
+
+    def __init__(self, bus_num=1, address=None):
+        import smbus2
+        self.smbus2 = smbus2
+        self.bus = smbus2.SMBus(bus_num)
+        self.addr = address or self.ADDR
+        self.ready = False
+
+    def _cmd(self, cmd_tuple):
+        """Send a 2-byte command."""
+        self.bus.write_i2c_block_data(self.addr, cmd_tuple[0], [cmd_tuple[1]])
+
+    def _read_words(self, n_words):
+        """Read n words (each word = 2 data bytes + 1 CRC byte) via i2c_rdwr."""
+        n_bytes = n_words * 3
+        read_msg = self.smbus2.i2c_msg.read(self.addr, n_bytes)
+        self.bus.i2c_rdwr(read_msg)
+        raw = list(read_msg)
+        words = []
+        for i in range(n_words):
+            offset = i * 3
+            msb, lsb, crc = raw[offset], raw[offset + 1], raw[offset + 2]
+            if _sensirion_crc([msb, lsb]) != crc:
+                raise ValueError(f"CRC mismatch at word {i}")
+            words.append((msb << 8) | lsb)
+        return words
+
+    def start(self):
+        """Wake up and start periodic measurement (every 5s internally)."""
+        try:
+            self._cmd(self.CMD_WAKE_UP)
+            time.sleep(0.03)
+        except Exception:
+            pass
+        try:
+            self._cmd(self.CMD_STOP_PERIODIC)
+            time.sleep(0.5)
+        except Exception:
+            pass
+        try:
+            self._cmd(self.CMD_START_PERIODIC)
+            time.sleep(6)  # first measurement available after ~5s
+            self.ready = True
+            print(f"[SCD41] Periodic measurement started on 0x{self.addr:02x}")
+            return True
+        except Exception as e:
+            print(f"[SCD41] Start error: {e}")
+            return False
+
+    def data_ready(self):
+        """Check if new measurement data is available."""
+        try:
+            self._cmd(self.CMD_DATA_READY)
+            time.sleep(0.001)
+            words = self._read_words(1)
+            # Lower 11 bits != 0 means data ready
+            return (words[0] & 0x07FF) != 0
+        except Exception:
+            return False
+
+    def get_temperature_offset(self):
+        """Get current temperature offset in °C. Must be called when NOT in periodic mode."""
+        try:
+            self._cmd(self.CMD_GET_TEMP_OFFSET)
+            time.sleep(0.001)
+            words = self._read_words(1)
+            return 175.0 * words[0] / 65536.0
+        except Exception as e:
+            print(f"[SCD41] Get temp offset error: {e}")
+            return None
+
+    def set_temperature_offset(self, offset_deg_c):
+        """Set temperature offset in °C. Must be called when NOT in periodic mode.
+        Offset must be >= 0. Typical range: 0-20°C. Persists until power cycle."""
+        try:
+            offset_raw = int(offset_deg_c * 65536.0 / 175.0)
+            offset_raw = max(0, min(65535, offset_raw))
+            msb = (offset_raw >> 8) & 0xFF
+            lsb = offset_raw & 0xFF
+            crc = _sensirion_crc([msb, lsb])
+            self.bus.write_i2c_block_data(self.addr, self.CMD_SET_TEMP_OFFSET[0],
+                                          [self.CMD_SET_TEMP_OFFSET[1], msb, lsb, crc])
+            time.sleep(0.001)
+            print(f"[SCD41] Temperature offset set to {offset_deg_c:.1f}°C (raw={offset_raw})")
+            return True
+        except Exception as e:
+            print(f"[SCD41] Set temp offset error: {e}")
+            return False
+
+    def read_measurement(self):
+        """Read CO2 (ppm), temperature (C), humidity (%).
+        Returns (co2, temp, rh) or (None, None, None) on error."""
+        try:
+            if not self.data_ready():
+                return None, None, None
+            self._cmd(self.CMD_READ_MEASUREMENT)
+            time.sleep(0.001)
+            words = self._read_words(3)
+            co2_raw, temp_raw, rh_raw = words
+
+            co2 = co2_raw  # direct ppm value
+            temp = -45.0 + 175.0 * temp_raw / 65535.0
+            rh = 100.0 * rh_raw / 65535.0
+            rh = max(0.0, min(100.0, rh))
+
+            if co2 < 0 or co2 > 10000:
+                return None, None, None
+
+            return co2, round(temp, 1), round(rh, 1)
+        except Exception as e:
+            print(f"[SCD41] Read error: {e}")
+            return None, None, None
+
+    def stop(self):
+        try:
+            self._cmd(self.CMD_STOP_PERIODIC)
+        except Exception:
+            pass
+
+
+scd41_device = None
+_scd41_addr = 0x62
+_scd41_fail_count = 0
+
+
+def init_scd41(i2c_address=0x62):
+    """Initialize SCD41 sensor with retries."""
+    global scd41_device, _scd41_addr
+    _scd41_addr = i2c_address
+    for attempt in range(3):
+        try:
+            if scd41_device is not None:
+                try:
+                    scd41_device.bus.close()
+                except Exception:
+                    pass
+                scd41_device = None
+                time.sleep(1)
+            scd41_device = SCD41(bus_num=1, address=i2c_address)
+            if scd41_device.start():
+                # Test read
+                time.sleep(1)
+                co2, temp, rh = scd41_device.read_measurement()
+                if co2 is not None:
+                    print(f"[SCD41] Init OK (attempt {attempt+1}): CO2={co2}ppm T={temp}°C RH={rh}%")
+                    return True
+                print(f"[SCD41] Init attempt {attempt+1}: started but no data yet")
+                return True  # started ok, data will come next cycle
+        except Exception as e:
+            print(f"[SCD41] Init attempt {attempt+1} error: {e}")
+        time.sleep(2)
+    print("[SCD41] All init attempts failed")
+    scd41_device = None
+    return False
+
+
+def calibrate_scd41_offset():
+    """Calibrate SCD41 temperature offset using SHT45 as reference.
+    Must be called after both SCD41 and SHT45 are initialized and have data.
+    SCD41 must be stopped before setting offset, then restarted."""
+    global scd41_device
+    if scd41_device is None or sht45_device is None:
+        print("[SCD41] Cannot calibrate — both SCD41 and SHT45 must be initialized")
+        return
+
+    # Read SHT45 reference temperature
+    sht_temp, _ = read_sht45()
+    if sht_temp is None:
+        print("[SCD41] Cannot calibrate — SHT45 read failed")
+        return
+
+    # Read SCD41 current temperature
+    co2, scd_temp, _ = scd41_device.read_measurement()
+    if scd_temp is None:
+        print("[SCD41] Cannot calibrate — SCD41 read failed")
+        return
+
+    diff = sht_temp - scd_temp
+    print(f"[SCD41] Calibration: SHT45={sht_temp}°C, SCD41={scd_temp}°C, diff={diff:.1f}°C")
+
+    if abs(diff) < 0.5:
+        print("[SCD41] Diff < 0.5°C — no offset needed")
+        return
+
+    # Stop periodic measurement to change offset
+    try:
+        scd41_device._cmd(scd41_device.CMD_STOP_PERIODIC)
+        time.sleep(0.5)
+    except Exception:
+        pass
+
+    # Get current offset
+    current_offset = scd41_device.get_temperature_offset()
+    if current_offset is None:
+        current_offset = 4.0  # factory default
+
+    # New offset = current offset + diff (SCD41 reads lower → positive diff → increase offset)
+    new_offset = current_offset + diff
+    new_offset = max(0.0, min(20.0, new_offset))  # clamp to valid range
+
+    print(f"[SCD41] Offset: current={current_offset:.1f}°C → new={new_offset:.1f}°C")
+    scd41_device.set_temperature_offset(new_offset)
+
+    # Restart periodic measurement
+    try:
+        scd41_device._cmd(scd41_device.CMD_START_PERIODIC)
+        time.sleep(5)
+        print("[SCD41] Offset calibration complete, periodic measurement restarted")
+    except Exception as e:
+        print(f"[SCD41] Restart after calibration error: {e}")
+
+
+def read_scd41():
+    """Read CO2, temperature, humidity from SCD41. Auto-reinit on repeated failures."""
+    global scd41_device, _scd41_fail_count
+    if scd41_device is None or not scd41_device.ready:
+        _scd41_fail_count += 1
+        if _scd41_fail_count >= 10:
+            _scd41_fail_count = 0
+            print("[SCD41] Attempting auto-reinit...")
+            init_scd41(_scd41_addr)
+        return None, None, None
+    result = scd41_device.read_measurement()
+    if result[0] is None:
+        _scd41_fail_count += 1
+        if _scd41_fail_count >= 5:
+            print("[SCD41] Too many read failures, will reinit...")
+            scd41_device = None
+            _scd41_fail_count = 0
+    else:
+        _scd41_fail_count = 0
     return result
 
 
@@ -599,11 +848,19 @@ def main():
     # Initialize I2C sensors
     sensors_conf = config.get("sensors", {})
 
-    co2_conf = sensors_conf.get("stcc4") or sensors_conf.get("scd41")
-    if co2_conf and co2_conf.get("enabled", True):
+    # CO2 sensor: STCC4 or SCD41
+    co2_sensor_type = None
+    stcc4_conf = sensors_conf.get("stcc4")
+    scd41_conf = sensors_conf.get("scd41")
+    co2_conf = stcc4_conf or scd41_conf
+    if stcc4_conf and stcc4_conf.get("enabled", True):
+        co2_sensor_type = "stcc4"
         global _stcc4_addr
-        _stcc4_addr = co2_conf.get("address", 0x64)
+        _stcc4_addr = stcc4_conf.get("address", 0x64)
         init_stcc4(_stcc4_addr)
+    elif scd41_conf and scd41_conf.get("enabled", True):
+        co2_sensor_type = "scd41"
+        init_scd41(scd41_conf.get("address", 0x62))
 
     sht45_conf = sensors_conf.get("sht45")
     if sht45_conf and sht45_conf.get("enabled", True):
@@ -614,6 +871,12 @@ def main():
         global _bh1750_addr
         _bh1750_addr = bh1750_conf.get("address", 0x23)
         init_bh1750(_bh1750_addr)
+
+    # Calibrate SCD41 temperature offset using SHT45 as reference
+    if co2_sensor_type == "scd41" and scd41_device and sht45_device:
+        print("[SCD41] Waiting 10s for sensors to stabilize before calibration...")
+        time.sleep(10)
+        calibrate_scd41_offset()
 
     # Connect MQTT
     mqtt_client = create_mqtt_client(config)
@@ -636,10 +899,10 @@ def main():
     def recover_i2c_bus():
         """Close all smbus handles and reinit I2C sensors.
         Recovers from I2C bus lockup (one sensor stuck pulling SDA/SCL low)."""
-        global stcc4_device, sht45_device, bh1750_device
+        global stcc4_device, scd41_device, sht45_device, bh1750_device
         print("[I2C RECOVERY] All I2C sensors failing — attempting bus reset...")
         # Close existing smbus handles
-        for dev_name, dev in [("STCC4", stcc4_device), ("SHT45", sht45_device), ("BH1750", bh1750_device)]:
+        for dev_name, dev in [("STCC4", stcc4_device), ("SCD41", scd41_device), ("SHT45", sht45_device), ("BH1750", bh1750_device)]:
             if dev is not None:
                 try:
                     dev.bus.close()
@@ -647,13 +910,16 @@ def main():
                 except Exception as e:
                     print(f"[I2C RECOVERY] Close {dev_name} error: {e}")
         stcc4_device = None
+        scd41_device = None
         sht45_device = None
         bh1750_device = None
-        # Wait for bus to settle (allows stuck devices to time out internally)
+        # Wait for bus to settle
         time.sleep(3)
         # Reinit all I2C sensors
-        if co2_conf and co2_conf.get("enabled", True):
-            init_stcc4(co2_conf.get("address", 0x64))
+        if co2_sensor_type == "stcc4":
+            init_stcc4(_stcc4_addr)
+        elif co2_sensor_type == "scd41":
+            init_scd41(_scd41_addr)
         if sht45_conf and sht45_conf.get("enabled", True):
             init_sht45(sht45_conf.get("address", 0x44))
         if bh1750_conf and bh1750_conf.get("enabled", True):
@@ -672,8 +938,13 @@ def main():
             if temps:
                 payload["temperatures"] = temps
 
-            # Read STCC4 (CO2 + T + RH)
-            co2, scd_temp, scd_rh = read_stcc4()
+            # Read CO2 sensor (STCC4 or SCD41)
+            if co2_sensor_type == "stcc4":
+                co2, scd_temp, scd_rh = read_stcc4()
+            elif co2_sensor_type == "scd41":
+                co2, scd_temp, scd_rh = read_scd41()
+            else:
+                co2, scd_temp, scd_rh = None, None, None
             if co2 is not None:
                 payload["co2"] = round(co2, 0)
             if scd_temp is not None:

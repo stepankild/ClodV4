@@ -14,11 +14,12 @@ const zoneSchema = new mongoose.Schema({
     humidifierEntityId: { type: String, default: 'switch.cuco_v2eur_189e_switch' }
   },
   sensors: [{
-    type: { type: String, enum: ['ds18b20', 'sht40', 'sht45', 'scd41', 'bh1750'] },
+    type: { type: String, enum: ['ds18b20', 'sht40', 'sht45', 'scd41', 'bh1750', 'zigbee'] },
     sensorId: { type: String },
     location: { type: String },
     enabled: { type: Boolean, default: true }
   }],
+  zigbeeDevices: { type: mongoose.Schema.Types.Mixed, default: {} },
   piStatus: {
     online: { type: Boolean, default: false },
     lastSeen: { type: Date, default: null },
