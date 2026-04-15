@@ -40,8 +40,8 @@ async function _fetchZonesViaRest() {
           ...existing,
           online: zone.piStatus?.online ?? false,
           lastData: newData || existing?.lastData || null,
-          // Always use current time as lastSeen — we just confirmed server has fresh data
           lastSeen: (zone.piStatus?.online && newData) ? now : (zone.piStatus?.lastSeen || existing?.lastSeen || null),
+          zigbeeDevices: zone.zigbeeDevices || existing?.zigbeeDevices || {},
         };
       }
       return merged;
@@ -117,6 +117,28 @@ function _attachListener() {
             lastSeen: new Date().toISOString()
           }
         }));
+        break;
+
+      case 'sensor_zigbee':
+        // Zigbee device update (propagators etc.)
+        _updateCache(prev => {
+          const zoneData = prev[data.zoneId] || {};
+          const zigbeeDevices = { ...(zoneData.zigbeeDevices || {}) };
+          zigbeeDevices[data.device] = {
+            location: data.location,
+            temperature: data.temperature,
+            humidity: data.humidity,
+            battery: data.battery,
+            lastSeen: data.timestamp || new Date().toISOString(),
+          };
+          return {
+            ...prev,
+            [data.zoneId]: {
+              ...zoneData,
+              zigbeeDevices,
+            }
+          };
+        });
         break;
 
       case 'socketConnected':

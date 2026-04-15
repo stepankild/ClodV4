@@ -2,7 +2,7 @@ import express from 'express';
 import SensorReading from '../models/SensorReading.js';
 import Zone from '../models/Zone.js';
 import HumidifierLog from '../models/HumidifierLog.js';
-import { setZoneOnlineFromHttp } from '../mqtt/index.js';
+import { setZoneOnlineFromHttp, setZigbeeData } from '../mqtt/index.js';
 
 const router = express.Router();
 
@@ -31,42 +31,21 @@ router.post('/', requireApiKey, async (req, res) => {
       if (data.zigbee_sensors?.length) {
         for (const zs of data.zigbee_sensors) {
           if (zs.temperature == null && zs.humidity == null) continue;
-          const zigbeeReading = await SensorReading.create({
-            zoneId: data.zoneId,
-            timestamp: new Date(),
-            temperatures: zs.temperature != null ? [{
-              sensorId: `zigbee-${zs.device}`,
-              location: zs.location || zs.device,
-              value: zs.temperature
-            }] : [],
-            humidity: null,
-            humidity_sht45: null,
-            temperature: null,
-            co2: null,
-            light: null,
-            zigbee_humidity: zs.humidity ?? null,
-            zigbee_battery: zs.battery ?? null,
-          });
 
-          // Auto-register Zigbee sensor
-          const zone = await Zone.findOne({ zoneId: data.zoneId });
-          if (zone) {
-            const sensorId = `zigbee-${zs.device}`;
-            const exists = zone.sensors.some(s => s.sensorId === sensorId);
-            if (!exists) {
-              await Zone.updateOne(
-                { zoneId: data.zoneId },
-                { $push: { sensors: { type: 'zigbee', sensorId, location: zs.location || zs.device, enabled: true } } }
-              );
-            }
-          }
+          // Store in memory for live display
+          setZigbeeData(data.zoneId, zs.device, {
+            location: zs.location || zs.device,
+            temperature: zs.temperature,
+            humidity: zs.humidity,
+            battery: zs.battery,
+          });
 
           // Broadcast to browsers
           if (io) {
             io.emit('sensor:zigbee', {
               zoneId: data.zoneId,
               device: zs.device,
-              location: zs.location,
+              location: zs.location || zs.device,
               temperature: zs.temperature,
               humidity: zs.humidity,
               battery: zs.battery,
@@ -74,9 +53,9 @@ router.post('/', requireApiKey, async (req, res) => {
             });
           }
 
-          console.log(`[zigbee] ${zs.device}: T=${zs.temperature}°C RH=${zs.humidity}% -> saved`);
+          console.log(`[zigbee] ${zs.device}: T=${zs.temperature}°C RH=${zs.humidity}%`);
         }
-        continue; // Zigbee readings handled separately
+        continue;
       }
 
       const reading = await SensorReading.create({

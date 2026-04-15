@@ -7,7 +7,7 @@ import AlertConfig from '../models/AlertConfig.js';
 import AlertLog from '../models/AlertLog.js';
 import { sendTestAlert, sendDailySummaryNow } from '../schedulers/alerts.js';
 import { syncPump } from '../schedulers/humidifier.js';
-import { getZoneStates, getZoneState } from '../mqtt/index.js';
+import { getZoneStates, getZoneState, getZigbeeDevices } from '../mqtt/index.js';
 
 // @desc    Get all zones with status and latest reading
 // @route   GET /api/zones
@@ -29,6 +29,7 @@ export const getZones = async (req, res) => {
           lastSeen: live?.lastSeen ?? zone.piStatus?.lastSeen,
         },
         lastData: live?.lastData ?? lastReading ?? null,
+        zigbeeDevices: getZigbeeDevices(zone.zoneId),
       };
     }));
 
@@ -55,6 +56,9 @@ export const getZone = async (req, res) => {
     const lastReading = await SensorReading.findOne({ zoneId: zone.zoneId })
       .sort({ timestamp: -1 }).lean();
     zone.lastData = live?.lastData ?? lastReading ?? null;
+
+    // Attach Zigbee device data (propagators etc.)
+    zone.zigbeeDevices = getZigbeeDevices(zone.zoneId);
 
     res.json(zone);
   } catch (error) {

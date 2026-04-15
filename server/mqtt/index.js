@@ -5,6 +5,23 @@ import Zone from '../models/Zone.js';
 // ── In-memory zone states ──
 const zoneStates = new Map();
 
+// ── Zigbee device states (propagators etc.) ──
+// zoneId → { deviceName → { temperature, humidity, battery, lastSeen } }
+const zigbeeStates = new Map();
+
+export function getZigbeeDevices(zoneId) {
+  return zigbeeStates.get(zoneId) || {};
+}
+
+export function setZigbeeData(zoneId, device, data) {
+  if (!zigbeeStates.has(zoneId)) zigbeeStates.set(zoneId, {});
+  const devices = zigbeeStates.get(zoneId);
+  devices[device] = {
+    ...data,
+    lastSeen: new Date().toISOString(),
+  };
+}
+
 const ZONE_OFFLINE_TIMEOUT_MS = 90000; // 90 seconds without data = offline
 const zoneTimers = new Map();
 
