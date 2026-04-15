@@ -179,23 +179,33 @@ export default function MotherRoomMap({
 
   const unplacedPlants = plants.filter(p => !p.retiredAt && !placedPlantIds.has(p._id));
 
-  // Summary breakdowns (active plants only, placed + unplaced)
-  const strainBreakdown = useMemo(() => {
-    const counts = new Map();
+  // Summary pivot: rows = strains, columns = health state. Active plants only
+  // (placed + unplaced, retired excluded).
+  const strainHealthMatrix = useMemo(() => {
+    const HEALTH_ORDER = ['excellent', 'good', 'satisfactory', 'poor', 'critical'];
+    const byStrain = new Map();
     plants.filter(p => !p.retiredAt).forEach(p => {
-      const key = p.strain?.trim() || '—';
-      counts.set(key, (counts.get(key) || 0) + 1);
+      const strain = p.strain?.trim() || '—';
+      const health = HEALTH_ORDER.includes(p.health) ? p.health : 'good';
+      if (!byStrain.has(strain)) {
+        const row = { strain, total: 0 };
+        HEALTH_ORDER.forEach(h => { row[h] = 0; });
+        byStrain.set(strain, row);
+      }
+      const row = byStrain.get(strain);
+      row[health] += 1;
+      row.total += 1;
     });
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  }, [plants]);
-
-  const healthBreakdown = useMemo(() => {
-    const counts = {};
-    plants.filter(p => !p.retiredAt).forEach(p => {
-      const h = p.health || 'good';
-      counts[h] = (counts[h] || 0) + 1;
+    const rows = Array.from(byStrain.values()).sort(
+      (a, b) => b.total - a.total || a.strain.localeCompare(b.strain)
+    );
+    const totals = { total: 0 };
+    HEALTH_ORDER.forEach(h => { totals[h] = 0; });
+    rows.forEach(r => {
+      totals.total += r.total;
+      HEALTH_ORDER.forEach(h => { totals[h] += r[h]; });
     });
-    return counts;
+    return { rows, totals, healthOrder: HEALTH_ORDER };
   }, [plants]);
 
   // Next free position slot on a table (tables are slot-less, but we still store
@@ -1070,35 +1080,83 @@ export default function MotherRoomMap({
         })}
       </div>
 
-      {/* Summary: strain breakdown + health breakdown */}
-      {plants.some(p => !p.retiredAt) && (
-        <div className="mt-3 border-t border-dark-700 pt-3 space-y-2 text-xs">
-          {strainBreakdown.length > 0 && (
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="text-dark-500 font-medium">{t('motherRoom.byStrain')}:</span>
-              {strainBreakdown.map(([strain, count]) => (
-                <span key={strain} className="text-dark-300">
-                  <span className="text-white font-medium">{strain}</span>
-                  <span className="text-dark-500 ml-1">{count}</span>
-                </span>
-              ))}
-            </div>
-          )}
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <span className="text-dark-500 font-medium">{t('motherRoom.byHealth')}:</span>
-            {Object.entries(HEALTH_COLORS).map(([key, color]) => {
-              const count = healthBreakdown[key] || 0;
-              if (count === 0) return null;
-              return (
-                <span key={key} className="flex items-center gap-1">
-                  <span className={`w-2 h-2 rounded-full ${color.dot}`} />
-                  <span className="text-dark-300">
-                    {t(`motherRoom.health${key.charAt(0).toUpperCase() + key.slice(1)}`)}
-                  </span>
-                  <span className="text-dark-500">{count}</span>
-                </span>
-              );
-            })}
+      {/* Summary pivot: strains × health state */}
+      {strainHealthMatrix.rows.length > 0 && (
+        <div className="mt-3 border-t border-dark-700 pt-3">
+          <div className="text-[11px] text-dark-500 font-medium mb-1.5">{t('motherRoom.strainsByHealth')}</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-separate" style={{ borderSpacing: 0 }}>
+              <thead>
+                <tr>
+                  <th className="text-left text-dark-500 font-medium py-1 pr-3 whitespace-nowrap">
+                    {t('motherRoom.strain')}
+                  </th>
+                  {strainHealthMatrix.healthOrder.map(key => {
+                    const color = HEALTH_COLORS[key];
+                    const label = t(`motherRoom.health${key.charAt(0).toUpperCase() + key.slice(1)}`);
+                    return (
+                      <th
+                        key={key}
+                        className="text-center font-medium py-1 px-1.5 w-12"
+                        title={label}
+                      >
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span className={`w-2 h-2 rounded-full ${color.dot}`} />
+                          <span className={`text-[9px] ${color.text}`}>
+                            {t(`motherRoom.health${key.charAt(0).toUpperCase() + key.slice(1)}Short`)}
+                          </span>
+                        </div>
+                      </th>
+                    );
+                  })}
+                  <th className="text-right text-dark-500 font-medium py-1 pl-2 w-14 whitespace-nowrap">
+                    {t('motherRoom.totalPlants')}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {strainHealthMatrix.rows.map(row => (
+                  <tr key={row.strain} className="border-t border-dark-700/50">
+                    <td className="py-0.5 pr-3 text-white truncate max-w-[200px]">{row.strain}</td>
+                    {strainHealthMatrix.healthOrder.map(key => {
+                      const val = row[key];
+                      const color = HEALTH_COLORS[key];
+                      return (
+                        <td key={key} className="text-center py-0.5 px-1.5">
+                          <span className={val > 0 ? `${color.text} font-medium` : 'text-dark-700'}>
+                            {val > 0 ? val : '·'}
+                          </span>
+                        </td>
+                      );
+                    })}
+                    <td className="text-right py-0.5 pl-2 text-white font-semibold">{row.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+              {strainHealthMatrix.rows.length > 1 && (
+                <tfoot>
+                  <tr className="border-t-2 border-dark-700">
+                    <td className="py-1 pr-3 text-dark-400 font-medium">
+                      {t('motherRoom.totalPlants')}
+                    </td>
+                    {strainHealthMatrix.healthOrder.map(key => {
+                      const val = strainHealthMatrix.totals[key];
+                      const color = HEALTH_COLORS[key];
+                      return (
+                        <td key={key} className="text-center py-1 px-1.5">
+                          <span className={val > 0 ? `${color.text} font-semibold` : 'text-dark-700'}>
+                            {val > 0 ? val : '·'}
+                          </span>
+                        </td>
+                      );
+                    })}
+                    <td className="text-right py-1 pl-2 text-white font-bold">
+                      {strainHealthMatrix.totals.total}
+                    </td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
           </div>
         </div>
       )}
