@@ -33,12 +33,12 @@ const saveChartPrefs = (zoneId, prefs) => {
   } catch { /* ignore */ }
 };
 
-// VPD: leafTemp (canopy) + airTemp + humidity → kPa
-const calcVpd = (leafTemp, airTemp, rh) => {
-  if (leafTemp == null || airTemp == null || rh == null) return null;
-  const svpLeaf = 0.6108 * Math.exp(17.27 * leafTemp / (leafTemp + 237.3));
-  const svpAir = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
-  return Math.max(0, svpLeaf - svpAir * rh / 100);
+// VPD: airTemp + humidity → kPa
+// VPD = SVP × (1 - RH/100)
+const calcVpd = (airTemp, rh) => {
+  if (airTemp == null || rh == null) return null;
+  const svp = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
+  return Math.max(0, svp * (1 - rh / 100));
 };
 
 const vpdColor = (val) => {
@@ -438,12 +438,11 @@ const ZoneDetail = () => {
           point[`temp-${temp.sensorId}`] = temp.value;
         });
       }
-      // Compute VPD from canopy + air temp (SHT45 preferred) + humidity
-      const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
+      // Compute VPD from air temp (SHT45 preferred) + humidity
       const sht45T = r.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
       const airT = sht45T ?? r.temperature;
       const rh = r.humidity_sht45 ?? r.humidity;
-      point.vpd = calcVpd(canopyT, airT, rh);
+      point.vpd = calcVpd(airT, rh);
       return point;
     });
   }, [readings]);
@@ -629,11 +628,10 @@ const ZoneDetail = () => {
         )}
 
         {(() => {
-          const canopyT = lastData?.temperatures?.find(t => t.location === 'canopy')?.value;
           const sht45T = lastData?.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
           const airT = sht45T ?? lastData?.temperature;
           const rh = lastData?.humidity_sht45 ?? lastData?.humidity;
-          const vpd = calcVpd(canopyT, airT, rh);
+          const vpd = calcVpd(airT, rh);
           if (vpd == null) return null;
           return (
             <div className="bg-dark-800 border border-dark-700 rounded-lg p-4 text-center">

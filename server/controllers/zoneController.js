@@ -285,14 +285,12 @@ export const getDisplayData = async (req, res) => {
     // VPD calculation
     let vpd = null;
     if (data) {
-      const canopyT = data.temperatures?.find(t => t.location === 'canopy')?.value;
       const sht45T = data.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
       const airT = sht45T ?? data.temperature;
       const rh = data.humidity_sht45 ?? data.humidity;
-      if (canopyT != null && airT != null && rh != null) {
-        const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
-        const svpAir = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
-        vpd = Math.max(0, svpLeaf - svpAir * rh / 100);
+      if (airT != null && rh != null) {
+        const svp = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+        vpd = Math.max(0, svp * (1 - rh / 100));
         vpd = Math.round(vpd * 100) / 100;
       }
     }

@@ -95,22 +95,17 @@ const IoTOverview = () => {
     return 'text-green-400';
   };
 
-  // VPD calculation: leaf temp (canopy DS18B20) + humidity
-  // SVP = 0.6108 * exp(17.27 * T / (T + 237.3)) kPa
-  // VPD = SVP(leaf) - SVP(air) * RH/100
+  // VPD = SVP × (1 - RH/100), using SHT45 air temp preferred
   const calcVpd = (zone) => {
     const data = getData(zone);
     if (!data) return null;
     const rh = data.humidity_sht45 ?? data.humidity;
     if (rh == null) return null;
-    // Leaf temp = canopy DS18B20, air temp = SHT45 preferred, fallback to SCD41/STCC4
-    const leafTemp = data.temperatures?.find(t => t.location === 'canopy')?.value;
     const sht45Temp = data.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
     const airTemp = sht45Temp ?? data.temperature;
-    if (leafTemp == null || airTemp == null) return null;
-    const svpLeaf = 0.6108 * Math.exp(17.27 * leafTemp / (leafTemp + 237.3));
-    const svpAir = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
-    return Math.max(0, svpLeaf - svpAir * rh / 100);
+    if (airTemp == null) return null;
+    const svp = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
+    return Math.max(0, svp * (1 - rh / 100));
   };
 
   const vpdColor = (val) => {
