@@ -438,9 +438,10 @@ const ZoneDetail = () => {
           point[`temp-${temp.sensorId}`] = temp.value;
         });
       }
-      // Compute VPD from canopy + air temp + humidity
+      // Compute VPD from canopy + air temp (SHT45 preferred) + humidity
       const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
-      const airT = r.temperature;
+      const sht45T = r.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+      const airT = sht45T ?? r.temperature;
       const rh = r.humidity_sht45 ?? r.humidity;
       point.vpd = calcVpd(canopyT, airT, rh);
       return point;
@@ -629,7 +630,8 @@ const ZoneDetail = () => {
 
         {(() => {
           const canopyT = lastData?.temperatures?.find(t => t.location === 'canopy')?.value;
-          const airT = lastData?.temperature;
+          const sht45T = lastData?.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+          const airT = sht45T ?? lastData?.temperature;
           const rh = lastData?.humidity_sht45 ?? lastData?.humidity;
           const vpd = calcVpd(canopyT, airT, rh);
           if (vpd == null) return null;

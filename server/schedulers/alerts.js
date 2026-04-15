@@ -158,9 +158,10 @@ function getMetricValue(reading, metric) {
     case 'co2': return reading.co2;
     case 'light': return reading.light;
     case 'vpd': {
-      // Calculate VPD from canopy temp + air temp + humidity
+      // Calculate VPD from canopy temp + air temp (SHT45 preferred) + humidity
       const canopyT = reading.temperatures?.find(t => t.location === 'canopy')?.value;
-      const airT = reading.temperature;
+      const sht45T = reading.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+      const airT = sht45T ?? reading.temperature;
       const rh = reading.humidity_sht45 ?? reading.humidity;
       if (canopyT == null || airT == null || rh == null) return null;
       const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
@@ -446,7 +447,8 @@ async function buildZoneSummary(zone, yesterday, todayStart) {
   // ── VPD ──
   const calcVpd = (r) => {
     const canopyT = r.temperatures?.find(t => t.location === 'canopy')?.value;
-    const airT = r.temperature;
+    const sht45T = r.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+    const airT = sht45T ?? r.temperature;
     const rh = r.humidity_sht45 ?? r.humidity;
     if (canopyT == null || airT == null || rh == null) return null;
     const svpLeaf = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));

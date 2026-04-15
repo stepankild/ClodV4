@@ -103,9 +103,10 @@ const IoTOverview = () => {
     if (!data) return null;
     const rh = data.humidity_sht45 ?? data.humidity;
     if (rh == null) return null;
-    // Leaf temp = canopy DS18B20, air temp = ambient (SHT45 or STCC4)
+    // Leaf temp = canopy DS18B20, air temp = SHT45 preferred, fallback to SCD41/STCC4
     const leafTemp = data.temperatures?.find(t => t.location === 'canopy')?.value;
-    const airTemp = data.temperature ?? data.temperatures?.find(t => t.sensorId === 'sht45')?.value;
+    const sht45Temp = data.temperatures?.find(t => t.sensorId === 'sht45' || t.location?.includes('sht45'))?.value;
+    const airTemp = sht45Temp ?? data.temperature;
     if (leafTemp == null || airTemp == null) return null;
     const svpLeaf = 0.6108 * Math.exp(17.27 * leafTemp / (leafTemp + 237.3));
     const svpAir = 0.6108 * Math.exp(17.27 * airTemp / (airTemp + 237.3));
