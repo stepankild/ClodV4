@@ -644,7 +644,7 @@ const ZoneDetail = () => {
       </div>
 
       {/* Zigbee propagator sensors — always show for zones with propagators configured */}
-      {zone?.zigbeeDevices || Object.keys(zigbeeDevices).length > 0 ? (
+      {Object.keys(zigbeeDevices).length > 0 || Object.keys(zone?.zigbeeDevices || {}).length > 0 ? (
         <div className="bg-dark-800 border border-dark-700 rounded-lg p-4">
           <h2 className="text-lg font-semibold text-dark-200 mb-3 flex items-center gap-2">
             <span>🌱</span> Пропагаторы
