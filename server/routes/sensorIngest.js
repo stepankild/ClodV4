@@ -40,6 +40,18 @@ router.post('/', requireApiKey, async (req, res) => {
             battery: zs.battery,
           });
 
+          // Save to SensorReading for chart history
+          const sensorId = `zigbee-${zs.device}`;
+          await SensorReading.create({
+            zoneId: data.zoneId,
+            timestamp: new Date(),
+            temperatures: zs.temperature != null ? [{
+              sensorId,
+              location: zs.location || zs.device,
+              value: zs.temperature
+            }] : [],
+          });
+
           // Broadcast to browsers
           if (io) {
             io.emit('sensor:zigbee', {
