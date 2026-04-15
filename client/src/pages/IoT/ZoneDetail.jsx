@@ -451,7 +451,7 @@ const ZoneDetail = () => {
   // Light cycle stats (day/night hours) from last 24h readings
   const lightCycle = useMemo(() => {
     if (!readings.length) return null;
-    const LIGHT_THRESHOLD = 10; // lux — below = night
+    const LIGHT_THRESHOLD = 50; // lux — below = night (same as alerts.js)
     const withLight = readings.filter(r => r.light != null);
     if (withLight.length < 2) return null;
 
