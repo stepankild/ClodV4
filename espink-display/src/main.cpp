@@ -241,121 +241,150 @@ void drawDisplay() {
 
     u8g2Fonts.setBackgroundColor(WH);
 
-    // ========== TOP ROW: 3 TEMP CARDS + CO2 (26-90) ==========
+    // ========== TOP ROW: TEMP + HUMIDITY + CO2 (26-90) ==========
     int y = 26;
     int gap = 4;
-    int tempW = 90;
-    int co2W = W - 3 * tempW - 4 * gap - 2 * 4; // remaining width
+    int cellH = 64;
+    int boxW = (W - 4 * gap) / 3;
 
-    // Temperature cards
-    for (int i = 0; i < 3; i++) {
-      int cx = 4 + i * (tempW + gap);
-      bool hasVal = (i < D.tempCount);
-      const char* loc = hasVal ? D.tempLocs[i].c_str() : (i == 0 && D.hasAirT ? "ambient" : "---");
-      float val = hasVal ? D.temps[i] : (i == 0 && D.hasAirT ? D.airT : 0);
-
-      uint16_t hdrCol = (i == 0) ? RD : BK;  // no yellow headers — hard to read
-      cardWithHeader(cx, y, tempW, 64, hdrCol, loc);
-
-      if (hasVal || (i == 0 && D.hasAirT)) {
-        // Big temperature number with C
-        u8g2Fonts.setFont(u8g2_font_helvB18_tr);
-        u8g2Fonts.setForegroundColor(BK);
-        snprintf(buf, sizeof(buf), "%.1f", val);
-        tc(cx + tempW / 2, y + 40, buf);
-        // Unit below
-        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-        tc(cx + tempW / 2, y + 54, "C");
-      } else {
-        u8g2Fonts.setFont(u8g2_font_helvB14_tr);
-        u8g2Fonts.setForegroundColor(BK);
-        tc(cx + tempW / 2, y + 44, "---");
-      }
-    }
-
-    // CO2 big card
-    {
-      int cx = 4 + 3 * (tempW + gap);
-      uint16_t co2c = D.co2 > 1500 ? RD : (D.co2 > 1000 ? YL : BK);
-      cardWithHeader(cx, y, co2W, 64, co2c, "CO2");
-
-      u8g2Fonts.setFont(u8g2_font_helvB24_tr);
-      u8g2Fonts.setForegroundColor(D.co2 > 1500 ? RD : BK);
-      snprintf(buf, sizeof(buf), "%d", D.co2);
-      tc(cx + co2W / 2, y + 48, buf);
-
-      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-      u8g2Fonts.setForegroundColor(BK);
-      tc(cx + co2W / 2, y + 60, "ppm");
-    }
-
-    // ========== SECOND ROW: RH + VPD + LIGHT + PHOTO (94-148) ==========
-    y = 94;
-    int row2H = 54;
-    int boxW = (W - 5 * gap - 8) / 4;
-
-    // Humidity
+    // Temperature (SHT45 — airT)
     {
       int cx = 4;
-      cardWithHeader(cx, y, boxW, row2H, BK, "HUMIDITY");
-      float rv = D.hasRH2 ? D.rh2 : D.rh;
-      u8g2Fonts.setFont(u8g2_font_helvB18_tr);
+      cardWithHeader(cx, y, boxW, cellH, RD, "TEMPERATURE");
+      u8g2Fonts.setFont(u8g2_font_helvB24_tr);
       u8g2Fonts.setForegroundColor(BK);
-      snprintf(buf, sizeof(buf), "%.0f%%", rv);
-      tc(cx + boxW / 2, y + 40, buf);
-      // Show second RH small
-      if (D.hasRH && D.hasRH2) {
-        u8g2Fonts.setFont(u8g2_font_micro_tr);
-        u8g2Fonts.setForegroundColor(BK);
-        snprintf(buf, sizeof(buf), "STCC4:%.0f%%", D.rh);
-        tc(cx + boxW / 2, y + 50, buf);
+      if (D.hasAirT) {
+        snprintf(buf, sizeof(buf), "%.1f", D.airT);
+        tc(cx + boxW / 2, y + 46, buf);
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+        tc(cx + boxW / 2, y + 58, "C");
+      } else {
+        snprintf(buf, sizeof(buf), "--");
+        tc(cx + boxW / 2, y + 46, buf);
       }
     }
 
-    // VPD
+    // Humidity (SHT45 — rh2 preferred)
     {
-      int cx = 4 + (boxW + gap);
-      uint16_t vc = D.vpd > 1.6f ? RD : (D.vpd > 1.2f ? YL : BK);
-      cardWithHeader(cx, y, boxW, row2H, vc, "VPD kPa");
-      u8g2Fonts.setFont(u8g2_font_helvB18_tr);
-      u8g2Fonts.setForegroundColor(vc == BK ? BK : vc);
-      snprintf(buf, sizeof(buf), "%.2f", D.vpd);
-      tc(cx + boxW / 2, y + 40, buf);
+      int cx = 4 + boxW + gap;
+      cardWithHeader(cx, y, boxW, cellH, BK, "HUMIDITY");
+      float rv = D.hasRH2 ? D.rh2 : D.rh;
+      u8g2Fonts.setFont(u8g2_font_helvB24_tr);
+      u8g2Fonts.setForegroundColor(BK);
+      if (D.hasRH2 || D.hasRH) {
+        snprintf(buf, sizeof(buf), "%.0f", rv);
+        tc(cx + boxW / 2, y + 46, buf);
+        u8g2Fonts.setFont(u8g2_font_helvR10_tr);
+        tc(cx + boxW / 2, y + 58, "%");
+      } else {
+        snprintf(buf, sizeof(buf), "--");
+        tc(cx + boxW / 2, y + 46, buf);
+      }
     }
 
-    // Light
+    // CO2
     {
       int cx = 4 + 2 * (boxW + gap);
-      cardWithHeader(cx, y, boxW, row2H, BK, "LIGHT");
+      uint16_t co2c = D.co2 > 1500 ? RD : (D.co2 > 1000 ? YL : BK);
+      cardWithHeader(cx, y, boxW, cellH, co2c, "CO2");
+      u8g2Fonts.setFont(u8g2_font_helvB24_tr);
+      u8g2Fonts.setForegroundColor(D.co2 > 1500 ? RD : BK);
+      if (D.hasCO2) {
+        snprintf(buf, sizeof(buf), "%d", D.co2);
+        tc(cx + boxW / 2, y + 44, buf);
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+        u8g2Fonts.setForegroundColor(BK);
+        tc(cx + boxW / 2, y + 58, "ppm");
+      } else {
+        snprintf(buf, sizeof(buf), "--");
+        tc(cx + boxW / 2, y + 44, buf);
+      }
+    }
+
+    // ========== SECOND ROW: VPD SCALE + PHOTOPERIOD (94-148) ==========
+    y = 94;
+    int row2H = 54;
+    int vpdW = (W - 3 * gap) * 2 / 3;  // ~260px
+    int photoW = W - vpdW - 3 * gap - 4;
+
+    // VPD with visual scale
+    {
+      int cx = 4;
+      uint16_t vc = D.vpd > 1.6f ? RD : (D.vpd > 1.2f ? YL : (D.vpd < 0.4f ? BK : BK));
+      cardWithHeader(cx, y, vpdW, row2H, vc, "VPD");
+
+      int inX = cx + 6;
+      int inW = vpdW - 12;
+      int scaleY = y + 38;
+      int scaleH = 9;
+
+      // Value + unit (left side)
       u8g2Fonts.setFont(u8g2_font_helvB14_tr);
       u8g2Fonts.setForegroundColor(BK);
-      if (D.hasLux) {
-        if (D.lux >= 1000) snprintf(buf, sizeof(buf), "%.1fk", D.lux / 1000.0f);
-        else snprintf(buf, sizeof(buf), "%d", D.lux);
-        tc(cx + boxW / 2, y + 38, buf);
-        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-        tc(cx + boxW / 2, y + 50, "lux");
+      if (D.hasVPD) {
+        snprintf(buf, sizeof(buf), "%.2f", D.vpd);
       } else {
-        tc(cx + boxW / 2, y + 38, "---");
+        snprintf(buf, sizeof(buf), "--");
       }
+      u8g2Fonts.setCursor(inX, y + 30);
+      u8g2Fonts.print(buf);
+      u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+      u8g2Fonts.print(" kPa");
+
+      // Scale range: 0.0 - 2.0 kPa
+      // Segments: 0-0.4 (cold/blue), 0.4-0.8 (low-optimal), 0.8-1.2 (optimal), 1.2-1.6 (high), 1.6-2.0 (too high/red)
+      float vpdMin = 0.0f, vpdMax = 2.0f;
+      int seg0 = inX + (int)((0.4f - vpdMin) / (vpdMax - vpdMin) * inW);
+      int seg1 = inX + (int)((0.8f - vpdMin) / (vpdMax - vpdMin) * inW);
+      int seg2 = inX + (int)((1.2f - vpdMin) / (vpdMax - vpdMin) * inW);
+      int seg3 = inX + (int)((1.6f - vpdMin) / (vpdMax - vpdMin) * inW);
+      int endX = inX + inW;
+
+      // Draw segments
+      display.fillRect(inX, scaleY, seg0 - inX, scaleH, BK);     // too low (black)
+      display.fillRect(seg0, scaleY, seg1 - seg0, scaleH, YL);   // low-optimal (yellow)
+      display.fillRect(seg1, scaleY, seg2 - seg1, scaleH, WH);   // optimal (white fill, border)
+      display.drawRect(seg1, scaleY, seg2 - seg1, scaleH, BK);
+      display.fillRect(seg2, scaleY, seg3 - seg2, scaleH, YL);   // high (yellow)
+      display.fillRect(seg3, scaleY, endX - seg3, scaleH, RD);   // too high (red)
+
+      // Current VPD marker (triangle pointing down from above the scale)
+      if (D.hasVPD) {
+        float v = D.vpd; if (v < vpdMin) v = vpdMin; if (v > vpdMax) v = vpdMax;
+        int mx = inX + (int)((v - vpdMin) / (vpdMax - vpdMin) * inW);
+        // Draw marker triangle
+        display.fillTriangle(mx - 3, scaleY - 4, mx + 3, scaleY - 4, mx, scaleY, RD);
+        display.drawLine(mx, scaleY, mx, scaleY + scaleH, RD);
+      }
+
+      // Scale labels under
+      u8g2Fonts.setFont(u8g2_font_micro_tr);
+      u8g2Fonts.setForegroundColor(BK);
+      u8g2Fonts.setCursor(inX, scaleY + scaleH + 6);
+      u8g2Fonts.print("0.0");
+      tc(seg1, scaleY + scaleH + 6, "0.8");
+      tc(seg2, scaleY + scaleH + 6, "1.2");
+      tr(endX, scaleY + scaleH + 6, "2.0");
     }
 
     // Photoperiod
     {
-      int cx = 4 + 3 * (boxW + gap);
-      int pw = W - cx - 4;
+      int cx = 4 + vpdW + gap;
+      int pw = photoW;
       cardWithHeader(cx, y, pw, row2H, BK, "PHOTOPERIOD");
       if (D.hasPhoto) {
-        // Day/night numbers
         u8g2Fonts.setFont(u8g2_font_helvB10_tr);
         u8g2Fonts.setForegroundColor(BK);
         snprintf(buf, sizeof(buf), "%.0f / %.0f h", D.photoDay, D.photoNight);
         tc(cx + pw / 2, y + 32, buf);
-        // Mini bar
         int bx = cx + 6, bw = pw - 12, by = y + 38, bh = 8;
         int dayW = (int)(bw * D.photoDay / 24.0f);
         if (dayW > 0) display.fillRoundRect(bx, by, dayW, bh, 2, YL);
         if (dayW < bw) display.fillRoundRect(bx + dayW, by, bw - dayW, bh, 2, BK);
+      } else {
+        u8g2Fonts.setFont(u8g2_font_helvR10_tr);
+        u8g2Fonts.setForegroundColor(BK);
+        tc(cx + pw / 2, y + 36, "--");
       }
     }
 
