@@ -411,23 +411,14 @@ void drawDisplay() {
     // Outer frame
     display.drawRect(propX, y, propW, propH, BK);
 
-    // Header bar
-    display.fillRect(propX, y, propW, 14, BK);
+    // Header bar (stays inside the outer rect)
+    display.fillRect(propX + 1, y + 1, propW - 2, 14, BK);
     u8g2Fonts.setFontMode(1);
     u8g2Fonts.setBackgroundColor(BK);
     u8g2Fonts.setForegroundColor(WH);
     u8g2Fonts.setFont(u8g2_font_helvB10_tr);
-    u8g2Fonts.setCursor(propX + 6, y + 11);
-    u8g2Fonts.print("PROPAGATORS");
-    u8g2Fonts.setBackgroundColor(WH);
-    u8g2Fonts.setForegroundColor(BK);
-
-    // Count in top-right
-    u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-    u8g2Fonts.setBackgroundColor(BK);
-    u8g2Fonts.setForegroundColor(WH);
-    snprintf(buf, sizeof(buf), "%d", D.propCount);
-    tr(propX + propW - 4, y + 11, buf);
+    // Centered title
+    tc(propX + propW / 2, y + 12, "PROPAGATORS");
     u8g2Fonts.setBackgroundColor(WH);
     u8g2Fonts.setForegroundColor(BK);
 
@@ -474,17 +465,11 @@ void drawDisplay() {
         }
         u8g2Fonts.setBackgroundColor(WH);
 
-        // ── TEMP row (left half) / HUMID row (right half) ──
-        int bodyTop = cy + hdrH + 5;
+        // ── Main values (big) — TEMP left, HUMID right ──
+        int bodyTop = cy + hdrH + 3;
         int midX = cx + cellW / 2;
         int leftMid = cx + cellW / 4;
         int rightMid = cx + 3 * cellW / 4;
-
-        // Section labels (above values)
-        u8g2Fonts.setFont(u8g2_font_micro_tr);
-        u8g2Fonts.setForegroundColor(BK);
-        tc(leftMid, bodyTop + 6, "TEMP");
-        tc(rightMid, bodyTop + 6, "HUMID");
 
         // Temperature value
         u8g2Fonts.setFont(u8g2_font_helvB18_tr);
@@ -492,7 +477,7 @@ void drawDisplay() {
         if (D.props[i].hasT) snprintf(buf, sizeof(buf), "%.1f", D.props[i].t);
         else snprintf(buf, sizeof(buf), "--");
         int tW = u8g2Fonts.getUTF8Width(buf);
-        int tValY = bodyTop + 26;
+        int tValY = bodyTop + 20;
         u8g2Fonts.setCursor(leftMid - tW / 2 - 4, tValY);
         u8g2Fonts.print(buf);
         u8g2Fonts.setFont(u8g2_font_helvR08_tr);
@@ -510,33 +495,53 @@ void drawDisplay() {
         u8g2Fonts.print("%");
 
         // Vertical separator between temp and humidity
-        display.drawLine(midX, bodyTop + 2, midX, tValY + 8, BK);
+        display.drawLine(midX, bodyTop + 2, midX, cy + cellH - 3, BK);
 
-        // ── Min/max footer ──
-        int footY = cy + cellH - 4;
-        int hrY = footY - 13;
-        // Horizontal divider
+        // ── Min/Max section (big, readable) ──
+        int hrY = bodyTop + 26;
         display.drawLine(cx + 4, hrY, cx + cellW - 4, hrY, BK);
 
-        // "min|max" label center
-        u8g2Fonts.setFont(u8g2_font_micro_tr);
+        // min row + max row (with labels)
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
         u8g2Fonts.setForegroundColor(BK);
 
-        // Temp min/max (left)
-        if (D.props[i].hasTMinMax) {
-          snprintf(buf, sizeof(buf), "%.1f-%.1f", D.props[i].tMin, D.props[i].tMax);
-        } else {
-          snprintf(buf, sizeof(buf), "-- / --");
-        }
-        tc(leftMid, footY - 3, buf);
+        int minLblY = hrY + 9;
+        int maxLblY = hrY + 19;
 
-        // Humid min/max (right)
-        if (D.props[i].hasRHMinMax) {
-          snprintf(buf, sizeof(buf), "%.0f-%.0f", D.props[i].rhMin, D.props[i].rhMax);
+        // Left column: temp min/max
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+        u8g2Fonts.setCursor(cx + 4, minLblY); u8g2Fonts.print("min");
+        u8g2Fonts.setCursor(cx + 4, maxLblY); u8g2Fonts.print("max");
+
+        u8g2Fonts.setFont(u8g2_font_helvB08_tr);
+        u8g2Fonts.setForegroundColor(RD);
+        if (D.props[i].hasTMinMax) {
+          snprintf(buf, sizeof(buf), "%.1f", D.props[i].tMin);
+          tr(midX - 3, minLblY, buf);
+          snprintf(buf, sizeof(buf), "%.1f", D.props[i].tMax);
+          tr(midX - 3, maxLblY, buf);
         } else {
-          snprintf(buf, sizeof(buf), "-- / --");
+          tr(midX - 3, minLblY, "--");
+          tr(midX - 3, maxLblY, "--");
         }
-        tc(rightMid, footY - 3, buf);
+
+        // Right column: humidity min/max
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+        u8g2Fonts.setForegroundColor(BK);
+        u8g2Fonts.setCursor(midX + 4, minLblY); u8g2Fonts.print("min");
+        u8g2Fonts.setCursor(midX + 4, maxLblY); u8g2Fonts.print("max");
+
+        u8g2Fonts.setFont(u8g2_font_helvB08_tr);
+        u8g2Fonts.setForegroundColor(BK);
+        if (D.props[i].hasRHMinMax) {
+          snprintf(buf, sizeof(buf), "%.0f", D.props[i].rhMin);
+          tr(cx + cellW - 4, minLblY, buf);
+          snprintf(buf, sizeof(buf), "%.0f", D.props[i].rhMax);
+          tr(cx + cellW - 4, maxLblY, buf);
+        } else {
+          tr(cx + cellW - 4, minLblY, "--");
+          tr(cx + cellW - 4, maxLblY, "--");
+        }
       }
     }
 
