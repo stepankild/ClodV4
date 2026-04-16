@@ -273,14 +273,40 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
       hist: hist.map(h => ({ t: h.t, rh: h.rh, co2: h.co2 })),
       canopyHist: canopyHist.map(h => h.ct),
       // Zigbee devices (propagators etc.) — in-memory + persisted
-      propagators: Object.entries({ ...(zone.zigbeeDevices || {}), ...getZigbeeDevices(zoneId) })
-        .map(([name, d]) => ({
-          name,
-          loc: d.location || name,
-          t: d.temperature != null ? Math.round(d.temperature * 10) / 10 : null,
-          rh: d.humidity != null ? Math.round(d.humidity * 10) / 10 : null,
-          bat: d.battery ?? null,
-        })),
+      propagators: await (async () => {
+        const all = { ...(zone.zigbeeDevices || {}), ...getZigbeeDevices(zoneId) };
+        const names = Object.keys(all);
+        if (!names.length) return [];
+        // Compute today's min/max for each propagator from SensorReading
+        const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+        const minMaxPipeline = [
+          { $match: { zoneId, timestamp: { $gte: startOfDay } } },
+          { $unwind: '$temperatures' },
+          { $match: { 'temperatures.sensorId': { $in: names.map(n => `zigbee-${n}`) } } },
+          { $group: {
+            _id: '$temperatures.sensorId',
+            tMin: { $min: '$temperatures.value' },
+            tMax: { $max: '$temperatures.value' },
+          }},
+        ];
+        const stats = await SensorReading.aggregate(minMaxPipeline);
+        const statMap = {};
+        for (const s of stats) statMap[s._id] = s;
+        return names.map(name => {
+          const d = all[name];
+          const sid = `zigbee-${name}`;
+          const s = statMap[sid];
+          return {
+            name,
+            loc: d.location || name,
+            t: d.temperature != null ? Math.round(d.temperature * 10) / 10 : null,
+            rh: d.humidity != null ? Math.round(d.humidity * 10) / 10 : null,
+            bat: d.battery ?? null,
+            tMin: s?.tMin != null ? Math.round(s.tMin * 10) / 10 : null,
+            tMax: s?.tMax != null ? Math.round(s.tMax * 10) / 10 : null,
+          };
+        });
+      })(),
     });
   } catch (error) {
     console.error('Display data error:', error);

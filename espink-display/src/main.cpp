@@ -22,7 +22,12 @@ U8G2_FOR_ADAFRUIT_GFX u8g2Fonts;
 #define MAX_HIST 60
 
 #define MAX_PROPS 4
-struct Propagator { String loc; float t; float rh; int bat; bool hasT, hasRH, hasBat; };
+struct Propagator {
+  String loc;
+  float t; float rh; int bat;
+  float tMin, tMax;
+  bool hasT, hasRH, hasBat, hasMinMax;
+};
 
 struct SData {
   String zoneName, timestamp;
@@ -112,6 +117,9 @@ bool fetchData() {
     pp.hasT = !p["t"].isNull(); pp.t = p["t"] | 0.0f;
     pp.hasRH = !p["rh"].isNull(); pp.rh = p["rh"] | 0.0f;
     pp.hasBat = !p["bat"].isNull(); pp.bat = p["bat"] | 0;
+    pp.hasMinMax = !p["tMin"].isNull() && !p["tMax"].isNull();
+    pp.tMin = p["tMin"] | 0.0f;
+    pp.tMax = p["tMax"] | 0.0f;
     D.propCount++;
   }
   return true;
@@ -286,7 +294,8 @@ void drawDisplay() {
     {
       int cx = 4 + 2 * (boxW + gap);
       uint16_t co2c = D.co2 > 1500 ? RD : (D.co2 > 1000 ? YL : BK);
-      cardWithHeader(cx, y, boxW, cellH, co2c, "CO2");
+      uint16_t co2Hdr = (co2c == YL) ? BK : co2c;
+      cardWithHeader(cx, y, boxW, cellH, co2Hdr, "CO2");
       u8g2Fonts.setFont(u8g2_font_helvB24_tr);
       u8g2Fonts.setForegroundColor(D.co2 > 1500 ? RD : BK);
       if (D.hasCO2) {
@@ -311,7 +320,9 @@ void drawDisplay() {
     {
       int cx = 4;
       uint16_t vc = D.vpd > 1.6f ? RD : (D.vpd > 1.2f ? YL : (D.vpd < 0.4f ? BK : BK));
-      cardWithHeader(cx, y, vpdW, row2H, vc, "VPD");
+      // Header is always black for readability (yellow bg makes white text unreadable)
+      uint16_t vpdHdr = (vc == YL) ? BK : vc;
+      cardWithHeader(cx, y, vpdW, row2H, vpdHdr, "VPD");
 
       int inX = cx + 6;
       int inW = vpdW - 12;
@@ -421,71 +432,83 @@ void drawDisplay() {
       u8g2Fonts.setFont(u8g2_font_helvR10_tr);
       tc(W/2, y + propH/2 + 5, "no data");
     } else {
-      // 2x2 grid of propagator cards
+      // Grid of propagator cards
       int gridY = y + 16;
-      int gridH = propH - 16;
-      int cols = (D.propCount <= 2) ? D.propCount : 2;
-      int rows = (D.propCount <= 2) ? 1 : 2;
-      int cellW = (propW - 4) / cols;
-      int cellH = gridH / rows;
+      int gridH = propH - 18;
+      int cols = (D.propCount <= 3) ? D.propCount : 2;
+      int rows = (D.propCount <= 3) ? 1 : 2;
+      int gridMargin = 3;
+      int cellGap = 3;
+      int cellW = (propW - 2 * gridMargin - (cols - 1) * cellGap) / cols;
+      int cellH = (gridH - (rows - 1) * cellGap) / rows;
 
       for (int i = 0; i < D.propCount; i++) {
         int col = i % cols;
         int row = i / cols;
-        int cx = propX + 2 + col * cellW;
-        int cy = gridY + row * cellH;
+        int cx = propX + gridMargin + col * (cellW + cellGap);
+        int cy = gridY + row * (cellH + cellGap);
 
-        // Cell border
-        display.drawRect(cx, cy, cellW - 2, cellH - 2, BK);
+        // Card with thin header bar
+        int hdrH = 12;
+        display.drawRect(cx, cy, cellW, cellH, BK);
+        display.fillRect(cx, cy, cellW, hdrH, BK);
 
-        // Location (top)
-        u8g2Fonts.setFont(u8g2_font_helvB10_tr);
-        u8g2Fonts.setForegroundColor(BK);
-        u8g2Fonts.setCursor(cx + 4, cy + 12);
+        // Header: location
+        u8g2Fonts.setFont(u8g2_font_helvB08_tr);
+        u8g2Fonts.setBackgroundColor(BK);
+        u8g2Fonts.setForegroundColor(WH);
+        u8g2Fonts.setCursor(cx + 3, cy + 9);
         u8g2Fonts.print(D.props[i].loc.c_str());
 
-        // Battery in top-right
+        // Battery (right of header)
         if (D.props[i].hasBat) {
           u8g2Fonts.setFont(u8g2_font_micro_tr);
-          u8g2Fonts.setForegroundColor(D.props[i].bat < 20 ? RD : BK);
+          u8g2Fonts.setForegroundColor(D.props[i].bat < 20 ? RD : WH);
           snprintf(buf, sizeof(buf), "%d%%", D.props[i].bat);
-          tr(cx + cellW - 5, cy + 10, buf);
+          tr(cx + cellW - 2, cy + 9, buf);
         }
+        u8g2Fonts.setBackgroundColor(WH);
 
-        // Temperature (large)
+        // Body layout: two columns (TEMP | HUMID)
+        int bodyY = cy + hdrH + 2;
+        int colW = cellW / 2;
+        int tempX = cx;
+        int humidX = cx + colW;
+
+        // Temperature value — big
         u8g2Fonts.setFont(u8g2_font_helvB18_tr);
         u8g2Fonts.setForegroundColor(RD);
-        if (D.props[i].hasT) {
-          snprintf(buf, sizeof(buf), "%.1f", D.props[i].t);
-        } else {
-          snprintf(buf, sizeof(buf), "--");
-        }
-        u8g2Fonts.setCursor(cx + 6, cy + 34);
-        u8g2Fonts.print(buf);
-        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+        if (D.props[i].hasT) snprintf(buf, sizeof(buf), "%.1f", D.props[i].t);
+        else snprintf(buf, sizeof(buf), "--");
+        tc(tempX + colW / 2, bodyY + 18, buf);
+
+        // C unit
+        u8g2Fonts.setFont(u8g2_font_micro_tr);
         u8g2Fonts.setForegroundColor(RD);
-        u8g2Fonts.print("C");
+        tc(tempX + colW / 2, bodyY + 26, "C");
 
-        // Humidity (next to temperature)
-        u8g2Fonts.setFont(u8g2_font_helvB14_tr);
+        // Humidity value — big
+        u8g2Fonts.setFont(u8g2_font_helvB18_tr);
         u8g2Fonts.setForegroundColor(BK);
-        if (D.props[i].hasRH) {
-          snprintf(buf, sizeof(buf), "%.0f", D.props[i].rh);
-        } else {
-          snprintf(buf, sizeof(buf), "--");
-        }
-        u8g2Fonts.setCursor(cx + cellW/2 + 8, cy + 34);
-        u8g2Fonts.print(buf);
-        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-        u8g2Fonts.print("%");
+        if (D.props[i].hasRH) snprintf(buf, sizeof(buf), "%.0f", D.props[i].rh);
+        else snprintf(buf, sizeof(buf), "--");
+        tc(humidX + colW / 2, bodyY + 18, buf);
 
-        // Labels under values
+        // % unit
         u8g2Fonts.setFont(u8g2_font_micro_tr);
         u8g2Fonts.setForegroundColor(BK);
-        u8g2Fonts.setCursor(cx + 6, cy + 43);
-        u8g2Fonts.print("temp");
-        u8g2Fonts.setCursor(cx + cellW/2 + 8, cy + 43);
-        u8g2Fonts.print("humid");
+        tc(humidX + colW / 2, bodyY + 26, "%");
+
+        // Vertical divider
+        display.drawLine(cx + colW, bodyY + 4, cx + colW, cy + cellH - 12, BK);
+
+        // Min/max row at bottom
+        if (D.props[i].hasMinMax) {
+          u8g2Fonts.setFont(u8g2_font_micro_tr);
+          u8g2Fonts.setForegroundColor(BK);
+          snprintf(buf, sizeof(buf), "%.1f / %.1f", D.props[i].tMin, D.props[i].tMax);
+          tc(cx + cellW / 2, cy + cellH - 3, buf);
+        }
       }
     }
 
