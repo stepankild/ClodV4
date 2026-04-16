@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { iotService } from '../../services/iotService';
 import { useSensors } from '../../hooks/useSensors';
 import IrrigationPanel from '../../components/IoT/IrrigationPanel';
+import TimelapsePanel from '../../components/IoT/TimelapsePanel';
 
 const IoTOverview = () => {
   const { t } = useTranslation();
@@ -257,6 +258,12 @@ const IoTOverview = () => {
       <div className="mt-8">
         <h2 className="text-lg font-semibold text-dark-200 mb-4">🌱 Материнская</h2>
         <IrrigationPanel zoneId="zone-1" />
+      </div>
+
+      {/* Timelapse — Vegetation camera */}
+      <div className="mt-8">
+        <h2 className="text-lg font-semibold text-dark-200 mb-4">🎬 Вегетация — камера</h2>
+        <TimelapsePanel zone="vega" title="Таймлапс вегетации" />
       </div>
     </div>
   );

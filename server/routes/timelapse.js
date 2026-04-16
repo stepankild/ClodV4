@@ -1,0 +1,71 @@
+import express from 'express';
+import { protect } from '../middleware/auth.js';
+
+const router = express.Router();
+
+// Tailscale Funnel exposes Pi's timelapse server at:
+//   https://farm.taild7c160.ts.net/timelapse/*
+const FARM_URL = 'https://farm.taild7c160.ts.net/timelapse';
+const API_KEY = process.env.SENSOR_API_KEY;
+
+router.use(protect);
+
+// GET /api/timelapse/:zone/photos[?date=YYYY-MM-DD]
+router.get('/:zone/photos', async (req, res) => {
+  try {
+    const { zone } = req.params;
+    const { date } = req.query;
+    const qs = new URLSearchParams({ zone });
+    if (date) qs.set('date', date);
+    const r = await fetch(`${FARM_URL}/photos?${qs}`, {
+      headers: { 'X-API-Key': API_KEY },
+    });
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/timelapse/:zone/photo/:date/:name — proxy JPEG bytes
+router.get('/:zone/photo/:date/:name', async (req, res) => {
+  try {
+    const { zone, date, name } = req.params;
+    const r = await fetch(
+      `${FARM_URL}/photo/${encodeURIComponent(zone)}/${encodeURIComponent(date)}/${encodeURIComponent(name)}`,
+      { headers: { 'X-API-Key': API_KEY } }
+    );
+    if (!r.ok) return res.status(r.status).json({ error: 'not found' });
+    res.setHeader('Content-Type', r.headers.get('content-type') || 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    const buf = Buffer.from(await r.arrayBuffer());
+    res.send(buf);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/timelapse/:zone/video/month — stream monthly timelapse video
+router.get('/:zone/video/month', async (req, res) => {
+  try {
+    const { zone } = req.params;
+    const r = await fetch(`${FARM_URL}/video/${encodeURIComponent(zone)}/month`, {
+      headers: { 'X-API-Key': API_KEY },
+    });
+    if (!r.ok) return res.status(r.status).json({ error: 'video not ready' });
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Cache-Control', 'public, max-age=1800');
+    // Stream body directly
+    const reader = r.body.getReader();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+    res.end();
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+export default router;

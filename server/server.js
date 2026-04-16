@@ -34,6 +34,7 @@ import motherRoomRoutes from './routes/motherRoom.js';
 import zoneRoutes from './routes/zones.js';
 import sensorIngestRoutes from './routes/sensorIngest.js';
 import cameraRoutes from './routes/camera.js';
+import timelapseRoutes from './routes/timelapse.js';
 import { detectLanguage } from './middleware/lang.js';
 
 console.log('=== IMPORTS DONE ===');
@@ -155,6 +156,7 @@ app.use('/api/mother-room', motherRoomRoutes);
 app.use('/api/zones', zoneRoutes);
 app.use('/api/sensor-data', sensorIngestRoutes);
 app.use('/api/camera', cameraRoutes);
+app.use('/api/timelapse', timelapseRoutes);
 
 // Health check (Railway and load balancers ping this or /)
 app.get('/api/health', (req, res) => {
