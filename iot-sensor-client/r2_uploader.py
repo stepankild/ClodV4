@@ -103,13 +103,13 @@ def _put(local_path: Path, key: str):
 
 def upload_photo_variants(local_path, zone: str, date: str, name: str):
     """
-    Upload full + medium + thumb variants.
+    Upload full + thumb variants.
     local_path: original JPEG (high res)
     zone: e.g. 'vega'
     date: YYYY-MM-DD
     name: HH-MM (no .jpg extension)
 
-    Returns dict of public URLs (full, medium, thumb) or None on failure.
+    Returns dict of public URLs (full, thumb) or None on failure.
     """
     src = Path(local_path)
     if not src.is_file():
@@ -119,7 +119,7 @@ def upload_photo_variants(local_path, zone: str, date: str, name: str):
     base_key = f"{zone}/{date}/{name}"
     results = {}
 
-    # full (original) — ~320KB at Tapo C110 default
+    # full (original) — ~780KB at Tapo C110 default
     try:
         size = _put(src, f"{base_key}.jpg")
         results["full"] = f"{R2_PUBLIC_URL}/{base_key}.jpg"
@@ -128,19 +128,7 @@ def upload_photo_variants(local_path, zone: str, date: str, name: str):
         print(f"R2 full upload failed: {e}", file=sys.stderr)
         return None
 
-    # medium ~1024px (used in archive viewer)
-    try:
-        med = _build_variant(src, 1024, 4)
-        try:
-            size = _put(med, f"{base_key}-medium.jpg")
-            results["medium"] = f"{R2_PUBLIC_URL}/{base_key}-medium.jpg"
-            print(f"R2 medium: {size:.0f} KB")
-        finally:
-            med.unlink(missing_ok=True)
-    except Exception as e:
-        print(f"R2 medium upload failed: {e}", file=sys.stderr)
-
-    # thumb 320px (used in archive grid + preview)
+    # thumb 320px (used in archive grid + viewer placeholder)
     try:
         thumb = _build_variant(src, 320, 5)
         try:

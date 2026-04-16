@@ -33,8 +33,7 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
   const totalCount = useMemo(() => days.reduce((s, d) => s + (d.count || 0), 0), [days]);
   const latestDay = days[0];
   const latestUrl = latestDay?.urls?.[latestDay.urls.length - 1];
-  const previewUrl = latestUrl?.medium || latestUrl?.thumb || null;
-  const latestName = latestUrl?.name;
+  const latestLabel = latestUrl ? `${latestDay.date} · ${latestUrl.name.replace('-', ':')}` : null;
 
   return (
     <div className="bg-dark-800 border border-dark-700 rounded-lg p-5">
@@ -49,35 +48,19 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
         </div>
       </div>
 
-      {/* Preview */}
-      <div className="relative bg-dark-900 rounded-md overflow-hidden mb-3 aspect-video flex items-center justify-center">
-        {previewUrl ? (
-          <img
-            src={previewUrl}
-            alt="Last snapshot"
-            className="w-full h-full object-cover"
-            loading="lazy"
-            onError={(e) => { e.target.style.display = 'none'; }}
-          />
-        ) : (
-          <div className="text-dark-500 text-sm">Снимки появятся после первого часа</div>
-        )}
-        {latestName && (
-          <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
-            {latestDay.date} · {latestName.replace('-', ':')}
-          </div>
-        )}
-      </div>
+      {latestLabel && (
+        <div className="text-xs text-dark-500 mb-3">
+          Последний снимок: <span className="text-dark-300">{latestLabel}</span>
+        </div>
+      )}
 
-      <div className="flex gap-2">
-        <button
-          className="flex-1 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-100 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={totalCount === 0}
-          onClick={() => setOpenArchive(true)}
-        >
-          📅 Архив
-        </button>
-      </div>
+      <button
+        className="w-full px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-100 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        disabled={totalCount === 0}
+        onClick={() => setOpenArchive(true)}
+      >
+        📅 Архив
+      </button>
 
       {openArchive && (
         <ArchiveModal days={days} onClose={() => setOpenArchive(false)} />
@@ -167,7 +150,7 @@ function ArchiveModal({ days, onClose }) {
             className="absolute inset-0 bg-black/90 flex items-center justify-center"
             onClick={() => setViewerIndex(null)}
           >
-            {/* Blurred thumb while medium loads */}
+            {/* Blurred thumb while full photo loads */}
             {!viewerLoaded && (
               <img
                 key={`thumb-${urls[viewerIndex].name}`}
@@ -177,8 +160,8 @@ function ArchiveModal({ days, onClose }) {
               />
             )}
             <img
-              key={`medium-${urls[viewerIndex].name}`}
-              src={urls[viewerIndex].medium}
+              key={`full-${urls[viewerIndex].name}`}
+              src={urls[viewerIndex].full}
               alt=""
               className={`max-w-full max-h-full object-contain transition-opacity duration-200 ${viewerLoaded ? 'opacity-100' : 'opacity-0'}`}
               onLoad={() => setViewerLoaded(true)}
@@ -191,17 +174,8 @@ function ArchiveModal({ days, onClose }) {
               </div>
             )}
             <div className="absolute top-4 right-4 text-white text-xl cursor-pointer select-none" onClick={() => setViewerIndex(null)}>×</div>
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-sm px-4 py-1 rounded flex items-center gap-3">
-              <span>{selected.date} · {urls[viewerIndex].name.replace('-', ':')}</span>
-              <a
-                href={urls[viewerIndex].full}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="text-primary-300 hover:text-primary-200 text-xs underline"
-              >
-                оригинал
-              </a>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-sm px-4 py-1 rounded">
+              {selected.date} · {urls[viewerIndex].name.replace('-', ':')}
             </div>
             {viewerIndex > 0 && (
               <button

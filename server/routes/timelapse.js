@@ -63,6 +63,7 @@ async function listZone(zone) {
       if (stem.endsWith('-thumb') || stem.endsWith('-medium')) continue;
       if (!days.has(date)) days.set(date, new Set());
       days.get(date).add(stem);
+      // medium suffix kept for backward-compat filter only — new captures are full+thumb only
     }
     ContinuationToken = r.IsTruncated ? r.NextContinuationToken : undefined;
   } while (ContinuationToken);
@@ -81,7 +82,6 @@ async function listZone(zone) {
         urls: photos.map(name => ({
           name,
           full: publicUrl(`${zone}/${date}/${name}.jpg`),
-          medium: publicUrl(`${zone}/${date}/${name}-medium.jpg`),
           thumb: publicUrl(`${zone}/${date}/${name}-thumb.jpg`),
         })),
       };
