@@ -2,17 +2,15 @@ import { useState, useEffect, useMemo } from 'react';
 import api from '../../services/api';
 
 /**
- * Timelapse browser for a zone. Shows:
- *  - latest thumbnail
- *  - "Архив" modal: pick a day -> grid of hourly snapshots -> fullscreen viewer
- *  - "Timelapse за месяц" modal: video player streaming /video/month
+ * Timelapse browser for a zone.
+ * Photos are served directly from Cloudflare R2 (CDN) — no proxy through server.
+ * Server returns list of days + pre-built URLs: { thumb, medium, full }.
  */
 export default function TimelapsePanel({ zone = 'vega', title = 'Таймлапс' }) {
   const [days, setDays] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openArchive, setOpenArchive] = useState(false);
-  const [openVideo, setOpenVideo] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,13 +32,9 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
 
   const totalCount = useMemo(() => days.reduce((s, d) => s + (d.count || 0), 0), [days]);
   const latestDay = days[0];
-  const latestPhoto = latestDay?.photos?.[latestDay.photos.length - 1];
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : '';
-  const tq = `?token=${encodeURIComponent(token || '')}`;
-  const photoUrl = (date, name) => `/api/timelapse/${zone}/photo/${date}/${name}.jpg${tq}`;
-  const thumbUrl = (date, name) => `/api/timelapse/${zone}/thumb/${date}/${name}.jpg${tq}`;
-  const videoUrl = `/api/timelapse/${zone}/video/month${tq}`;
-  const previewUrl = latestPhoto ? thumbUrl(latestDay.date, latestPhoto) : null;
+  const latestUrl = latestDay?.urls?.[latestDay.urls.length - 1];
+  const previewUrl = latestUrl?.medium || latestUrl?.thumb || null;
+  const latestName = latestUrl?.name;
 
   return (
     <div className="bg-dark-800 border border-dark-700 rounded-lg p-5">
@@ -62,14 +56,15 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
             src={previewUrl}
             alt="Last snapshot"
             className="w-full h-full object-cover"
+            loading="lazy"
             onError={(e) => { e.target.style.display = 'none'; }}
           />
         ) : (
           <div className="text-dark-500 text-sm">Снимки появятся после первого часа</div>
         )}
-        {latestPhoto && (
+        {latestName && (
           <div className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
-            {latestDay.date} · {latestPhoto.replace('-', ':')}
+            {latestDay.date} · {latestName.replace('-', ':')}
           </div>
         )}
       </div>
@@ -82,37 +77,38 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
         >
           📅 Архив
         </button>
-        <button
-          className="flex-1 px-3 py-2 bg-primary-700 hover:bg-primary-600 text-white rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={totalCount < 5}
-          onClick={() => setOpenVideo(true)}
-        >
-          ▶️ Timelapse за месяц
-        </button>
       </div>
 
       {openArchive && (
-        <ArchiveModal days={days} photoUrl={photoUrl} thumbUrl={thumbUrl} onClose={() => setOpenArchive(false)} />
-      )}
-      {openVideo && (
-        <VideoModal videoUrl={videoUrl} onClose={() => setOpenVideo(false)} />
+        <ArchiveModal days={days} onClose={() => setOpenArchive(false)} />
       )}
     </div>
   );
 }
 
-function ArchiveModal({ days, photoUrl, thumbUrl, onClose }) {
+function ArchiveModal({ days, onClose }) {
   const [selectedDate, setSelectedDate] = useState(days[0]?.date);
   const [viewerIndex, setViewerIndex] = useState(null);
   const [viewerLoaded, setViewerLoaded] = useState(false);
   const selected = days.find(d => d.date === selectedDate);
 
-  const photos = selected?.photos || [];
+  const urls = selected?.urls || [];
 
-  // Reset loaded flag whenever viewer index changes
   useEffect(() => {
     setViewerLoaded(false);
   }, [viewerIndex, selectedDate]);
+
+  // Keyboard nav in viewer
+  useEffect(() => {
+    if (viewerIndex == null) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') setViewerIndex(null);
+      else if (e.key === 'ArrowLeft' && viewerIndex > 0) setViewerIndex(viewerIndex - 1);
+      else if (e.key === 'ArrowRight' && viewerIndex < urls.length - 1) setViewerIndex(viewerIndex + 1);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [viewerIndex, urls.length]);
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -144,48 +140,45 @@ function ArchiveModal({ days, photoUrl, thumbUrl, onClose }) {
 
           {/* Photos grid */}
           <div className="flex-1 overflow-y-auto p-4">
-            {photos.length === 0 ? (
+            {urls.length === 0 ? (
               <div className="text-dark-500 text-sm">Нет фото в этот день</div>
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
-                {photos.map((name, i) => {
-                  const url = thumbUrl(selected.date, name);
-                  return (
-                    <button
-                      key={name}
-                      onClick={() => setViewerIndex(i)}
-                      className="relative aspect-video bg-dark-800 rounded overflow-hidden hover:ring-2 hover:ring-primary-500 transition-all"
-                    >
-                      <img src={url} alt={name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
-                      <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-1 py-0.5 text-center">
-                        {name.replace('-', ':')}
-                      </div>
-                    </button>
-                  );
-                })}
+                {urls.map((u, i) => (
+                  <button
+                    key={u.name}
+                    onClick={() => setViewerIndex(i)}
+                    className="relative aspect-video bg-dark-800 rounded overflow-hidden hover:ring-2 hover:ring-primary-500 transition-all"
+                  >
+                    <img src={u.thumb} alt={u.name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-1 py-0.5 text-center">
+                      {u.name.replace('-', ':')}
+                    </div>
+                  </button>
+                ))}
               </div>
             )}
           </div>
         </div>
 
         {/* Full-size viewer */}
-        {viewerIndex != null && photos[viewerIndex] && (
+        {viewerIndex != null && urls[viewerIndex] && (
           <div
             className="absolute inset-0 bg-black/90 flex items-center justify-center"
             onClick={() => setViewerIndex(null)}
           >
-            {/* Low-res thumb shown immediately while full photo loads */}
+            {/* Blurred thumb while medium loads */}
             {!viewerLoaded && (
               <img
-                key={`thumb-${selected.date}-${photos[viewerIndex]}`}
-                src={thumbUrl(selected.date, photos[viewerIndex])}
+                key={`thumb-${urls[viewerIndex].name}`}
+                src={urls[viewerIndex].thumb}
                 alt=""
                 className="absolute max-w-full max-h-full object-contain blur-sm"
               />
             )}
             <img
-              key={`full-${selected.date}-${photos[viewerIndex]}`}
-              src={photoUrl(selected.date, photos[viewerIndex])}
+              key={`medium-${urls[viewerIndex].name}`}
+              src={urls[viewerIndex].medium}
               alt=""
               className={`max-w-full max-h-full object-contain transition-opacity duration-200 ${viewerLoaded ? 'opacity-100' : 'opacity-0'}`}
               onLoad={() => setViewerLoaded(true)}
@@ -194,12 +187,21 @@ function ArchiveModal({ days, photoUrl, thumbUrl, onClose }) {
             {!viewerLoaded && (
               <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1.5 rounded flex items-center gap-2">
                 <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                загрузка фото…
+                загрузка…
               </div>
             )}
-            <div className="absolute top-4 right-4 text-white text-xl cursor-pointer" onClick={() => setViewerIndex(null)}>×</div>
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-sm px-4 py-1 rounded">
-              {selected.date} · {photos[viewerIndex].replace('-', ':')}
+            <div className="absolute top-4 right-4 text-white text-xl cursor-pointer select-none" onClick={() => setViewerIndex(null)}>×</div>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-sm px-4 py-1 rounded flex items-center gap-3">
+              <span>{selected.date} · {urls[viewerIndex].name.replace('-', ':')}</span>
+              <a
+                href={urls[viewerIndex].full}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="text-primary-300 hover:text-primary-200 text-xs underline"
+              >
+                оригинал
+              </a>
             </div>
             {viewerIndex > 0 && (
               <button
@@ -207,7 +209,7 @@ function ArchiveModal({ days, photoUrl, thumbUrl, onClose }) {
                 className="absolute left-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white text-3xl w-12 h-12 rounded-full"
               >‹</button>
             )}
-            {viewerIndex < photos.length - 1 && (
+            {viewerIndex < urls.length - 1 && (
               <button
                 onClick={(e) => { e.stopPropagation(); setViewerIndex(viewerIndex + 1); }}
                 className="absolute right-4 top-1/2 -translate-y-1/2 bg-black/60 hover:bg-black/80 text-white text-3xl w-12 h-12 rounded-full"
@@ -215,35 +217,6 @@ function ArchiveModal({ days, photoUrl, thumbUrl, onClose }) {
             )}
           </div>
         )}
-      </div>
-    </div>
-  );
-}
-
-function VideoModal({ videoUrl, onClose }) {
-  return (
-    <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div
-        className="bg-dark-900 rounded-lg border border-dark-700 max-w-4xl w-full"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-center justify-between p-4 border-b border-dark-700">
-          <h3 className="text-lg font-semibold text-dark-100">▶️ Timelapse за месяц</h3>
-          <button onClick={onClose} className="text-dark-400 hover:text-dark-200 text-2xl leading-none">×</button>
-        </div>
-        <div className="p-4">
-          <video
-            src={videoUrl}
-            controls
-            autoPlay
-            className="w-full rounded"
-          >
-            Ваш браузер не поддерживает видео
-          </video>
-          <p className="text-xs text-dark-500 mt-2">
-            Видео собирается за последние 30 дней. При первом открытии генерация может занять 1-2 минуты.
-          </p>
-        </div>
       </div>
     </div>
   );

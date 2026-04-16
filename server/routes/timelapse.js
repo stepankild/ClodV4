@@ -1,114 +1,112 @@
 import express from 'express';
+import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { protect } from '../middleware/auth.js';
-import { verifyAccessToken } from '../utils/jwt.js';
-import User from '../models/User.js';
 
 const router = express.Router();
 
-// Tailscale Funnel exposes Pi's timelapse server at:
-//   https://farm.taild7c160.ts.net/timelapse/*
-const FARM_URL = 'https://farm.taild7c160.ts.net/timelapse';
-const API_KEY = process.env.SENSOR_API_KEY;
+// --- Cloudflare R2 config ---
+const {
+  R2_ACCOUNT_ID,
+  R2_ACCESS_KEY_ID,
+  R2_SECRET_ACCESS_KEY,
+  R2_BUCKET = 'truegrow-timelapse',
+  R2_PUBLIC_URL = '',
+} = process.env;
 
-// Auth that also accepts ?token=... in query (needed for <img>/<video> tags
-// which can't send Authorization header).
-async function protectFlexible(req, res, next) {
-  // If standard Authorization header is present, fall through to normal protect
-  if (req.headers.authorization?.startsWith('Bearer ')) {
-    return protect(req, res, next);
+let s3 = null;
+function getS3() {
+  if (s3) return s3;
+  if (!R2_ACCOUNT_ID || !R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) {
+    throw new Error('R2 credentials missing (R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY)');
   }
-  // Otherwise check ?token= query
-  const token = req.query.token;
-  if (!token) return res.status(401).json({ message: 'Unauthorized' });
-  try {
-    const decoded = verifyAccessToken(token);
-    const user = await User.findById(decoded.userId).select('-password -refreshToken');
-    if (!user || !user.isActive || user.deletedAt) {
-      return res.status(401).json({ message: 'Unauthorized' });
-    }
-    const tokenV = decoded.v ?? 0;
-    const userV = user.tokenVersion || 0;
-    if (tokenV !== userV) {
-      return res.status(401).json({ message: 'Token expired' });
-    }
-    req.user = user;
-    next();
-  } catch {
-    return res.status(401).json({ message: 'Invalid token' });
-  }
+  s3 = new S3Client({
+    region: 'auto',
+    endpoint: `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: {
+      accessKeyId: R2_ACCESS_KEY_ID,
+      secretAccessKey: R2_SECRET_ACCESS_KEY,
+    },
+  });
+  return s3;
 }
 
-// GET /api/timelapse/:zone/photos[?date=YYYY-MM-DD]
+const publicUrl = (key) => `${R2_PUBLIC_URL.replace(/\/$/, '')}/${key}`;
+
+// Light in-memory cache for listings (60s TTL) — R2 list is fast but
+// saves a round-trip on back-and-forth navigation.
+const listCache = new Map(); // zone -> { at: ms, data }
+const LIST_TTL_MS = 60 * 1000;
+
+async function listZone(zone) {
+  const cached = listCache.get(zone);
+  if (cached && Date.now() - cached.at < LIST_TTL_MS) return cached.data;
+
+  const client = getS3();
+  const prefix = `${zone}/`;
+  const days = new Map(); // date -> Set of names
+
+  let ContinuationToken;
+  do {
+    const r = await client.send(new ListObjectsV2Command({
+      Bucket: R2_BUCKET,
+      Prefix: prefix,
+      ContinuationToken,
+    }));
+    for (const obj of r.Contents || []) {
+      const key = obj.Key;
+      if (!key.endsWith('.jpg')) continue;
+      const rel = key.slice(prefix.length); // YYYY-MM-DD/HH-MM[-thumb|-medium].jpg
+      const parts = rel.split('/');
+      if (parts.length !== 2) continue;
+      const [date, fname] = parts;
+      const stem = fname.slice(0, -4);
+      if (stem.endsWith('-thumb') || stem.endsWith('-medium')) continue;
+      if (!days.has(date)) days.set(date, new Set());
+      days.get(date).add(stem);
+    }
+    ContinuationToken = r.IsTruncated ? r.NextContinuationToken : undefined;
+  } while (ContinuationToken);
+
+  const sortedDates = [...days.keys()].sort().reverse();
+  const data = {
+    publicUrl: R2_PUBLIC_URL,
+    days: sortedDates.map(date => {
+      const photos = [...days.get(date)].sort();
+      return {
+        date,
+        count: photos.length,
+        photos,
+        // URLs are built client-side from publicUrl + zone/date/name, but for
+        // convenience include them directly so frontend doesn't need to know the scheme.
+        urls: photos.map(name => ({
+          name,
+          full: publicUrl(`${zone}/${date}/${name}.jpg`),
+          medium: publicUrl(`${zone}/${date}/${name}-medium.jpg`),
+          thumb: publicUrl(`${zone}/${date}/${name}-thumb.jpg`),
+        })),
+      };
+    }),
+  };
+  listCache.set(zone, { at: Date.now(), data });
+  return data;
+}
+
+// GET /api/timelapse/:zone/photos — list days with photo URLs on R2
 router.get('/:zone/photos', protect, async (req, res) => {
   try {
-    const { zone } = req.params;
-    const { date } = req.query;
-    const qs = new URLSearchParams({ zone });
-    if (date) qs.set('date', date);
-    const r = await fetch(`${FARM_URL}/photos?${qs}`, {
-      headers: { 'X-API-Key': API_KEY },
-    });
-    const data = await r.json();
-    res.status(r.status).json(data);
+    const data = await listZone(req.params.zone);
+    res.json(data);
   } catch (e) {
+    console.error('timelapse list error:', e.message);
     res.status(500).json({ error: e.message });
   }
 });
 
-// GET /api/timelapse/:zone/photo/:date/:name — proxy JPEG bytes
-// GET /api/timelapse/:zone/thumb/:date/:name — proxy small JPEG thumbnail
-async function proxyImage(kind, req, res) {
-  try {
-    const { zone, date, name } = req.params;
-    const r = await fetch(
-      `${FARM_URL}/${kind}/${encodeURIComponent(zone)}/${encodeURIComponent(date)}/${encodeURIComponent(name)}`,
-      { headers: { 'X-API-Key': API_KEY } }
-    );
-    if (!r.ok) return res.status(r.status).json({ error: 'not found' });
-    res.setHeader('Content-Type', r.headers.get('content-type') || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
-    const cl = r.headers.get('content-length');
-    if (cl) res.setHeader('Content-Length', cl);
-    // Stream bytes through instead of buffering whole image
-    const reader = r.body.getReader();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      if (!res.write(value)) {
-        await new Promise((resolve) => res.once('drain', resolve));
-      }
-    }
-    res.end();
-  } catch (e) {
-    if (!res.headersSent) res.status(500).json({ error: e.message });
-    else res.end();
-  }
-}
-
-router.get('/:zone/photo/:date/:name', protectFlexible, (req, res) => proxyImage('photo', req, res));
-router.get('/:zone/thumb/:date/:name', protectFlexible, (req, res) => proxyImage('thumb', req, res));
-
-// GET /api/timelapse/:zone/video/month — stream monthly timelapse video
-router.get('/:zone/video/month', protectFlexible, async (req, res) => {
-  try {
-    const { zone } = req.params;
-    const r = await fetch(`${FARM_URL}/video/${encodeURIComponent(zone)}/month`, {
-      headers: { 'X-API-Key': API_KEY },
-    });
-    if (!r.ok) return res.status(r.status).json({ error: 'video not ready' });
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Cache-Control', 'public, max-age=1800');
-    // Stream body directly
-    const reader = r.body.getReader();
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      res.write(value);
-    }
-    res.end();
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
+// Videos are still served from Pi (small enough, generated on-demand, ~20MB).
+// Left in case we re-wire, but currently unused by the UI.
+router.get('/:zone/video/month', protect, async (req, res) => {
+  // Redirect to public R2 URL if/when video upload is wired; for now 501.
+  res.status(501).json({ error: 'monthly video not yet migrated to R2' });
 });
 
 export default router;
