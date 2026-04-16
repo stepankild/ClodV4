@@ -16,7 +16,7 @@ PORT = 8080
 class ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/display":
-            self._proxy_get(f"{REMOTE_BASE}/api/sensor-data/display/zone-1")
+            self._proxy_get(f"{REMOTE_BASE}/api/sensor-data/display/zone-2")
         else:
             self.send_response(404)
             self.end_headers()

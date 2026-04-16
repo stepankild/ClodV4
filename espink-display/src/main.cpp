@@ -21,6 +21,9 @@ U8G2_FOR_ADAFRUIT_GFX u8g2Fonts;
 #define H 300
 #define MAX_HIST 60
 
+#define MAX_PROPS 4
+struct Propagator { String loc; float t; float rh; int bat; bool hasT, hasRH, hasBat; };
+
 struct SData {
   String zoneName, timestamp;
   bool online;
@@ -31,6 +34,7 @@ struct SData {
   bool hasAirT, hasRH, hasRH2, hasCO2, hasLux, hasVPD, hasPhoto;
   float histT[MAX_HIST], histRH[MAX_HIST], histVPD[MAX_HIST];
   int histCount;
+  Propagator props[MAX_PROPS]; int propCount;
 } D;
 
 bool connectWiFi() {
@@ -97,6 +101,19 @@ bool fetchData() {
     i++;
   }
   D.histCount = i;
+
+  // Parse propagators
+  D.propCount = 0;
+  JsonArray props = doc["propagators"];
+  for (JsonObject p : props) {
+    if (D.propCount >= MAX_PROPS) break;
+    Propagator &pp = D.props[D.propCount];
+    pp.loc = (const char*)(p["loc"] | p["name"] | "");
+    pp.hasT = !p["t"].isNull(); pp.t = p["t"] | 0.0f;
+    pp.hasRH = !p["rh"].isNull(); pp.rh = p["rh"] | 0.0f;
+    pp.hasBat = !p["bat"].isNull(); pp.bat = p["bat"] | 0;
+    D.propCount++;
+  }
   return true;
 }
 
@@ -342,93 +359,106 @@ void drawDisplay() {
       }
     }
 
-    // ========== CHART AREA (152-280) ==========
+    // ========== PROPAGATORS AREA (152-280) ==========
     y = 152;
-    int chartH = 118;
-    int chartX = 4;
-    int chartW = W - 8;
-    int plotX = chartX + 28;
-    int plotW = chartW - 56;
-    int plotY = y + 14;
-    int plotH = chartH - 28;
+    int propH = 128;
+    int propX = 4;
+    int propW = W - 8;
 
-    // Chart frame
-    display.drawRect(chartX, y, chartW, chartH, BK);
+    // Outer frame
+    display.drawRect(propX, y, propW, propH, BK);
 
-    // Legend bar at top of chart
+    // Header bar
+    display.fillRect(propX, y, propW, 14, BK);
+    u8g2Fonts.setFontMode(1);
+    u8g2Fonts.setBackgroundColor(BK);
+    u8g2Fonts.setForegroundColor(WH);
+    u8g2Fonts.setFont(u8g2_font_helvB10_tr);
+    u8g2Fonts.setCursor(propX + 6, y + 11);
+    u8g2Fonts.print("PROPAGATORS");
+    u8g2Fonts.setBackgroundColor(WH);
+    u8g2Fonts.setForegroundColor(BK);
+
+    // Count in top-right
     u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-    int lx = plotX;
-    // Temp
-    display.fillRect(lx, y + 4, 10, 3, RD);
-    u8g2Fonts.setForegroundColor(RD);
-    u8g2Fonts.setCursor(lx + 13, y + 10);
-    u8g2Fonts.print("Temp");
-    lx += 50;
-    // RH
-    display.fillRect(lx, y + 4, 10, 3, BK);
+    u8g2Fonts.setBackgroundColor(BK);
+    u8g2Fonts.setForegroundColor(WH);
+    snprintf(buf, sizeof(buf), "%d", D.propCount);
+    tr(propX + propW - 4, y + 11, buf);
+    u8g2Fonts.setBackgroundColor(WH);
     u8g2Fonts.setForegroundColor(BK);
-    u8g2Fonts.setCursor(lx + 13, y + 10);
-    u8g2Fonts.print("RH%");
-    lx += 40;
-    // VPD
-    display.fillRect(lx, y + 4, 10, 3, YL);
-    u8g2Fonts.setForegroundColor(YL);
-    u8g2Fonts.setCursor(lx + 13, y + 10);
-    u8g2Fonts.print("VPD");
 
-    // Time range label
-    u8g2Fonts.setForegroundColor(BK);
-    tr(plotX + plotW, y + 10, "24h");
+    if (D.propCount == 0) {
+      u8g2Fonts.setFont(u8g2_font_helvR10_tr);
+      tc(W/2, y + propH/2 + 5, "no data");
+    } else {
+      // 2x2 grid of propagator cards
+      int gridY = y + 16;
+      int gridH = propH - 16;
+      int cols = (D.propCount <= 2) ? D.propCount : 2;
+      int rows = (D.propCount <= 2) ? 1 : 2;
+      int cellW = (propW - 4) / cols;
+      int cellH = gridH / rows;
 
-    // Plot area background — subtle grid
-    for (int g = 1; g < 4; g++) {
-      int gy = plotY + (plotH * g) / 4;
-      for (int gx = plotX; gx < plotX + plotW; gx += 4) display.drawPixel(gx, gy, BK);
-    }
-    for (int g = 1; g < 4; g++) {
-      int gx = plotX + (plotW * g) / 4;
-      for (int gy = plotY; gy < plotY + plotH; gy += 4) display.drawPixel(gx, gy, BK);
-    }
+      for (int i = 0; i < D.propCount; i++) {
+        int col = i % cols;
+        int row = i / cols;
+        int cx = propX + 2 + col * cellW;
+        int cy = gridY + row * cellH;
 
-    // Draw chart lines
-    if (D.histCount > 1) {
-      float tLo, tHi, rLo, rHi, vLo, vHi;
-      getMinMax(D.histT, D.histCount, tLo, tHi);
-      getMinMax(D.histRH, D.histCount, rLo, rHi);
+        // Cell border
+        display.drawRect(cx, cy, cellW - 2, cellH - 2, BK);
 
-      chartLine(plotX, plotY, plotW, plotH, D.histT, D.histCount, tLo, tHi, RD);
-      chartLine(plotX, plotY, plotW, plotH, D.histRH, D.histCount, rLo, rHi, BK);
+        // Location (top)
+        u8g2Fonts.setFont(u8g2_font_helvB10_tr);
+        u8g2Fonts.setForegroundColor(BK);
+        u8g2Fonts.setCursor(cx + 4, cy + 12);
+        u8g2Fonts.print(D.props[i].loc.c_str());
 
-      // VPD
-      bool hasV = false;
-      for (int i = 0; i < D.histCount; i++) if (D.histVPD[i] > -900) { hasV = true; break; }
-      if (hasV) {
-        getMinMax(D.histVPD, D.histCount, vLo, vHi);
-        chartLine(plotX, plotY, plotW, plotH, D.histVPD, D.histCount, vLo, vHi, YL);
+        // Battery in top-right
+        if (D.props[i].hasBat) {
+          u8g2Fonts.setFont(u8g2_font_micro_tr);
+          u8g2Fonts.setForegroundColor(D.props[i].bat < 20 ? RD : BK);
+          snprintf(buf, sizeof(buf), "%d%%", D.props[i].bat);
+          tr(cx + cellW - 5, cy + 10, buf);
+        }
+
+        // Temperature (large)
+        u8g2Fonts.setFont(u8g2_font_helvB18_tr);
+        u8g2Fonts.setForegroundColor(RD);
+        if (D.props[i].hasT) {
+          snprintf(buf, sizeof(buf), "%.1f", D.props[i].t);
+        } else {
+          snprintf(buf, sizeof(buf), "--");
+        }
+        u8g2Fonts.setCursor(cx + 6, cy + 34);
+        u8g2Fonts.print(buf);
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+        u8g2Fonts.setForegroundColor(RD);
+        u8g2Fonts.print("C");
+
+        // Humidity (next to temperature)
+        u8g2Fonts.setFont(u8g2_font_helvB14_tr);
+        u8g2Fonts.setForegroundColor(BK);
+        if (D.props[i].hasRH) {
+          snprintf(buf, sizeof(buf), "%.0f", D.props[i].rh);
+        } else {
+          snprintf(buf, sizeof(buf), "--");
+        }
+        u8g2Fonts.setCursor(cx + cellW/2 + 8, cy + 34);
+        u8g2Fonts.print(buf);
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
+        u8g2Fonts.print("%");
+
+        // Labels under values
+        u8g2Fonts.setFont(u8g2_font_micro_tr);
+        u8g2Fonts.setForegroundColor(BK);
+        u8g2Fonts.setCursor(cx + 6, cy + 43);
+        u8g2Fonts.print("temp");
+        u8g2Fonts.setCursor(cx + cellW/2 + 8, cy + 43);
+        u8g2Fonts.print("humid");
       }
-
-      // Y-axis labels
-      u8g2Fonts.setFont(u8g2_font_micro_tr);
-      u8g2Fonts.setForegroundColor(RD);
-      snprintf(buf, sizeof(buf), "%.0f", tHi); tr(plotX - 2, plotY + 5, buf);
-      snprintf(buf, sizeof(buf), "%.0f", tLo); tr(plotX - 2, plotY + plotH, buf);
-
-      u8g2Fonts.setForegroundColor(BK);
-      snprintf(buf, sizeof(buf), "%.0f", rHi);
-      u8g2Fonts.setCursor(plotX + plotW + 3, plotY + 5); u8g2Fonts.print(buf);
-      snprintf(buf, sizeof(buf), "%.0f", rLo);
-      u8g2Fonts.setCursor(plotX + plotW + 3, plotY + plotH); u8g2Fonts.print(buf);
     }
-
-    // Time axis labels
-    u8g2Fonts.setFont(u8g2_font_micro_tr);
-    u8g2Fonts.setForegroundColor(BK);
-    int axY = plotY + plotH + 7;
-    tc(plotX, axY, "-24h");
-    tc(plotX + plotW / 4, axY, "-18h");
-    tc(plotX + plotW / 2, axY, "-12h");
-    tc(plotX + 3 * plotW / 4, axY, "-6h");
-    tc(plotX + plotW, axY, "now");
 
     // ========== FOOTER (282-299) ==========
     y = 283;
@@ -507,23 +537,75 @@ void drawError(const char* msg) {
   } while (display.nextPage());
 }
 
-bool isNightTime() {
-  if (D.timestamp.length() < 13) return false;
-  int hour = D.timestamp.substring(11, 13).toInt();
-  if (NIGHT_SLEEP_HOUR_START > NIGHT_SLEEP_HOUR_END) {
-    // e.g. 19..8 → night is 19,20,21,...,23,0,1,...,7
-    return hour >= NIGHT_SLEEP_HOUR_START || hour < NIGHT_SLEEP_HOUR_END;
+// Night window: NIGHT_SLEEP_HOUR_START:00 → NIGHT_SLEEP_HOUR_END:NIGHT_SLEEP_MINUTE_END
+// e.g. 19:00 → 08:30
+bool isNightTimeLocal(int hour, int minute) {
+  int nowM = hour * 60 + minute;
+  int startM = NIGHT_SLEEP_HOUR_START * 60;
+  int endM = NIGHT_SLEEP_HOUR_END * 60 + NIGHT_SLEEP_MINUTE_END;
+  if (startM > endM) {
+    // wrap around midnight: [startM..1440) or [0..endM)
+    return nowM >= startM || nowM < endM;
   }
-  return hour >= NIGHT_SLEEP_HOUR_START && hour < NIGHT_SLEEP_HOUR_END;
+  return nowM >= startM && nowM < endM;
 }
 
-uint64_t calcSleepMinutes() {
-  if (!isNightTime()) return SLEEP_MINUTES;
-  // Calculate minutes until NIGHT_SLEEP_HOUR_END
-  if (D.timestamp.length() < 16) return 60;
+bool isNightTime() {
+  if (D.timestamp.length() < 16) return false;
   int hour = D.timestamp.substring(11, 13).toInt();
   int minute = D.timestamp.substring(14, 16).toInt();
-  int wakeMinutes = NIGHT_SLEEP_HOUR_END * 60;
+  return isNightTimeLocal(hour, minute);
+}
+
+// Get local (Prague) time using system clock + NTP. Returns -1 if not synced yet.
+int getLocalHour() {
+  time_t now = time(nullptr);
+  if (now < 1700000000) return -1; // before 2023 = not synced
+  struct tm tm;
+  localtime_r(&now, &tm);
+  return tm.tm_hour;
+}
+
+int getLocalMinute() {
+  time_t now = time(nullptr);
+  if (now < 1700000000) return -1;
+  struct tm tm;
+  localtime_r(&now, &tm);
+  return tm.tm_min;
+}
+
+void drawSleeping() {
+  display.setFullWindow(); display.firstPage();
+  do {
+    display.fillScreen(BK);
+    u8g2Fonts.setFontMode(1); u8g2Fonts.setFontDirection(0);
+    u8g2Fonts.setBackgroundColor(BK);
+    u8g2Fonts.setForegroundColor(WH);
+    u8g2Fonts.setFont(u8g2_font_helvB24_tr);
+    tc(W/2, H/2 - 20, "SLEEPING");
+    u8g2Fonts.setFont(u8g2_font_helvR14_tr);
+    tc(W/2, H/2 + 10, "Zzz...");
+    u8g2Fonts.setFont(u8g2_font_helvR10_tr);
+    tc(W/2, H - 20, "wake at 08:30");
+  } while (display.nextPage());
+}
+
+// Sleep minutes based on NTP local time when possible, fallback to D.timestamp
+uint64_t calcSleepMinutes() {
+  int hour = getLocalHour();
+  int minute = getLocalMinute();
+  // Fallback to server timestamp if NTP not synced
+  if (hour < 0 && D.timestamp.length() >= 16) {
+    hour = D.timestamp.substring(11, 13).toInt();
+    minute = D.timestamp.substring(14, 16).toInt();
+  }
+  if (hour < 0) return SLEEP_MINUTES; // no time known
+
+  bool night = isNightTimeLocal(hour, minute);
+  if (!night) return SLEEP_MINUTES;
+
+  // Night: sleep until NIGHT_SLEEP_HOUR_END:NIGHT_SLEEP_MINUTE_END
+  int wakeMinutes = NIGHT_SLEEP_HOUR_END * 60 + NIGHT_SLEEP_MINUTE_END;
   int nowMinutes = hour * 60 + minute;
   int diff = wakeMinutes - nowMinutes;
   if (diff <= 0) diff += 24 * 60; // wrap around midnight
@@ -561,6 +643,26 @@ void setup() {
   }
   Serial.printf("OK %s RSSI=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
   Serial.printf("Free heap: %d\n", ESP.getFreeHeap());
+
+  // NTP sync for accurate local time (Prague = UTC+TZ_OFFSET)
+  configTime(TZ_OFFSET * 3600, 0, "pool.ntp.org", "time.nist.gov");
+  Serial.print("NTP...");
+  for (int i = 0; i < 20; i++) {
+    if (time(nullptr) > 1700000000) break;
+    delay(250);
+  }
+  int h = getLocalHour();
+  int m = getLocalMinute();
+  Serial.printf(" %02d:%02d\n", h, m);
+
+  // Night mode: show SLEEPING, skip fetch, deep sleep until morning
+  if (h >= 0 && isNightTimeLocal(h, m)) {
+    Serial.println("Night mode — drawing SLEEPING");
+    drawSleeping();
+    display.hibernate();
+    goToSleep();
+    return;
+  }
 
   // Retry API up to 3 times (SSL can be flaky)
   bool ok = false;

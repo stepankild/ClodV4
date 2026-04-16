@@ -2,7 +2,7 @@ import express from 'express';
 import SensorReading from '../models/SensorReading.js';
 import Zone from '../models/Zone.js';
 import HumidifierLog from '../models/HumidifierLog.js';
-import { setZoneOnlineFromHttp, setZigbeeData } from '../mqtt/index.js';
+import { setZoneOnlineFromHttp, setZigbeeData, getZigbeeDevices } from '../mqtt/index.js';
 
 const router = express.Router();
 
@@ -272,6 +272,15 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
       // Sparkline arrays (last 6h, ~30 points)
       hist: hist.map(h => ({ t: h.t, rh: h.rh, co2: h.co2 })),
       canopyHist: canopyHist.map(h => h.ct),
+      // Zigbee devices (propagators etc.) — in-memory + persisted
+      propagators: Object.entries({ ...(zone.zigbeeDevices || {}), ...getZigbeeDevices(zoneId) })
+        .map(([name, d]) => ({
+          name,
+          loc: d.location || name,
+          t: d.temperature != null ? Math.round(d.temperature * 10) / 10 : null,
+          rh: d.humidity != null ? Math.round(d.humidity * 10) / 10 : null,
+          bat: d.battery ?? null,
+        })),
     });
   } catch (error) {
     console.error('Display data error:', error);

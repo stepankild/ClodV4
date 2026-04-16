@@ -12,9 +12,18 @@
 #define API_KEY       "truegrow-sensor-key-2026"
 
 // ===== Timing =====
-#define SLEEP_MINUTES 2          // Deep sleep between refreshes
-#define TZ_OFFSET     1          // Timezone offset from UTC (CET=+1, CEST=+2)
+#define SLEEP_MINUTES 5          // Deep sleep between refreshes (day mode)
+#define TZ_OFFSET     2          // Timezone offset from UTC (CET=+1, CEST=+2)
 #define WIFI_TIMEOUT  15000      // ms to wait for WiFi
+
+// ===== Night mode =====
+// Display sleeps from 19:00 to 8:30 (shows "SLEEPING" screen, no refresh)
+#define NIGHT_SLEEP_HOUR_START 19
+#define NIGHT_SLEEP_HOUR_END   8    // wake at 8:30 (END + half hour offset below)
+#define NIGHT_SLEEP_MINUTE_END 30
+
+// ===== Zone =====
+#define DISPLAY_ZONE "zone-2"      // Show data for Маternskaya zone
 
 // ===== ESPink-42 V3 (ESP32-S3) pinout =====
 #define EPD_DC    48
