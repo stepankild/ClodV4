@@ -30,6 +30,8 @@ TELEGRAM_BOT_TOKEN = "8688017942:AAGYuTi4q1b97kUjpls44ASra2Byr6DRXy0"
 TELEGRAM_CHAT_ID = "-1003862011656"  # TrueGrow Alerts
 
 PRESET_DAYS = [3, 7, 14, 30]
+LOCAL_RETENTION_DAYS = 90   # keep 90 days of photos on Pi (R2 has them forever)
+R2_RETENTION_DAYS = 365     # keep 1 year of photos on R2
 
 
 def collect_snapshots(zone: str, days: int):
@@ -159,6 +161,67 @@ def build_one(zone: str, days: int, telegram: bool = False, key_suffix: str | No
     return True, url
 
 
+def cleanup_local_photos(zone: str, keep_days: int):
+    """Delete date-folders older than keep_days from Pi. R2 keeps originals."""
+    base = INPUT_BASE_ROOT / zone
+    if not base.exists():
+        return 0
+    cutoff = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d")
+    deleted = 0
+    for day_dir in base.iterdir():
+        if not day_dir.is_dir() or len(day_dir.name) != 10:
+            continue
+        if day_dir.name < cutoff:
+            # Remove the whole day folder
+            import shutil
+            try:
+                shutil.rmtree(day_dir)
+                deleted += 1
+                print(f"  deleted old day: {day_dir.name}")
+            except Exception as e:
+                print(f"  failed to delete {day_dir}: {e}")
+    # Also clean stale thumbs_cache (not used anymore since migration to R2)
+    tc = Path("/home/stepan/timelapse/thumbs_cache")
+    if tc.exists():
+        import shutil
+        try:
+            shutil.rmtree(tc)
+            print("  removed dead thumbs_cache")
+        except Exception:
+            pass
+    return deleted
+
+
+def cleanup_r2_photos(zone: str, keep_days: int):
+    """Delete photo objects older than keep_days from R2 bucket."""
+    client = get_client()
+    cutoff = (datetime.now() - timedelta(days=keep_days)).strftime("%Y-%m-%d")
+    prefix = f"{zone}/"
+    to_delete = []
+    paginator = client.get_paginator("list_objects_v2")
+    for page in paginator.paginate(Bucket=R2_BUCKET, Prefix=prefix):
+        for obj in page.get("Contents", []) or []:
+            key = obj["Key"]
+            if "/videos/" in key:
+                continue  # videos are separate bucket area
+            if not key.endswith(".jpg"):
+                continue
+            # key like 'vega/YYYY-MM-DD/HH-MM.jpg' or '...-thumb.jpg'
+            parts = key[len(prefix):].split("/")
+            if len(parts) < 2 or len(parts[0]) != 10:
+                continue
+            if parts[0] < cutoff:
+                to_delete.append({"Key": key})
+    if not to_delete:
+        return 0
+    # Batch delete (1000 max per call)
+    for i in range(0, len(to_delete), 1000):
+        batch = to_delete[i:i + 1000]
+        client.delete_objects(Bucket=R2_BUCKET, Delete={"Objects": batch})
+    print(f"  R2: deleted {len(to_delete)} old objects (>{keep_days}d)")
+    return len(to_delete)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--zone", default="vega")
@@ -166,12 +229,20 @@ def main():
     p.add_argument("--all", action="store_true", help="Rebuild all preset periods (3/7/14/30)")
     p.add_argument("--telegram", action="store_true", help="Also send to Telegram alerts group")
     p.add_argument("--custom-key", help="Custom R2 key suffix (used for on-demand builds)")
+    p.add_argument("--no-cleanup", action="store_true", help="Skip retention cleanup (debug)")
     args = p.parse_args()
 
     if args.all:
         # Presets: always rebuild; telegram only for the 3-day build
         for n in PRESET_DAYS:
             build_one(args.zone, n, telegram=(n == 3))
+        if not args.no_cleanup:
+            print(f"Cleanup: keeping last {LOCAL_RETENTION_DAYS}d local + {R2_RETENTION_DAYS}d on R2")
+            cleanup_local_photos(args.zone, LOCAL_RETENTION_DAYS)
+            try:
+                cleanup_r2_photos(args.zone, R2_RETENTION_DAYS)
+            except Exception as e:
+                print(f"R2 cleanup failed (non-fatal): {e}")
         return 0
 
     if not args.days:
