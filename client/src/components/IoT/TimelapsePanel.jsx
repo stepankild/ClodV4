@@ -104,9 +104,15 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
 function ArchiveModal({ days, photoUrl, thumbUrl, onClose }) {
   const [selectedDate, setSelectedDate] = useState(days[0]?.date);
   const [viewerIndex, setViewerIndex] = useState(null);
+  const [viewerLoaded, setViewerLoaded] = useState(false);
   const selected = days.find(d => d.date === selectedDate);
 
   const photos = selected?.photos || [];
+
+  // Reset loaded flag whenever viewer index changes
+  useEffect(() => {
+    setViewerLoaded(false);
+  }, [viewerIndex, selectedDate]);
 
   return (
     <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
@@ -168,11 +174,29 @@ function ArchiveModal({ days, photoUrl, thumbUrl, onClose }) {
             className="absolute inset-0 bg-black/90 flex items-center justify-center"
             onClick={() => setViewerIndex(null)}
           >
+            {/* Low-res thumb shown immediately while full photo loads */}
+            {!viewerLoaded && (
+              <img
+                key={`thumb-${selected.date}-${photos[viewerIndex]}`}
+                src={thumbUrl(selected.date, photos[viewerIndex])}
+                alt=""
+                className="absolute max-w-full max-h-full object-contain blur-sm"
+              />
+            )}
             <img
+              key={`full-${selected.date}-${photos[viewerIndex]}`}
               src={photoUrl(selected.date, photos[viewerIndex])}
               alt=""
-              className="max-w-full max-h-full object-contain"
+              className={`max-w-full max-h-full object-contain transition-opacity duration-200 ${viewerLoaded ? 'opacity-100' : 'opacity-0'}`}
+              onLoad={() => setViewerLoaded(true)}
+              onError={() => setViewerLoaded(true)}
             />
+            {!viewerLoaded && (
+              <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-black/70 text-white text-xs px-3 py-1.5 rounded flex items-center gap-2">
+                <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                загрузка фото…
+              </div>
+            )}
             <div className="absolute top-4 right-4 text-white text-xl cursor-pointer" onClick={() => setViewerIndex(null)}>×</div>
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 bg-black/60 text-white text-sm px-4 py-1 rounded">
               {selected.date} · {photos[viewerIndex].replace('-', ':')}

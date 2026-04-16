@@ -24,6 +24,7 @@ API_KEY = "truegrow-sensor-key-2026"
 BASE_DIR = Path("/home/stepan/timelapse")
 VIDEO_CACHE_DIR = BASE_DIR / "videos_cache"
 THUMB_CACHE_DIR = BASE_DIR / "thumbs_cache"
+MEDIUM_CACHE_DIR = BASE_DIR / "medium_cache"
 
 _video_lock = threading.Lock()
 

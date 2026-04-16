@@ -67,10 +67,21 @@ async function proxyImage(kind, req, res) {
     if (!r.ok) return res.status(r.status).json({ error: 'not found' });
     res.setHeader('Content-Type', r.headers.get('content-type') || 'image/jpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
-    const buf = Buffer.from(await r.arrayBuffer());
-    res.send(buf);
+    const cl = r.headers.get('content-length');
+    if (cl) res.setHeader('Content-Length', cl);
+    // Stream bytes through instead of buffering whole image
+    const reader = r.body.getReader();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (!res.write(value)) {
+        await new Promise((resolve) => res.once('drain', resolve));
+      }
+    }
+    res.end();
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    if (!res.headersSent) res.status(500).json({ error: e.message });
+    else res.end();
   }
 }
 
