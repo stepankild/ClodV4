@@ -218,15 +218,14 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
     ]);
     const dayH = totalCount > 0 ? Math.round((dayCount / totalCount) * 240) / 10 : null;
 
-    // VPD
+    // VPD = SVP(airTemp) × (1 - RH/100), SHT45 temp preferred
     let vpd = null;
-    const canopyT = lastReading.temperatures?.find(t => t.location === 'canopy')?.value;
-    const airT = lastReading.temperature;
+    const sht45T = lastReading.temperatures?.find(t => t.sensorId === 'sht45' || (t.location || '').includes('sht45'))?.value;
+    const airT = sht45T ?? lastReading.temperature;
     const rh = lastReading.humidity_sht45 ?? lastReading.humidity;
-    if (canopyT != null && airT != null && rh != null) {
-      const svpL = 0.6108 * Math.exp(17.27 * canopyT / (canopyT + 237.3));
-      const svpA = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
-      vpd = Math.round(Math.max(0, svpL - svpA * rh / 100) * 100) / 100;
+    if (airT != null && rh != null) {
+      const svp = 0.6108 * Math.exp(17.27 * airT / (airT + 237.3));
+      vpd = Math.round(Math.max(0, svp * (1 - rh / 100)) * 100) / 100;
     }
 
     // Sparkline history: last 24h, ~48 points (every 30 min)
