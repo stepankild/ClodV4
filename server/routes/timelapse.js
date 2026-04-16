@@ -56,22 +56,26 @@ router.get('/:zone/photos', protect, async (req, res) => {
 });
 
 // GET /api/timelapse/:zone/photo/:date/:name — proxy JPEG bytes
-router.get('/:zone/photo/:date/:name', protectFlexible, async (req, res) => {
+// GET /api/timelapse/:zone/thumb/:date/:name — proxy small JPEG thumbnail
+async function proxyImage(kind, req, res) {
   try {
     const { zone, date, name } = req.params;
     const r = await fetch(
-      `${FARM_URL}/photo/${encodeURIComponent(zone)}/${encodeURIComponent(date)}/${encodeURIComponent(name)}`,
+      `${FARM_URL}/${kind}/${encodeURIComponent(zone)}/${encodeURIComponent(date)}/${encodeURIComponent(name)}`,
       { headers: { 'X-API-Key': API_KEY } }
     );
     if (!r.ok) return res.status(r.status).json({ error: 'not found' });
     res.setHeader('Content-Type', r.headers.get('content-type') || 'image/jpeg');
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'public, max-age=86400, immutable');
     const buf = Buffer.from(await r.arrayBuffer());
     res.send(buf);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
-});
+}
+
+router.get('/:zone/photo/:date/:name', protectFlexible, (req, res) => proxyImage('photo', req, res));
+router.get('/:zone/thumb/:date/:name', protectFlexible, (req, res) => proxyImage('thumb', req, res));
 
 // GET /api/timelapse/:zone/video/month — stream monthly timelapse video
 router.get('/:zone/video/month', protectFlexible, async (req, res) => {

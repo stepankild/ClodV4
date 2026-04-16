@@ -23,6 +23,7 @@ PORT = 8090
 API_KEY = "truegrow-sensor-key-2026"
 BASE_DIR = Path("/home/stepan/timelapse")
 VIDEO_CACHE_DIR = BASE_DIR / "videos_cache"
+THUMB_CACHE_DIR = BASE_DIR / "thumbs_cache"
 
 _video_lock = threading.Lock()
 
@@ -158,19 +159,36 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                 date = query.get("date", [None])[0]
                 return self._send_json(200, {"days": list_photos(zone, date)})
 
-            # /photo/<zone>/<date>/<time>.jpg
-            if path.startswith("/photo/"):
-                parts = path[len("/photo/"):].split("/")
-                if len(parts) != 3 or not parts[2].endswith(".jpg"):
-                    return self._send_json(404, {"error": "not found"})
-                zone, date, name = parts
-                # Safety: only allow pattern YYYY-MM-DD and HH-MM.jpg
-                if len(date) != 10 or len(name) > 16:
-                    return self._send_json(400, {"error": "bad path"})
-                p = BASE_DIR / zone / date / name
-                if not p.is_file() or BASE_DIR not in p.resolve().parents:
-                    return self._send_json(404, {"error": "not found"})
-                return self._send_file(p, "image/jpeg")
+            # /photo/<zone>/<date>/<time>.jpg or /thumb/<zone>/<date>/<time>.jpg
+            for prefix, is_thumb in (("/photo/", False), ("/thumb/", True)):
+                if path.startswith(prefix):
+                    parts = path[len(prefix):].split("/")
+                    if len(parts) != 3 or not parts[2].endswith(".jpg"):
+                        return self._send_json(404, {"error": "not found"})
+                    zone, date, name = parts
+                    if len(date) != 10 or len(name) > 16:
+                        return self._send_json(400, {"error": "bad path"})
+                    full = BASE_DIR / zone / date / name
+                    if not full.is_file() or BASE_DIR not in full.resolve().parents:
+                        return self._send_json(404, {"error": "not found"})
+                    if is_thumb:
+                        # Cached thumbnail (320px wide JPEG ~15-20 KB)
+                        thumb_dir = THUMB_CACHE_DIR / zone / date
+                        thumb_dir.mkdir(parents=True, exist_ok=True)
+                        thumb = thumb_dir / name
+                        if not thumb.exists() or thumb.stat().st_mtime < full.stat().st_mtime:
+                            try:
+                                subprocess.run(
+                                    ["ffmpeg", "-y", "-i", str(full),
+                                     "-vf", "scale=320:-2",
+                                     "-q:v", "5", str(thumb)],
+                                    capture_output=True, timeout=15,
+                                )
+                            except Exception as e:
+                                print(f"thumb error: {e}")
+                                return self._send_file(full, "image/jpeg")
+                        return self._send_file(thumb if thumb.exists() else full, "image/jpeg")
+                    return self._send_file(full, "image/jpeg")
 
             # /video/<zone>/month
             if path.startswith("/video/") and path.endswith("/month"):

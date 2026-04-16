@@ -36,10 +36,11 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
   const latestDay = days[0];
   const latestPhoto = latestDay?.photos?.[latestDay.photos.length - 1];
   const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : '';
-  const photoUrl = (date, name) =>
-    `/api/timelapse/${zone}/photo/${date}/${name}.jpg?token=${encodeURIComponent(token || '')}`;
-  const videoUrl = `/api/timelapse/${zone}/video/month?token=${encodeURIComponent(token || '')}`;
-  const previewUrl = latestPhoto ? photoUrl(latestDay.date, latestPhoto) : null;
+  const tq = `?token=${encodeURIComponent(token || '')}`;
+  const photoUrl = (date, name) => `/api/timelapse/${zone}/photo/${date}/${name}.jpg${tq}`;
+  const thumbUrl = (date, name) => `/api/timelapse/${zone}/thumb/${date}/${name}.jpg${tq}`;
+  const videoUrl = `/api/timelapse/${zone}/video/month${tq}`;
+  const previewUrl = latestPhoto ? thumbUrl(latestDay.date, latestPhoto) : null;
 
   return (
     <div className="bg-dark-800 border border-dark-700 rounded-lg p-5">
@@ -91,7 +92,7 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
       </div>
 
       {openArchive && (
-        <ArchiveModal days={days} photoUrl={photoUrl} onClose={() => setOpenArchive(false)} />
+        <ArchiveModal days={days} photoUrl={photoUrl} thumbUrl={thumbUrl} onClose={() => setOpenArchive(false)} />
       )}
       {openVideo && (
         <VideoModal videoUrl={videoUrl} onClose={() => setOpenVideo(false)} />
@@ -100,7 +101,7 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
   );
 }
 
-function ArchiveModal({ days, photoUrl, onClose }) {
+function ArchiveModal({ days, photoUrl, thumbUrl, onClose }) {
   const [selectedDate, setSelectedDate] = useState(days[0]?.date);
   const [viewerIndex, setViewerIndex] = useState(null);
   const selected = days.find(d => d.date === selectedDate);
@@ -142,14 +143,14 @@ function ArchiveModal({ days, photoUrl, onClose }) {
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                 {photos.map((name, i) => {
-                  const url = photoUrl(selected.date, name);
+                  const url = thumbUrl(selected.date, name);
                   return (
                     <button
                       key={name}
                       onClick={() => setViewerIndex(i)}
                       className="relative aspect-video bg-dark-800 rounded overflow-hidden hover:ring-2 hover:ring-primary-500 transition-all"
                     >
-                      <img src={url} alt={name} loading="lazy" className="w-full h-full object-cover" />
+                      <img src={url} alt={name} loading="lazy" decoding="async" className="w-full h-full object-cover" />
                       <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs px-1 py-0.5 text-center">
                         {name.replace('-', ':')}
                       </div>
