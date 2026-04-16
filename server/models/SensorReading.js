@@ -8,6 +8,11 @@ const sensorReadingSchema = new mongoose.Schema({
     location: { type: String },
     value: { type: Number }
   }],
+  humidityReadings: [{
+    sensorId: { type: String },
+    location: { type: String },
+    value: { type: Number }
+  }],
   humidity: { type: Number, default: null },
   humidity_sht45: { type: Number, default: null },
   temperature: { type: Number, default: null },

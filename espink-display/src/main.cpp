@@ -25,8 +25,8 @@ U8G2_FOR_ADAFRUIT_GFX u8g2Fonts;
 struct Propagator {
   String loc;
   float t; float rh; int bat;
-  float tMin, tMax;
-  bool hasT, hasRH, hasBat, hasMinMax;
+  float tMin, tMax, rhMin, rhMax;
+  bool hasT, hasRH, hasBat, hasTMinMax, hasRHMinMax;
 };
 
 struct SData {
@@ -117,9 +117,12 @@ bool fetchData() {
     pp.hasT = !p["t"].isNull(); pp.t = p["t"] | 0.0f;
     pp.hasRH = !p["rh"].isNull(); pp.rh = p["rh"] | 0.0f;
     pp.hasBat = !p["bat"].isNull(); pp.bat = p["bat"] | 0;
-    pp.hasMinMax = !p["tMin"].isNull() && !p["tMax"].isNull();
+    pp.hasTMinMax = !p["tMin"].isNull() && !p["tMax"].isNull();
     pp.tMin = p["tMin"] | 0.0f;
     pp.tMax = p["tMax"] | 0.0f;
+    pp.hasRHMinMax = !p["rhMin"].isNull() && !p["rhMax"].isNull();
+    pp.rhMin = p["rhMin"] | 0.0f;
+    pp.rhMax = p["rhMax"] | 0.0f;
     D.propCount++;
   }
   return true;
@@ -445,75 +448,95 @@ void drawDisplay() {
         int cx = propX + gridMargin + i * (cellW + cellGap);
         int cy = gridY;
 
-        // Card frame
-        int hdrH = 14;
+        // Card frame (rounded)
+        int hdrH = 13;
         display.drawRoundRect(cx, cy, cellW, cellH, 3, BK);
+        // Solid header bar
         display.fillRect(cx + 1, cy + 1, cellW - 2, hdrH, BK);
-        // Round top corners by overlap — redraw two pixels at bottom of header
-        display.drawPixel(cx + 1, cy + 1, WH);
-        display.drawPixel(cx + cellW - 2, cy + 1, WH);
 
-        // Header: location centered
+        // Header label (centered)
         u8g2Fonts.setFont(u8g2_font_helvB08_tr);
         u8g2Fonts.setBackgroundColor(BK);
         u8g2Fonts.setForegroundColor(WH);
         String label = D.props[i].loc;
-        // Shorten: "propagator-1" -> "Prop. 1"
         if (label.startsWith("propagator-")) label = "Prop. " + label.substring(11);
-        tc(cx + cellW / 2, cy + 11, label.c_str());
+        tc(cx + cellW / 2, cy + 10, label.c_str());
+
+        // Battery in header (right side)
+        if (D.props[i].hasBat) {
+          int bx = cx + cellW - 16;
+          int by = cy + 4;
+          uint16_t batC = D.props[i].bat < 20 ? RD : WH;
+          display.drawRect(bx, by, 12, 5, batC);
+          display.drawRect(bx + 12, by + 1, 1, 3, batC);
+          int fillW = (D.props[i].bat * 10) / 100;
+          if (fillW > 0) display.fillRect(bx + 1, by + 1, fillW, 3, batC);
+        }
         u8g2Fonts.setBackgroundColor(WH);
 
-        // Battery icon in top-right corner OF THE CARD (not header)
-        if (D.props[i].hasBat) {
-          int bx = cx + cellW - 18;
-          int by = cy + hdrH + 3;
-          // Battery body
-          uint16_t batC = D.props[i].bat < 20 ? RD : BK;
-          display.drawRect(bx, by, 14, 6, batC);
-          display.drawRect(bx + 14, by + 1, 2, 4, batC);
-          int fillW = (D.props[i].bat * 12) / 100;
-          if (fillW > 0) display.fillRect(bx + 1, by + 1, fillW, 4, batC);
-        }
-
-        // Value area — temperature and humidity stacked for readability
-        int bodyY = cy + hdrH + 3;
+        // ── TEMP row (left half) / HUMID row (right half) ──
+        int bodyTop = cy + hdrH + 5;
         int midX = cx + cellW / 2;
+        int leftMid = cx + cellW / 4;
+        int rightMid = cx + 3 * cellW / 4;
 
-        // Temperature row
-        int tempRowY = bodyY + 20;
-        u8g2Fonts.setFont(u8g2_font_helvB24_tr);
+        // Section labels (above values)
+        u8g2Fonts.setFont(u8g2_font_micro_tr);
+        u8g2Fonts.setForegroundColor(BK);
+        tc(leftMid, bodyTop + 6, "TEMP");
+        tc(rightMid, bodyTop + 6, "HUMID");
+
+        // Temperature value
+        u8g2Fonts.setFont(u8g2_font_helvB18_tr);
         u8g2Fonts.setForegroundColor(RD);
         if (D.props[i].hasT) snprintf(buf, sizeof(buf), "%.1f", D.props[i].t);
         else snprintf(buf, sizeof(buf), "--");
-        int tempValW = u8g2Fonts.getUTF8Width(buf);
-        // center block (value + deg C symbol)
-        u8g2Fonts.setCursor(midX - tempValW / 2 - 6, tempRowY);
+        int tW = u8g2Fonts.getUTF8Width(buf);
+        int tValY = bodyTop + 26;
+        u8g2Fonts.setCursor(leftMid - tW / 2 - 4, tValY);
         u8g2Fonts.print(buf);
-        u8g2Fonts.setFont(u8g2_font_helvR10_tr);
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
         u8g2Fonts.print("C");
 
-        // Humidity row
-        int humidRowY = tempRowY + 22;
+        // Humidity value
         u8g2Fonts.setFont(u8g2_font_helvB18_tr);
         u8g2Fonts.setForegroundColor(BK);
         if (D.props[i].hasRH) snprintf(buf, sizeof(buf), "%.0f", D.props[i].rh);
         else snprintf(buf, sizeof(buf), "--");
-        int rhW = u8g2Fonts.getUTF8Width(buf);
-        u8g2Fonts.setCursor(midX - rhW / 2 - 6, humidRowY);
+        int rW = u8g2Fonts.getUTF8Width(buf);
+        u8g2Fonts.setCursor(rightMid - rW / 2 - 4, tValY);
         u8g2Fonts.print(buf);
-        u8g2Fonts.setFont(u8g2_font_helvR10_tr);
+        u8g2Fonts.setFont(u8g2_font_helvR08_tr);
         u8g2Fonts.print("%");
 
-        // Min/max footer (decent sized)
-        if (D.props[i].hasMinMax) {
-          int footY = cy + cellH - 4;
-          // Subtle divider
-          display.drawLine(cx + 6, footY - 12, cx + cellW - 6, footY - 12, BK);
-          u8g2Fonts.setFont(u8g2_font_helvR08_tr);
-          u8g2Fonts.setForegroundColor(BK);
-          snprintf(buf, sizeof(buf), "%.1f - %.1f", D.props[i].tMin, D.props[i].tMax);
-          tc(midX, footY - 2, buf);
+        // Vertical separator between temp and humidity
+        display.drawLine(midX, bodyTop + 2, midX, tValY + 8, BK);
+
+        // ── Min/max footer ──
+        int footY = cy + cellH - 4;
+        int hrY = footY - 13;
+        // Horizontal divider
+        display.drawLine(cx + 4, hrY, cx + cellW - 4, hrY, BK);
+
+        // "min|max" label center
+        u8g2Fonts.setFont(u8g2_font_micro_tr);
+        u8g2Fonts.setForegroundColor(BK);
+
+        // Temp min/max (left)
+        if (D.props[i].hasTMinMax) {
+          snprintf(buf, sizeof(buf), "%.1f-%.1f", D.props[i].tMin, D.props[i].tMax);
+        } else {
+          snprintf(buf, sizeof(buf), "-- / --");
         }
+        tc(leftMid, footY - 3, buf);
+
+        // Humid min/max (right)
+        if (D.props[i].hasRHMinMax) {
+          snprintf(buf, sizeof(buf), "%.0f-%.0f", D.props[i].rhMin, D.props[i].rhMax);
+        } else {
+          snprintf(buf, sizeof(buf), "-- / --");
+        }
+        tc(rightMid, footY - 3, buf);
       }
     }
 

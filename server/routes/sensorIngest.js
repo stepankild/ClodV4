@@ -40,7 +40,7 @@ router.post('/', requireApiKey, async (req, res) => {
             battery: zs.battery,
           });
 
-          // Save to SensorReading for chart history
+          // Save to SensorReading for chart history + min/max
           const sensorId = `zigbee-${zs.device}`;
           await SensorReading.create({
             zoneId: data.zoneId,
@@ -49,6 +49,11 @@ router.post('/', requireApiKey, async (req, res) => {
               sensorId,
               location: zs.location || zs.device,
               value: zs.temperature
+            }] : [],
+            humidityReadings: zs.humidity != null ? [{
+              sensorId,
+              location: zs.location || zs.device,
+              value: zs.humidity
             }] : [],
           });
 
@@ -279,7 +284,8 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
         if (!names.length) return [];
         // Compute today's min/max for each propagator from SensorReading
         const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
-        const minMaxPipeline = [
+        // Temp min/max from SensorReading.temperatures
+        const tempPipeline = [
           { $match: { zoneId, timestamp: { $gte: startOfDay } } },
           { $unwind: '$temperatures' },
           { $match: { 'temperatures.sensorId': { $in: names.map(n => `zigbee-${n}`) } } },
@@ -289,21 +295,39 @@ router.get('/display/:zoneId', requireApiKey, async (req, res) => {
             tMax: { $max: '$temperatures.value' },
           }},
         ];
-        const stats = await SensorReading.aggregate(minMaxPipeline);
-        const statMap = {};
-        for (const s of stats) statMap[s._id] = s;
+        const tempStats = await SensorReading.aggregate(tempPipeline);
+        const tempMap = {};
+        for (const s of tempStats) tempMap[s._id] = s;
+
+        // Humidity min/max from humidityReadings array
+        const rhPipeline = [
+          { $match: { zoneId, timestamp: { $gte: startOfDay } } },
+          { $unwind: '$humidityReadings' },
+          { $match: { 'humidityReadings.sensorId': { $in: names.map(n => `zigbee-${n}`) } } },
+          { $group: {
+            _id: '$humidityReadings.sensorId',
+            rhMin: { $min: '$humidityReadings.value' },
+            rhMax: { $max: '$humidityReadings.value' },
+          }},
+        ];
+        const rhStats = await SensorReading.aggregate(rhPipeline);
+        const rhMap = {};
+        for (const s of rhStats) rhMap[s._id] = s;
+
         return names.map(name => {
           const d = all[name];
           const sid = `zigbee-${name}`;
-          const s = statMap[sid];
+          const t = tempMap[sid];
           return {
             name,
             loc: d.location || name,
             t: d.temperature != null ? Math.round(d.temperature * 10) / 10 : null,
             rh: d.humidity != null ? Math.round(d.humidity * 10) / 10 : null,
             bat: d.battery ?? null,
-            tMin: s?.tMin != null ? Math.round(s.tMin * 10) / 10 : null,
-            tMax: s?.tMax != null ? Math.round(s.tMax * 10) / 10 : null,
+            tMin: t?.tMin != null ? Math.round(t.tMin * 10) / 10 : null,
+            tMax: t?.tMax != null ? Math.round(t.tMax * 10) / 10 : null,
+            rhMin: rhMap[sid]?.rhMin != null ? Math.round(rhMap[sid].rhMin * 10) / 10 : null,
+            rhMax: rhMap[sid]?.rhMax != null ? Math.round(rhMap[sid].rhMax * 10) / 10 : null,
           };
         });
       })(),
