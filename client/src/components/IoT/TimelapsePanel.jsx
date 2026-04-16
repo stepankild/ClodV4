@@ -11,6 +11,7 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [openArchive, setOpenArchive] = useState(false);
+  const [openVideo, setOpenVideo] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,16 +55,28 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
         </div>
       )}
 
-      <button
-        className="w-full px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-100 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        disabled={totalCount === 0}
-        onClick={() => setOpenArchive(true)}
-      >
-        📅 Архив
-      </button>
+      <div className="flex gap-2">
+        <button
+          className="flex-1 px-3 py-2 bg-dark-700 hover:bg-dark-600 text-dark-100 rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={totalCount === 0}
+          onClick={() => setOpenArchive(true)}
+        >
+          📅 Архив
+        </button>
+        <button
+          className="flex-1 px-3 py-2 bg-primary-700 hover:bg-primary-600 text-white rounded-md text-sm transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={totalCount < 5}
+          onClick={() => setOpenVideo(true)}
+        >
+          ▶️ Таймлапс
+        </button>
+      </div>
 
       {openArchive && (
         <ArchiveModal days={days} onClose={() => setOpenArchive(false)} />
+      )}
+      {openVideo && (
+        <VideoModal zone={zone} onClose={() => setOpenVideo(false)} />
       )}
     </div>
   );
@@ -194,4 +207,189 @@ function ArchiveModal({ days, onClose }) {
       </div>
     </div>
   );
+}
+
+function VideoModal({ zone, onClose }) {
+  const [data, setData] = useState(null);      // { presets, customs, presetDays }
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [selected, setSelected] = useState(null); // 'preset:3' | 'custom:10' | null
+  const [customDays, setCustomDays] = useState('');
+  const [building, setBuilding] = useState(false);
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const { data } = await api.get(`/timelapse/${zone}/videos`);
+      setData(data);
+      setError(null);
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { refresh(); }, [zone]);
+
+  const presets = data?.presets || {};
+  const presetDays = data?.presetDays || [3, 7, 14, 30];
+  const currentUrl = selected && data ? resolveUrl(data, selected) : null;
+  const currentMeta = selected && data ? resolveMeta(data, selected) : null;
+
+  const buildCustom = async () => {
+    const n = parseInt(customDays, 10);
+    if (!Number.isInteger(n) || n < 1 || n > 90) {
+      setError('Введи число от 1 до 90');
+      return;
+    }
+    setBuilding(true);
+    setError(null);
+    try {
+      const { data: res } = await api.post(`/timelapse/${zone}/video/build`, { days: n });
+      await refresh();
+      setSelected(`custom:${n}`);
+    } catch (e) {
+      setError(e?.response?.data?.error || e.message);
+    } finally {
+      setBuilding(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div
+        className="bg-dark-900 rounded-lg border border-dark-700 max-w-4xl w-full max-h-[90vh] flex flex-col"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between p-4 border-b border-dark-700">
+          <h3 className="text-lg font-semibold text-dark-100">▶️ Таймлапс</h3>
+          <button onClick={onClose} className="text-dark-400 hover:text-dark-200 text-2xl leading-none">×</button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          {/* Preset buttons */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-dark-400">Период:</span>
+            {presetDays.map(n => {
+              const avail = !!presets[n];
+              const active = selected === `preset:${n}`;
+              return (
+                <button
+                  key={n}
+                  disabled={!avail || loading}
+                  onClick={() => setSelected(`preset:${n}`)}
+                  className={`px-3 py-1.5 rounded text-sm transition-colors ${
+                    active ? 'bg-primary-600 text-white' :
+                    avail ? 'bg-dark-700 hover:bg-dark-600 text-dark-100' :
+                    'bg-dark-800 text-dark-500 cursor-not-allowed'
+                  }`}
+                  title={avail ? presets[n].generatedAt : 'ещё не собрано'}
+                >
+                  {n} {n === 1 ? 'день' : n < 5 ? 'дня' : 'дней'}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Custom days */}
+          <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-dark-700">
+            <span className="text-sm text-dark-400">Свой период:</span>
+            <input
+              type="number"
+              min="1"
+              max="90"
+              value={customDays}
+              onChange={(e) => setCustomDays(e.target.value)}
+              placeholder="N"
+              disabled={building}
+              className="w-20 bg-dark-800 border border-dark-700 rounded px-2 py-1 text-sm text-dark-100"
+            />
+            <span className="text-sm text-dark-500">дней</span>
+            <button
+              onClick={buildCustom}
+              disabled={building || !customDays}
+              className="px-3 py-1.5 bg-primary-700 hover:bg-primary-600 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded text-sm"
+            >
+              {building ? 'Сборка…' : 'Собрать'}
+            </button>
+            {building && (
+              <span className="text-xs text-dark-500">
+                Занимает до 90 секунд на Pi…
+              </span>
+            )}
+          </div>
+
+          {/* Previously built custom videos */}
+          {data?.customs?.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-dark-500">Готовые custom:</span>
+              {data.customs.map(c => {
+                const m = c.key.match(/^custom-(\d+)d$/);
+                const n = m ? m[1] : c.key;
+                const active = selected === `custom:${n}`;
+                return (
+                  <button
+                    key={c.key}
+                    onClick={() => setSelected(`custom:${n}`)}
+                    className={`px-2 py-1 rounded text-xs ${
+                      active ? 'bg-primary-600 text-white' : 'bg-dark-700 hover:bg-dark-600 text-dark-100'
+                    }`}
+                  >
+                    {n} дн.
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Status / error */}
+          {error && (
+            <div className="text-xs text-red-400">Ошибка: {error}</div>
+          )}
+
+          {/* Player */}
+          {currentUrl ? (
+            <div>
+              <video
+                key={currentUrl}
+                src={currentUrl}
+                controls
+                autoPlay
+                className="w-full rounded bg-black"
+              />
+              {currentMeta && (
+                <div className="text-xs text-dark-500 mt-2">
+                  Обновлено: {new Date(currentMeta.generatedAt).toLocaleString()} · {Math.round((currentMeta.sizeKB || 0) / 1024 * 10) / 10} MB
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="aspect-video bg-dark-800 rounded flex items-center justify-center text-dark-500 text-sm">
+              {loading ? 'Загрузка списка…' : 'Выбери период чтобы посмотреть таймлапс'}
+            </div>
+          )}
+
+          <p className="text-xs text-dark-500">
+            Пресеты (3/7/14/30 дней) пересобираются автоматически раз в сутки.
+            Твои кастомные сборки остаются доступны до следующей чистки.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function resolveUrl(data, selected) {
+  const [kind, n] = selected.split(':');
+  if (kind === 'preset') return data.presets?.[n]?.url;
+  if (kind === 'custom') return data.customs?.find(c => c.key === `custom-${n}d`)?.url;
+  return null;
+}
+
+function resolveMeta(data, selected) {
+  const [kind, n] = selected.split(':');
+  if (kind === 'preset') return data.presets?.[n];
+  if (kind === 'custom') return data.customs?.find(c => c.key === `custom-${n}d`);
+  return null;
 }

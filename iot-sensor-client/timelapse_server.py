@@ -16,8 +16,12 @@ import subprocess
 import tempfile
 import threading
 import urllib.parse
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# Allow importing sibling modules (r2_uploader, timelapse_build)
+sys.path.insert(0, str(Path(__file__).parent))
 
 PORT = 8090
 API_KEY = "truegrow-sensor-key-2026"
@@ -191,13 +195,55 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                         return self._send_file(thumb if thumb.exists() else full, "image/jpeg")
                     return self._send_file(full, "image/jpeg")
 
-            # /video/<zone>/month
-            if path.startswith("/video/") and path.endswith("/month"):
-                zone = path[len("/video/"):-len("/month")]
-                v = build_month_video(zone)
-                if not v or not v.exists():
-                    return self._send_json(500, {"error": "video build failed"})
-                return self._send_file(v, "video/mp4")
+            # /build-video?zone=vega&days=N — build + upload to R2, return URL
+            if path == "/build-video":
+                zone = query.get("zone", ["vega"])[0]
+                try:
+                    days = int(query.get("days", ["3"])[0])
+                except ValueError:
+                    return self._send_json(400, {"error": "days must be integer"})
+                if days < 1 or days > 90:
+                    return self._send_json(400, {"error": "days must be 1..90"})
+
+                # Use custom key for non-preset durations so they don't clash
+                # with scheduled preset rebuilds.
+                is_preset = days in (3, 7, 14, 30)
+                key_suffix = f"{days}d" if is_preset else f"custom-{days}d"
+
+                import timelapse_build
+                ok, url = timelapse_build.build_one(
+                    zone=zone, days=days, telegram=False, key_suffix=key_suffix
+                )
+                if not ok or not url:
+                    return self._send_json(500, {"error": "build failed"})
+                return self._send_json(200, {
+                    "url": url,
+                    "days": days,
+                    "generated_at": datetime.now().isoformat(),
+                })
+
+            # /videos?zone=vega — list all available videos in R2 (presets + customs)
+            if path == "/videos":
+                zone = query.get("zone", ["vega"])[0]
+                try:
+                    from r2_uploader import get_client, R2_BUCKET, R2_PUBLIC_URL
+                    client = get_client()
+                    prefix = f"{zone}/videos/"
+                    r = client.list_objects_v2(Bucket=R2_BUCKET, Prefix=prefix)
+                    out = []
+                    for obj in r.get("Contents", []) or []:
+                        stem = obj["Key"][len(prefix):]
+                        if not stem.endswith(".mp4"):
+                            continue
+                        out.append({
+                            "key": stem[:-4],
+                            "url": f"{R2_PUBLIC_URL.rstrip('/')}/{obj['Key']}",
+                            "size": obj.get("Size"),
+                            "modified": obj.get("LastModified").isoformat() if obj.get("LastModified") else None,
+                        })
+                    return self._send_json(200, {"videos": out})
+                except Exception as e:
+                    return self._send_json(500, {"error": str(e)})
 
             self._send_json(404, {"error": "not found"})
         except Exception as e:

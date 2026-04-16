@@ -1,33 +1,45 @@
 #!/usr/bin/env python3
 """
-Build timelapse video from the last N days of snapshots and send to Telegram.
+Build timelapse video from last N days of snapshots.
+Uploads to Cloudflare R2 at <zone>/videos/<N>d.mp4 and (optionally) sends to Telegram.
+
+Usage:
+    python3 timelapse_build.py [--zone vega] [--days 3] [--telegram]
+    python3 timelapse_build.py --all   # rebuild 3d, 7d, 14d, 30d presets
 """
 
+import argparse
+import json
 import os
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
 import requests
 
-DAYS_BACK = 3  # include last 3 days of snapshots
-FPS = 10  # 10 frames per second (at 1 frame/hour -> 1 sec of video = 10 hours)
+from r2_uploader import get_client, R2_BUCKET, R2_PUBLIC_URL
 
-INPUT_BASE = Path("/home/stepan/timelapse/vega")
+FPS = 10  # 1 sec of video = 10 hours real time (at 1 frame/hour)
+
+INPUT_BASE_ROOT = Path("/home/stepan/timelapse")
 OUTPUT_DIR = Path("/home/stepan/timelapse/videos")
 
 TELEGRAM_BOT_TOKEN = "8688017942:AAGYuTi4q1b97kUjpls44ASra2Byr6DRXy0"
 TELEGRAM_CHAT_ID = "-1003862011656"  # TrueGrow Alerts
 
+PRESET_DAYS = [3, 7, 14, 30]
 
-def collect_snapshots():
-    """Return list of snapshot paths from last DAYS_BACK days, sorted by time."""
+
+def collect_snapshots(zone: str, days: int):
+    """Return list of snapshot paths from last N days, sorted chronologically."""
+    base = INPUT_BASE_ROOT / zone
     now = datetime.now()
     snapshots = []
-    for i in range(DAYS_BACK - 1, -1, -1):
+    for i in range(days - 1, -1, -1):
         day = now - timedelta(days=i)
-        day_dir = INPUT_BASE / day.strftime("%Y-%m-%d")
+        day_dir = base / day.strftime("%Y-%m-%d")
         if not day_dir.exists():
             continue
         for f in sorted(day_dir.glob("*.jpg")):
@@ -35,15 +47,13 @@ def collect_snapshots():
     return snapshots
 
 
-def build_video(snapshots, output_path):
+def build_video(snapshots, output_path, fps=FPS):
     """Concatenate snapshots into mp4 via ffmpeg concat demuxer."""
     with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
         list_file = f.name
         for s in snapshots:
-            # ffmpeg concat demuxer: one file per frame, duration controls speed
             f.write(f"file '{s}'\n")
-            f.write(f"duration {1.0 / FPS}\n")
-        # last file must be listed twice (ffmpeg concat quirk)
+            f.write(f"duration {1.0 / fps}\n")
         if snapshots:
             f.write(f"file '{snapshots[-1]}'\n")
 
@@ -54,11 +64,12 @@ def build_video(snapshots, output_path):
                 "-f", "concat",
                 "-safe", "0",
                 "-i", list_file,
-                "-vf", "scale=1280:-2,fps=" + str(FPS),
+                "-vf", f"scale=1280:-2,fps={fps}",
                 "-c:v", "libx264",
                 "-preset", "fast",
                 "-crf", "23",
                 "-pix_fmt", "yuv420p",
+                "-movflags", "+faststart",  # allow streaming playback before full download
                 str(output_path),
             ],
             capture_output=True,
@@ -73,9 +84,26 @@ def build_video(snapshots, output_path):
         os.unlink(list_file)
 
 
-def send_to_telegram(video_path, caption):
+def upload_to_r2(video_path: Path, key: str, metadata: dict):
+    client = get_client()
+    with video_path.open("rb") as f:
+        client.put_object(
+            Bucket=R2_BUCKET,
+            Key=key,
+            Body=f,
+            ContentType="video/mp4",
+            CacheControl="public, max-age=300",  # 5min — short so updates are seen
+            Metadata={k: str(v) for k, v in metadata.items()},
+        )
+    public_url = f"{R2_PUBLIC_URL.rstrip('/')}/{key}"
+    size_mb = video_path.stat().st_size / 1024 / 1024
+    print(f"R2 uploaded: {public_url} ({size_mb:.1f} MB)")
+    return public_url
+
+
+def send_to_telegram(video_path: Path, caption: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
-    with open(video_path, "rb") as video:
+    with video_path.open("rb") as video:
         resp = requests.post(
             url,
             data={"chat_id": TELEGRAM_CHAT_ID, "caption": caption, "supports_streaming": "true"},
@@ -89,31 +117,73 @@ def send_to_telegram(video_path, caption):
     return False
 
 
-def main():
-    snapshots = collect_snapshots()
-    print(f"Found {len(snapshots)} snapshots over last {DAYS_BACK} days")
+def build_one(zone: str, days: int, telegram: bool = False, key_suffix: str | None = None):
+    """Build + upload to R2. Returns (success, public_url)."""
+    snapshots = collect_snapshots(zone, days)
+    print(f"[{zone}/{days}d] {len(snapshots)} snapshots")
     if len(snapshots) < 5:
-        print("Not enough snapshots, skipping")
-        return 0
+        print("  not enough snapshots (<5), skipping")
+        return False, None
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y-%m-%d")
-    out = OUTPUT_DIR / f"timelapse-vega-{stamp}.mp4"
-    print(f"Building {out}...")
+    local_key = key_suffix or f"{days}d"
+    out = OUTPUT_DIR / f"{zone}-{local_key}.mp4"
+    print(f"  building {out}...")
 
     if not build_video(snapshots, out):
+        return False, None
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    r2_key = f"{zone}/videos/{local_key}.mp4"
+    try:
+        url = upload_to_r2(out, r2_key, {
+            "days": str(days),
+            "frames": str(len(snapshots)),
+            "generated_at": now_iso,
+        })
+    except Exception as e:
+        print(f"  R2 upload failed: {e}")
+        url = None
+
+    if telegram:
+        caption = f"🌱 Timelapse Вегетация\n{days} дн., {len(snapshots)} кадров"
+        send_to_telegram(out, caption)
+
+    # Keep only preset + last 5 custom videos on disk
+    for old in OUTPUT_DIR.glob(f"{zone}-custom-*.mp4"):
+        pass  # handled below
+    customs = sorted(OUTPUT_DIR.glob(f"{zone}-custom-*.mp4"))
+    for f in customs[:-5]:
+        f.unlink()
+
+    return True, url
+
+
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--zone", default="vega")
+    p.add_argument("--days", type=int, help="Build for last N days")
+    p.add_argument("--all", action="store_true", help="Rebuild all preset periods (3/7/14/30)")
+    p.add_argument("--telegram", action="store_true", help="Also send to Telegram alerts group")
+    p.add_argument("--custom-key", help="Custom R2 key suffix (used for on-demand builds)")
+    args = p.parse_args()
+
+    if args.all:
+        # Presets: always rebuild; telegram only for the 3-day build
+        for n in PRESET_DAYS:
+            build_one(args.zone, n, telegram=(n == 3))
+        return 0
+
+    if not args.days:
+        print("Either --days N or --all required")
         return 1
 
-    caption = f"🌱 Timelapse Вегетация\n{DAYS_BACK} дня, {len(snapshots)} кадров"
-    send_to_telegram(out, caption)
-
-    # Keep only last 10 videos on disk
-    videos = sorted(OUTPUT_DIR.glob("timelapse-vega-*.mp4"))
-    for old in videos[:-10]:
-        old.unlink()
-        print(f"Deleted old: {old.name}")
-
-    return 0
+    suffix = args.custom_key or f"{args.days}d"
+    ok, url = build_one(args.zone, args.days, telegram=args.telegram, key_suffix=suffix)
+    if url:
+        # Print URL on last line for callers that want to parse
+        print(f"URL: {url}")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
