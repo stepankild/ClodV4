@@ -35,9 +35,11 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
   const totalCount = useMemo(() => days.reduce((s, d) => s + (d.count || 0), 0), [days]);
   const latestDay = days[0];
   const latestPhoto = latestDay?.photos?.[latestDay.photos.length - 1];
-  const previewUrl = latestPhoto
-    ? `/api/timelapse/${zone}/photo/${latestDay.date}/${latestPhoto}.jpg`
-    : null;
+  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : '';
+  const photoUrl = (date, name) =>
+    `/api/timelapse/${zone}/photo/${date}/${name}.jpg?token=${encodeURIComponent(token || '')}`;
+  const videoUrl = `/api/timelapse/${zone}/video/month?token=${encodeURIComponent(token || '')}`;
+  const previewUrl = latestPhoto ? photoUrl(latestDay.date, latestPhoto) : null;
 
   return (
     <div className="bg-dark-800 border border-dark-700 rounded-lg p-5">
@@ -89,16 +91,16 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
       </div>
 
       {openArchive && (
-        <ArchiveModal zone={zone} days={days} onClose={() => setOpenArchive(false)} />
+        <ArchiveModal days={days} photoUrl={photoUrl} onClose={() => setOpenArchive(false)} />
       )}
       {openVideo && (
-        <VideoModal zone={zone} onClose={() => setOpenVideo(false)} />
+        <VideoModal videoUrl={videoUrl} onClose={() => setOpenVideo(false)} />
       )}
     </div>
   );
 }
 
-function ArchiveModal({ zone, days, onClose }) {
+function ArchiveModal({ days, photoUrl, onClose }) {
   const [selectedDate, setSelectedDate] = useState(days[0]?.date);
   const [viewerIndex, setViewerIndex] = useState(null);
   const selected = days.find(d => d.date === selectedDate);
@@ -140,7 +142,7 @@ function ArchiveModal({ zone, days, onClose }) {
             ) : (
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                 {photos.map((name, i) => {
-                  const url = `/api/timelapse/${zone}/photo/${selected.date}/${name}.jpg`;
+                  const url = photoUrl(selected.date, name);
                   return (
                     <button
                       key={name}
@@ -166,7 +168,7 @@ function ArchiveModal({ zone, days, onClose }) {
             onClick={() => setViewerIndex(null)}
           >
             <img
-              src={`/api/timelapse/${zone}/photo/${selected.date}/${photos[viewerIndex]}.jpg`}
+              src={photoUrl(selected.date, photos[viewerIndex])}
               alt=""
               className="max-w-full max-h-full object-contain"
             />
@@ -193,7 +195,7 @@ function ArchiveModal({ zone, days, onClose }) {
   );
 }
 
-function VideoModal({ zone, onClose }) {
+function VideoModal({ videoUrl, onClose }) {
   return (
     <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4" onClick={onClose}>
       <div
@@ -206,7 +208,7 @@ function VideoModal({ zone, onClose }) {
         </div>
         <div className="p-4">
           <video
-            src={`/api/timelapse/${zone}/video/month`}
+            src={videoUrl}
             controls
             autoPlay
             className="w-full rounded"

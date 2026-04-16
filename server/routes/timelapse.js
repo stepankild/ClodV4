@@ -1,5 +1,7 @@
 import express from 'express';
 import { protect } from '../middleware/auth.js';
+import { verifyAccessToken } from '../utils/jwt.js';
+import User from '../models/User.js';
 
 const router = express.Router();
 
@@ -8,10 +10,36 @@ const router = express.Router();
 const FARM_URL = 'https://farm.taild7c160.ts.net/timelapse';
 const API_KEY = process.env.SENSOR_API_KEY;
 
-router.use(protect);
+// Auth that also accepts ?token=... in query (needed for <img>/<video> tags
+// which can't send Authorization header).
+async function protectFlexible(req, res, next) {
+  // If standard Authorization header is present, fall through to normal protect
+  if (req.headers.authorization?.startsWith('Bearer ')) {
+    return protect(req, res, next);
+  }
+  // Otherwise check ?token= query
+  const token = req.query.token;
+  if (!token) return res.status(401).json({ message: 'Unauthorized' });
+  try {
+    const decoded = verifyAccessToken(token);
+    const user = await User.findById(decoded.userId).select('-password -refreshToken');
+    if (!user || !user.isActive || user.deletedAt) {
+      return res.status(401).json({ message: 'Unauthorized' });
+    }
+    const tokenV = decoded.v ?? 0;
+    const userV = user.tokenVersion || 0;
+    if (tokenV !== userV) {
+      return res.status(401).json({ message: 'Token expired' });
+    }
+    req.user = user;
+    next();
+  } catch {
+    return res.status(401).json({ message: 'Invalid token' });
+  }
+}
 
 // GET /api/timelapse/:zone/photos[?date=YYYY-MM-DD]
-router.get('/:zone/photos', async (req, res) => {
+router.get('/:zone/photos', protect, async (req, res) => {
   try {
     const { zone } = req.params;
     const { date } = req.query;
@@ -28,7 +56,7 @@ router.get('/:zone/photos', async (req, res) => {
 });
 
 // GET /api/timelapse/:zone/photo/:date/:name — proxy JPEG bytes
-router.get('/:zone/photo/:date/:name', async (req, res) => {
+router.get('/:zone/photo/:date/:name', protectFlexible, async (req, res) => {
   try {
     const { zone, date, name } = req.params;
     const r = await fetch(
@@ -46,7 +74,7 @@ router.get('/:zone/photo/:date/:name', async (req, res) => {
 });
 
 // GET /api/timelapse/:zone/video/month — stream monthly timelapse video
-router.get('/:zone/video/month', async (req, res) => {
+router.get('/:zone/video/month', protectFlexible, async (req, res) => {
   try {
     const { zone } = req.params;
     const r = await fetch(`${FARM_URL}/video/${encodeURIComponent(zone)}/month`, {
