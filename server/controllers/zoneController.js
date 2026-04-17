@@ -221,16 +221,45 @@ export const getReadings = async (req, res) => {
         { $sort: { _id: 1 } }
       ];
 
-      const [scalarReadings, tempReadings] = await Promise.all([
+      // Pipeline 3: per-sensor humidity averages (Zigbee propagators, etc.)
+      const humidPipeline = [
+        { $match: match },
+        { $unwind: '$humidityReadings' },
+        {
+          $group: {
+            _id: { bucket: bucketExpr, sensorId: '$humidityReadings.sensorId' },
+            value: { $avg: '$humidityReadings.value' },
+            location: { $first: '$humidityReadings.location' },
+          }
+        },
+        {
+          $group: {
+            _id: '$_id.bucket',
+            humidityReadings: {
+              $push: {
+                sensorId: '$_id.sensorId',
+                location: '$location',
+                value: { $round: ['$value', 1] },
+              }
+            }
+          }
+        },
+        { $sort: { _id: 1 } }
+      ];
+
+      const [scalarReadings, tempReadings, humidReadings] = await Promise.all([
         SensorReading.aggregate(scalarPipeline),
         SensorReading.aggregate(tempPipeline),
+        SensorReading.aggregate(humidPipeline),
       ]);
 
-      // Merge: attach per-sensor temperatures to each scalar bucket
+      // Merge: attach per-sensor temperatures + humidity to each scalar bucket
       const tempMap = new Map(tempReadings.map(t => [t._id.getTime(), t.temperatures]));
+      const humidMap = new Map(humidReadings.map(h => [h._id.getTime(), h.humidityReadings]));
       const readings = scalarReadings.map(r => ({
         ...r,
         temperatures: tempMap.get(new Date(r.timestamp).getTime()) || [],
+        humidityReadings: humidMap.get(new Date(r.timestamp).getTime()) || [],
       }));
 
       res.json(readings);

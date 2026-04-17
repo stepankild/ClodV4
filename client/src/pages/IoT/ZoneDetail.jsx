@@ -13,6 +13,7 @@ const RANGES = [
 ];
 
 const TEMP_COLORS = ['#ef4444', '#f97316', '#a855f7', '#ec4899', '#14b8a6'];
+const HUMID_COLORS = ['#60a5fa', '#22d3ee', '#818cf8', '#a78bfa', '#2dd4bf'];
 const SERIES_COLORS = {
   temperature: '#f59e0b',
   humidity: '#3b82f6',
@@ -310,6 +311,7 @@ const ZoneDetail = () => {
   const availableSeries = useMemo(() => {
     const series = [];
     const sensorIds = new Set();
+    const humidIds = new Set();
 
     // Scan readings for available per-sensor temperatures
     readings.forEach(r => {
@@ -317,12 +319,31 @@ const ZoneDetail = () => {
         r.temperatures.forEach(temp => {
           if (!sensorIds.has(temp.sensorId)) {
             sensorIds.add(temp.sensorId);
+            const isZigbee = temp.sensorId?.startsWith('zigbee-');
             series.push({
               key: `temp-${temp.sensorId}`,
-              label: temp.location ? t(`iot.${temp.location}`, temp.location) : `DS18B20`,
+              label: temp.location ? t(`iot.${temp.location}`, temp.location) : (isZigbee ? temp.sensorId.replace('zigbee-', '') : 'DS18B20'),
               color: TEMP_COLORS[sensorIds.size - 1] || TEMP_COLORS[0],
               yAxisId: 'left',
               unit: '°C',
+              eventBased: isZigbee, // Zigbee reports on change, draw as step line
+            });
+          }
+        });
+      }
+      // Per-sensor humidity (Zigbee propagators etc.)
+      if (r.humidityReadings?.length) {
+        r.humidityReadings.forEach(h => {
+          if (!humidIds.has(h.sensorId)) {
+            humidIds.add(h.sensorId);
+            const isZigbee = h.sensorId?.startsWith('zigbee-');
+            series.push({
+              key: `humid-${h.sensorId}`,
+              label: `${t('iot.humidity')} ${h.location || (isZigbee ? h.sensorId.replace('zigbee-', '') : h.sensorId)}`,
+              color: HUMID_COLORS[humidIds.size - 1] || HUMID_COLORS[0],
+              yAxisId: 'left',
+              unit: '%',
+              eventBased: isZigbee,
             });
           }
         });
@@ -437,6 +458,12 @@ const ZoneDetail = () => {
       if (r.temperatures?.length) {
         r.temperatures.forEach(temp => {
           point[`temp-${temp.sensorId}`] = temp.value;
+        });
+      }
+      // Per-sensor humidity (Zigbee etc.)
+      if (r.humidityReadings?.length) {
+        r.humidityReadings.forEach(h => {
+          point[`humid-${h.sensorId}`] = h.value;
         });
       }
       // Compute VPD from air temp (SHT45 preferred) + humidity
@@ -810,13 +837,18 @@ const ZoneDetail = () => {
               {availableSeries.filter(s => visibleSeries[s.key]).map(s => (
                 <Line
                   key={s.key}
-                  type="monotone"
+                  // Event-based (Zigbee) sensors report on change — draw as a
+                  // step-line that holds the last value until next report,
+                  // and bridge null gaps between events.
+                  type={s.eventBased ? 'stepAfter' : 'monotone'}
                   dataKey={s.key}
                   name={s.label}
                   stroke={s.color}
                   yAxisId={s.yAxisId}
-                  dot={false}
+                  dot={s.eventBased ? { r: 2, stroke: s.color, fill: s.color } : false}
                   strokeWidth={2}
+                  connectNulls={s.eventBased}
+                  isAnimationActive={false}
                 />
               ))}
             </LineChart>
