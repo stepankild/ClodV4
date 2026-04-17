@@ -32,6 +32,9 @@ TELEGRAM_CHAT_ID = "-1003862011656"  # TrueGrow Alerts
 PRESET_DAYS = [3, 7, 14, 30]
 LOCAL_RETENTION_DAYS = 90   # keep 90 days of photos on Pi (R2 has them forever)
 R2_RETENTION_DAYS = 365     # keep 1 year of photos on R2
+TELEGRAM_MIN_INTERVAL_DAYS = 3  # only send to Telegram every 3 days
+
+TELEGRAM_MARKER = Path("/home/stepan/timelapse/.last_telegram_send")
 
 
 def collect_snapshots(zone: str, days: int):
@@ -103,7 +106,22 @@ def upload_to_r2(video_path: Path, key: str, metadata: dict):
     return public_url
 
 
-def send_to_telegram(video_path: Path, caption: str):
+def should_send_telegram() -> bool:
+    """Throttle: only send if last send was more than TELEGRAM_MIN_INTERVAL_DAYS ago."""
+    if not TELEGRAM_MARKER.exists():
+        return True
+    try:
+        last = datetime.fromisoformat(TELEGRAM_MARKER.read_text().strip())
+    except Exception:
+        return True
+    elapsed = datetime.now() - last
+    return elapsed >= timedelta(days=TELEGRAM_MIN_INTERVAL_DAYS)
+
+
+def send_to_telegram(video_path: Path, caption: str, force: bool = False):
+    if not force and not should_send_telegram():
+        print(f"Telegram throttled (last send <{TELEGRAM_MIN_INTERVAL_DAYS}d ago)")
+        return False
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
     with video_path.open("rb") as video:
         resp = requests.post(
@@ -114,6 +132,8 @@ def send_to_telegram(video_path: Path, caption: str):
         )
     if resp.ok:
         print(f"Telegram OK ({video_path.stat().st_size / 1024 / 1024:.1f} MB)")
+        TELEGRAM_MARKER.parent.mkdir(parents=True, exist_ok=True)
+        TELEGRAM_MARKER.write_text(datetime.now().isoformat())
         return True
     print(f"Telegram error {resp.status_code}: {resp.text[:300]}")
     return False
