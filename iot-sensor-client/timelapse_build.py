@@ -32,7 +32,8 @@ TELEGRAM_CHAT_ID = "-1003862011656"  # TrueGrow Alerts
 PRESET_DAYS = [3, 7, 14, 30]
 LOCAL_RETENTION_DAYS = 90   # keep 90 days of photos on Pi (R2 has them forever)
 R2_RETENTION_DAYS = 365     # keep 1 year of photos on R2
-TELEGRAM_MIN_INTERVAL_DAYS = 3  # only send to Telegram every 3 days
+TELEGRAM_MIN_INTERVAL_DAYS = 7   # weekly digest
+TELEGRAM_PRESET_DAYS = 7         # send the 7-day video as the weekly summary
 
 TELEGRAM_MARKER = Path("/home/stepan/timelapse/.last_telegram_send")
 
@@ -168,7 +169,7 @@ def build_one(zone: str, days: int, telegram: bool = False, key_suffix: str | No
         url = None
 
     if telegram:
-        caption = f"🌱 Timelapse Вегетация\n{days} дн., {len(snapshots)} кадров"
+        caption = f"🌱 Еженедельный таймлапс Вегетация\n{days} дней, {len(snapshots)} кадров"
         send_to_telegram(out, caption)
 
     # Keep only preset + last 5 custom videos on disk
@@ -253,9 +254,10 @@ def main():
     args = p.parse_args()
 
     if args.all:
-        # Presets: always rebuild; telegram only for the 3-day build
+        # Presets: always rebuild; telegram only for the weekly digest preset,
+        # and only if the throttle marker allows it.
         for n in PRESET_DAYS:
-            build_one(args.zone, n, telegram=(n == 3))
+            build_one(args.zone, n, telegram=(n == TELEGRAM_PRESET_DAYS))
         if not args.no_cleanup:
             print(f"Cleanup: keeping last {LOCAL_RETENTION_DAYS}d local + {R2_RETENTION_DAYS}d on R2")
             cleanup_local_photos(args.zone, LOCAL_RETENTION_DAYS)
