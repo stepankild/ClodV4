@@ -140,6 +140,8 @@ const messages = {
   'trim.logDeleted': { ru: 'Запись удалена', en: 'Record deleted' },
   'trim.deletedNotFound': { ru: 'Удалённая запись не найдена', en: 'Deleted record not found' },
   'trim.archiveDeleted': { ru: 'Сначала восстановите архив цикла', en: 'Restore the cycle archive first' },
+  'audit.invalidFromDate': { ru: 'Неверная дата «с»', en: 'Invalid "from" date' },
+  'audit.invalidToDate': { ru: 'Неверная дата «по»', en: 'Invalid "to" date' },
   'trim.completeRequiresPopcorn': { ru: 'Заполните вес попкорна с отсевочного стола и с машинки перед завершением', en: 'Enter popcorn weight from sorting table and machine before completing' },
   'trim.completeRequiresFinalWeight': { ru: 'Внесите финальный вес перед завершением', en: 'Enter final weight before completing' },
 

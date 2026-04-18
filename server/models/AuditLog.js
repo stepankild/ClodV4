@@ -34,6 +34,10 @@ auditLogSchema.index({ createdAt: -1 });
 auditLogSchema.index({ user: 1, createdAt: -1 });
 auditLogSchema.index({ action: 1, createdAt: -1 });
 auditLogSchema.index({ entityType: 1, entityId: 1 });
+// Составной индекс для getSessions: быстрые выборки auth.login/auth.logout по множеству юзеров
+auditLogSchema.index({ action: 1, user: 1, createdAt: 1 });
+// TTL: автоматически удаляем записи старше 2 лет (735 дней)
+auditLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 60 * 60 * 24 * 735 });
 
 const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 export default AuditLog;

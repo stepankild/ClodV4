@@ -1,8 +1,8 @@
 import api from './api';
 
 export const userService = {
-  async getUsers() {
-    const response = await api.get('/users');
+  async getUsers({ includeDeleted = false } = {}) {
+    const response = await api.get('/users', { params: includeDeleted ? { includeDeleted: true } : {} });
     return response.data;
   },
 

@@ -20,6 +20,7 @@ const ACTION_META = {
   'role.restore': { icon: '🛡️', color: 'text-green-400' },
   'room.update': { icon: '🏠', color: 'text-yellow-400' },
   'room.cycle_start': { icon: '🌱', color: 'text-green-400' },
+  'room.cycle_transfer': { icon: '➡️', color: 'text-blue-400' },
   'room.note': { icon: '📝', color: 'text-blue-400' },
   'room.harvest_reset': { icon: '🏠', color: 'text-orange-400' },
   'task.create': { icon: '📋', color: 'text-blue-400' },
@@ -43,6 +44,7 @@ const ACTION_META = {
   'veg_batch.restore': { icon: '♻️', color: 'text-green-400' },
   'harvest.session_start': { icon: '⚖️', color: 'text-blue-400' },
   'harvest.plant_add': { icon: '🌿', color: 'text-green-400' },
+  'harvest.plant_remove': { icon: '🌿', color: 'text-red-400' },
   'harvest.complete': { icon: '🎉', color: 'text-green-400' },
   'harvest.archive': { icon: '📦', color: 'text-blue-400' },
   'trim.log_add': { icon: '✂️', color: 'text-green-400' },
@@ -59,6 +61,38 @@ const ACTION_META = {
   'plan.restore': { icon: '♻️', color: 'text-green-400' },
   'roomTemplate.create': { icon: '📐', color: 'text-blue-400' },
   'roomTemplate.delete': { icon: '🗑️', color: 'text-red-400' },
+  'roomTemplate.restore': { icon: '♻️', color: 'text-green-400' },
+  // Сорта
+  'strain.create': { icon: '🧬', color: 'text-blue-400' },
+  'strain.update': { icon: '🧬', color: 'text-yellow-400' },
+  'strain.delete': { icon: '🗑️', color: 'text-red-400' },
+  'strain.restore': { icon: '♻️', color: 'text-green-400' },
+  'strain.merge': { icon: '🔀', color: 'text-yellow-400' },
+  'strain.migrate': { icon: '🧬', color: 'text-blue-400' },
+  // Материнские растения
+  'mother_plant.create': { icon: '🌳', color: 'text-blue-400' },
+  'mother_plant.update': { icon: '🌳', color: 'text-yellow-400' },
+  'mother_plant.prune': { icon: '✂️', color: 'text-yellow-400' },
+  'mother_plant.retire': { icon: '🌳', color: 'text-orange-400' },
+  'mother_plant.delete': { icon: '🗑️', color: 'text-red-400' },
+  'mother_plant.restore': { icon: '♻️', color: 'text-green-400' },
+  // Обработки
+  'treatment.create': { icon: '💊', color: 'text-blue-400' },
+  'treatment.update': { icon: '💊', color: 'text-yellow-400' },
+  'treatment.complete': { icon: '✅', color: 'text-green-400' },
+  'treatment.skip': { icon: '⏭️', color: 'text-yellow-400' },
+  'treatment.delete': { icon: '🗑️', color: 'text-red-400' },
+  'treatment.restore': { icon: '♻️', color: 'text-green-400' },
+  'treatment_product.create': { icon: '🧪', color: 'text-blue-400' },
+  'treatment_product.update': { icon: '🧪', color: 'text-yellow-400' },
+  'treatment_product.delete': { icon: '🗑️', color: 'text-red-400' },
+  'treatment_product.restore': { icon: '♻️', color: 'text-green-400' },
+  'treatment_protocol.create': { icon: '📋', color: 'text-blue-400' },
+  'treatment_protocol.update': { icon: '📋', color: 'text-yellow-400' },
+  'treatment_protocol.delete': { icon: '🗑️', color: 'text-red-400' },
+  'treatment_protocol.set_default': { icon: '⭐', color: 'text-yellow-400' },
+  'treatment_schedule.apply': { icon: '📅', color: 'text-blue-400' },
+  'treatment_schedule.complete': { icon: '✅', color: 'text-green-400' },
 };
 
 // Action groups for filter (keys only — labels come from t())
@@ -66,15 +100,18 @@ const ACTION_GROUP_KEYS = [
   { groupKey: 'auth', options: ['auth.login', 'auth.logout', 'auth.change_password'] },
   { groupKey: 'users', options: ['user.create', 'user.update', 'user.approve', 'user.delete', 'user.restore'] },
   { groupKey: 'roles', options: ['role.create', 'role.update', 'role.delete', 'role.restore'] },
-  { groupKey: 'rooms', options: ['room.update', 'room.cycle_start', 'room.note', 'room.harvest_reset'] },
+  { groupKey: 'rooms', options: ['room.update', 'room.cycle_start', 'room.cycle_transfer', 'room.note', 'room.harvest_reset'] },
   { groupKey: 'tasks', options: ['task.create', 'task.quick_add', 'task.complete', 'task.uncomplete', 'task.update', 'task.delete', 'task.restore'] },
   { groupKey: 'clones', options: ['clone_cut.create', 'clone_cut.create_order', 'clone_cut.upsert', 'clone_cut.update', 'clone_cut.delete', 'clone_cut.restore', 'clone_cut.dispose'] },
   { groupKey: 'vegetation', options: ['veg_batch.create', 'veg_batch.update', 'veg_batch.dispose_remaining', 'veg_batch.delete', 'veg_batch.restore'] },
-  { groupKey: 'harvest', options: ['harvest.session_start', 'harvest.plant_add', 'harvest.complete', 'harvest.archive'] },
+  { groupKey: 'harvest', options: ['harvest.session_start', 'harvest.plant_add', 'harvest.plant_remove', 'harvest.complete', 'harvest.archive'] },
   { groupKey: 'trim', options: ['trim.log_add', 'trim.log_delete', 'trim.log_restore', 'trim.archive_update', 'trim.complete'] },
   { groupKey: 'archive', options: ['archive.update', 'archive.delete', 'archive.restore'] },
   { groupKey: 'plans', options: ['plan.upsert', 'plan.update', 'plan.delete', 'plan.restore'] },
-  { groupKey: 'templates', options: ['roomTemplate.create', 'roomTemplate.delete'] },
+  { groupKey: 'templates', options: ['roomTemplate.create', 'roomTemplate.delete', 'roomTemplate.restore'] },
+  { groupKey: 'strains', options: ['strain.create', 'strain.update', 'strain.delete', 'strain.restore', 'strain.merge', 'strain.migrate'] },
+  { groupKey: 'mothers', options: ['mother_plant.create', 'mother_plant.update', 'mother_plant.prune', 'mother_plant.retire', 'mother_plant.delete', 'mother_plant.restore'] },
+  { groupKey: 'treatments', options: ['treatment.create', 'treatment.update', 'treatment.complete', 'treatment.skip', 'treatment.delete', 'treatment.restore', 'treatment_product.create', 'treatment_product.update', 'treatment_product.delete', 'treatment_product.restore', 'treatment_protocol.create', 'treatment_protocol.update', 'treatment_protocol.delete', 'treatment_protocol.set_default', 'treatment_schedule.apply', 'treatment_schedule.complete'] },
 ];
 
 const AuditLog = () => {
@@ -165,7 +202,8 @@ const AuditLog = () => {
 
   const loadUsers = async () => {
     try {
-      const list = await userService.getUsers();
+      // Включаем удалённых — чтобы можно было фильтровать по уволенным в истории аудита
+      const list = await userService.getUsers({ includeDeleted: true });
       setUsers(Array.isArray(list) ? list : []);
     } catch (_) {
       setUsers([]);
@@ -197,6 +235,7 @@ const AuditLog = () => {
       if (filterAction) params.action = filterAction;
       if (filterFrom) params.from = filterFrom;
       if (filterTo) params.to = filterTo;
+      if (search.trim()) params.search = search.trim();
       const data = await auditLogService.getLogs(params);
       setLogs(Array.isArray(data.logs) ? data.logs : []);
       setTotal(data.total ?? 0);
@@ -217,15 +256,27 @@ const AuditLog = () => {
     if (canRead && activeTab === 'sessions') loadSessions();
   }, [canRead, activeTab, loadSessions]);
 
-  // Auto-refresh sessions every 30 seconds
+  // Auto-refresh sessions every 30 seconds — пауза когда таб скрыт (document.hidden)
   useEffect(() => {
     if (!canRead || activeTab !== 'sessions') return;
-    const interval = setInterval(() => loadSessions(true), 30_000);
-    return () => clearInterval(interval);
+    const tick = () => { if (!document.hidden) loadSessions(true); };
+    const interval = setInterval(tick, 30_000);
+    const onVisible = () => { if (!document.hidden) loadSessions(true); };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [canRead, activeTab, loadSessions]);
+
+  // Серверный поиск — дебаунс 400 мс, сбрасываем страницу
+  useEffect(() => {
+    if (!canRead || activeTab !== 'log') return;
+    const handle = setTimeout(() => { setPage(1); loadLogs(); }, 400);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   useEffect(() => {
     if (canRead && activeTab === 'log') loadLogs();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canRead, activeTab, page, filterUserId, filterAction, filterFrom, filterTo]);
 
   if (!canRead) {
@@ -240,22 +291,8 @@ const AuditLog = () => {
   }
 
   const totalPages = Math.ceil(total / limit);
-
-  // Local text filter on loaded logs
-  const filteredLogs = search.trim()
-    ? logs.filter(log => {
-        const s = search.toLowerCase();
-        const actionLabel = getActionLabel(log.action);
-        const userName = log.user?.name || '';
-        const details = log.details ? Object.values(log.details).join(' ') : '';
-        return (
-          actionLabel.toLowerCase().includes(s) ||
-          userName.toLowerCase().includes(s) ||
-          details.toLowerCase().includes(s) ||
-          log.action.toLowerCase().includes(s)
-        );
-      })
-    : logs;
+  // Поиск теперь серверный — работаем прямо со списком с бэкенда
+  const filteredLogs = logs;
 
   // Render details
   const renderDetails = (log) => {
@@ -565,9 +602,6 @@ const AuditLog = () => {
             <div className="px-4 py-3 border-b border-dark-700 flex items-center justify-between flex-wrap gap-2">
               <span className="text-dark-400 text-sm">
                 {t('audit.records')} <span className="text-white font-medium">{total}</span>
-                {search && filteredLogs.length !== logs.length && (
-                  <span className="text-dark-500 ml-2">({t('audit.shown', { count: filteredLogs.length })})</span>
-                )}
               </span>
               {totalPages > 1 && (
                 <div className="flex items-center gap-2">

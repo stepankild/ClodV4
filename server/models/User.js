@@ -107,6 +107,9 @@ userSchema.methods.hasPermission = async function(permissionName) {
   return permissions.includes(permissionName) || permissions.includes('*');
 };
 
+// Индекс для getSessions: быстрый поиск активных сессий по наличию refreshToken
+userSchema.index({ refreshToken: 1 }, { sparse: true });
+
 const User = mongoose.model('User', userSchema);
 
 export default User;

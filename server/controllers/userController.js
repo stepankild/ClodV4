@@ -9,7 +9,10 @@ import { t } from '../utils/i18n.js';
 // @route   GET /api/users
 export const getUsers = async (req, res) => {
   try {
-    const users = await User.find({ ...notDeleted })
+    // ?includeDeleted=true — для выпадашек в audit-логе (чтобы можно было фильтровать по уволенным)
+    const includeDeleted = req.query.includeDeleted === 'true' || req.query.includeDeleted === '1';
+    const filter = includeDeleted ? {} : { ...notDeleted };
+    const users = await User.find(filter)
       .select('-password -refreshToken')
       .populate('roles', 'name description')
       .sort({ createdAt: -1 });
