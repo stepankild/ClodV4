@@ -15,6 +15,16 @@ const lightState = new Map();
 
 const LIGHT_THRESHOLD = 50; // lux — above = day, below = night
 
+// Flapping guard: a threshold breach / recovery must persist for SUSTAIN_MIN
+// consecutive minutes before we fire to Telegram. Prevents spam when a value
+// oscillates right at the threshold (e.g. temp jumping between 19.9 and 20.1
+// when min=20). For recovery we additionally require the value to be inside
+// the range by a small hysteresis margin (RECOVER_MARGIN_PCT of the
+// min→max span, capped). That way a single spike back to exactly the
+// boundary doesn't send a premature "в норме" message.
+const SUSTAIN_MIN = 5;
+const RECOVER_MARGIN_PCT = 0.05;  // 5% of the configured min↔max range
+
 // Stuck-sensor detector: a reading is considered stuck when every sample in
 // the last STUCK_WINDOW_MIN minutes has the exact same value (down to the
 // sensor's native precision). Even a truly stable grow-room normally jitters
@@ -406,7 +416,7 @@ async function checkAlerts() {
         }
       }
 
-      // Get latest reading for sensor metrics
+      // Get latest reading for sensor metrics (used for freshness gate + display)
       const reading = await SensorReading.findOne({ zoneId })
         .sort({ timestamp: -1 }).lean();
       if (!reading) continue;
@@ -414,6 +424,16 @@ async function checkAlerts() {
       // Check reading freshness (< 5 min)
       const age = Date.now() - new Date(reading.timestamp).getTime();
       if (age > 5 * 60 * 1000) continue;
+
+      // Sustain window: last SUSTAIN_MIN minutes of readings.
+      // We load it once here and reuse it for every threshold rule below —
+      // a rule only fires if the breach holds across ALL samples in this
+      // window (and recovery only if ALL samples are inside the band).
+      const sustainSince = new Date(Date.now() - SUSTAIN_MIN * 60 * 1000);
+      const sustainWindow = await SensorReading.find(
+        { zoneId, timestamp: { $gte: sustainSince } },
+        { temperature: 1, humidity: 1, humidity_sht45: 1, co2: 1, light: 1, temperatures: 1, timestamp: 1 }
+      ).sort({ timestamp: 1 }).lean();
 
       // Check each metric rule
       for (const rule of rules) {
@@ -427,36 +447,61 @@ async function checkAlerts() {
         const unit = METRIC_UNITS[rule.metric];
         const displayValue = rule.metric === 'vpd' ? value.toFixed(2) : Math.round(value * 10) / 10;
 
-        let breached = false;
-        let threshold = '';
+        // Compute hysteresis band for recovery: value must be INSIDE
+        // [min+margin, max-margin] to be considered "sustainably in range".
+        // Breach side uses the raw threshold.
+        const span = (rule.min != null && rule.max != null)
+          ? Math.abs(rule.max - rule.min)
+          : null;
+        const margin = span != null ? span * RECOVER_MARGIN_PCT : 0;
+        const recoverMin = rule.min != null ? rule.min + margin : null;
+        const recoverMax = rule.max != null ? rule.max - margin : null;
 
-        if (rule.min != null && value < rule.min) {
-          breached = true;
-          threshold = `мин: ${rule.min}${unit}`;
-        } else if (rule.max != null && value > rule.max) {
-          breached = true;
-          threshold = `макс: ${rule.max}${unit}`;
-        }
+        const classify = (v) => {
+          if (v == null) return null;
+          if (rule.min != null && v < rule.min) return 'low';
+          if (rule.max != null && v > rule.max) return 'high';
+          if (recoverMin != null && v < recoverMin) return 'transition';
+          if (recoverMax != null && v > recoverMax) return 'transition';
+          return 'normal';
+        };
 
-        if (breached) {
+        // Evaluate all samples in window for THIS metric
+        const samples = sustainWindow
+          .map(r => classify(getMetricValue(r, rule.metric)))
+          .filter(x => x != null);
+
+        // Need at least 3 samples in the 5-min window to decide
+        if (samples.length < 3) continue;
+
+        const allLow = samples.every(s => s === 'low');
+        const allHigh = samples.every(s => s === 'high');
+        const allNormal = samples.every(s => s === 'normal');
+
+        const isBreached = allLow || allHigh;
+        const isRecovered = allNormal;
+
+        if (isBreached) {
+          const threshold = allLow ? `мин: ${rule.min}${unit}` : `макс: ${rule.max}${unit}`;
           if (cooldownPassed(key, rule.cooldownMin)) {
             const msg = `⚠️ <b>Зона: ${zoneName}</b>\n${label}: ${displayValue}${unit} (${threshold})\n🕐 ${formatTime()}`;
             const ok = await sendTelegram(chatId, msg);
             if (ok) {
               recordAlert(key);
               activeAlerts.set(key, true);
-              const thresholdStr = rule.min != null && value < rule.min ? `<${rule.min}` : `>${rule.max}`;
+              const thresholdStr = allLow ? `<${rule.min}` : `>${rule.max}`;
               await AlertLog.create({ zoneId, metric: rule.metric, type: 'alert', value, threshold: thresholdStr, message: msg });
             }
           }
-        } else if (activeAlerts.get(key)) {
-          // Value returned to normal — send recovery
+        } else if (isRecovered && activeAlerts.get(key)) {
+          // Sustained recovery (all samples inside hysteresis band)
           const msg = `✅ <b>Зона: ${zoneName}</b>\n${label} в норме: ${displayValue}${unit}\n🕐 ${formatTime()}`;
           await sendTelegram(chatId, msg);
           activeAlerts.delete(key);
           resetCooldown(key);
           await AlertLog.create({ zoneId, metric: rule.metric, type: 'recovery', value, message: msg });
         }
+        // Mixed/transition samples → do nothing, wait out the flap
       }
 
       // ── Stuck sensor detection ──
