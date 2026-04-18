@@ -5,22 +5,40 @@ import api from '../../services/api';
  * Timelapse browser for a zone.
  * Photos are served directly from Cloudflare R2 (CDN) — no proxy through server.
  * Server returns list of days + pre-built URLs: { thumb, medium, full }.
+ *
+ * Module-level cache per zone so repeat visits render instantly; server cache
+ * is still consulted via a soft refresh (60s staleness).
  */
+const _photosCache = new Map(); // zone -> { at: ms, days: [...] }
+const PHOTOS_TTL_MS = 60 * 1000;
+
 export default function TimelapsePanel({ zone = 'vega', title = 'Таймлапс' }) {
-  const [days, setDays] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const cached = _photosCache.get(zone);
+  const [days, setDays] = useState(cached?.days || []);
+  // Only show "loading" spinner when we have nothing at all
+  const [loading, setLoading] = useState(!cached);
   const [error, setError] = useState(null);
   const [openArchive, setOpenArchive] = useState(false);
   const [openVideo, setOpenVideo] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    const c = _photosCache.get(zone);
+    // If cache is fresh, skip REST entirely this mount
+    if (c && Date.now() - c.at < PHOTOS_TTL_MS) {
+      setDays(c.days);
+      setLoading(false);
+      return;
+    }
     const load = async () => {
-      setLoading(true);
+      if (!c) setLoading(true); // only show spinner if no stale data to show
       setError(null);
       try {
         const { data } = await api.get(`/timelapse/${zone}/photos`);
-        if (!cancelled) setDays(Array.isArray(data.days) ? data.days : []);
+        if (cancelled) return;
+        const nextDays = Array.isArray(data.days) ? data.days : [];
+        _photosCache.set(zone, { at: Date.now(), days: nextDays });
+        setDays(nextDays);
       } catch (e) {
         if (!cancelled) setError(e?.response?.data?.error || e.message);
       } finally {
@@ -43,8 +61,9 @@ export default function TimelapsePanel({ zone = 'vega', title = 'Таймлап�
           <span>📷</span> {title}
         </h2>
         <div className="text-xs text-dark-500">
-          {loading ? 'загрузка…' : totalCount > 0
-            ? `${totalCount} снимков · ${days.length} дней`
+          {totalCount > 0
+            ? `${totalCount} снимков · ${days.length} дней${loading ? ' · обновление…' : ''}`
+            : loading ? 'загрузка…'
             : error ? `ошибка: ${error}` : 'нет снимков'}
         </div>
       </div>
