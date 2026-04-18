@@ -15,6 +15,15 @@ const lightState = new Map();
 
 const LIGHT_THRESHOLD = 50; // lux — above = day, below = night
 
+// Stuck-sensor detector: a reading is considered stuck when every sample in
+// the last STUCK_WINDOW_MIN minutes has the exact same value (down to the
+// sensor's native precision). Even a truly stable grow-room normally jitters
+// by at least 1 LSB (e.g. DS18B20 0.0625°C) within an hour, so an identical
+// stream for that long indicates a frozen driver/bus cache, not real stability.
+const STUCK_WINDOW_MIN = 60;
+const STUCK_MIN_SAMPLES = 15;          // at least this many non-null samples in the window
+const STUCK_COOLDOWN_MIN = 4 * 60;     // 4 hours between repeat alerts for the same sensor
+
 // Learned light schedule cache: zoneId → { onHour, offHour, dayLength, updatedAt }
 const learnedLightSchedule = new Map();
 const SCHEDULE_CACHE_TTL = 60 * 60 * 1000; // refresh every 1 hour
@@ -252,6 +261,110 @@ function resetCooldown(key) {
 /**
  * Check all zones for alert conditions
  */
+/**
+ * Detect sensors whose reported value has not changed by even one LSB over the
+ * configured window. Fires a Telegram alert once per sensor with a long cooldown
+ * and sends a recovery message when values start changing again.
+ *
+ * Checks:
+ *   - Scalar fields: temperature, humidity, humidity_sht45, co2, light
+ *   - Per-sensor temperatures[]   (I2C DS18B20/SHT45 — Zigbee excluded)
+ *   - Per-sensor humidityReadings[] (I2C — Zigbee excluded, those are event-based)
+ */
+async function checkStuckSensors(zoneId, zoneName, chatId) {
+  const since = new Date(Date.now() - STUCK_WINDOW_MIN * 60 * 1000);
+  const readings = await SensorReading.find(
+    { zoneId, timestamp: { $gte: since } },
+    { temperature: 1, humidity: 1, humidity_sht45: 1, co2: 1, light: 1, temperatures: 1, humidityReadings: 1 }
+  ).sort({ timestamp: 1 }).lean();
+
+  if (readings.length < STUCK_MIN_SAMPLES) return;
+
+  const sendStuckAlert = async (key, label, value, unit = '') => {
+    if (!cooldownPassed(key, STUCK_COOLDOWN_MIN)) return;
+    const msg = `⚠️ <b>Зона: ${zoneName}</b>\nДатчик <b>${label}</b> завис на <code>${value}${unit}</code>\nЗначение не меняется ≥${STUCK_WINDOW_MIN} мин\n🕐 ${formatTime()}`;
+    const ok = await sendTelegram(chatId, msg);
+    if (ok) {
+      recordAlert(key);
+      activeAlerts.set(key, true);
+      await AlertLog.create({ zoneId, metric: key.split(':').slice(1).join(':'), type: 'alert', value, message: msg });
+    }
+  };
+
+  const sendRecoveryAlert = async (key, label) => {
+    if (!activeAlerts.get(key)) return;
+    const msg = `✅ <b>Зона: ${zoneName}</b>\nДатчик <b>${label}</b> снова меняется\n🕐 ${formatTime()}`;
+    await sendTelegram(chatId, msg);
+    activeAlerts.delete(key);
+    resetCooldown(key);
+    await AlertLog.create({ zoneId, metric: key.split(':').slice(1).join(':'), type: 'recovery', message: msg });
+  };
+
+  // Scalar fields
+  const scalarFields = [
+    { key: 'temperature',    label: '🌡 Температура' },
+    { key: 'humidity',       label: '💧 Влажность (STCC4)' },
+    { key: 'humidity_sht45', label: '💧 Влажность (SHT45)' },
+    { key: 'co2',            label: '🫧 CO₂' },
+    { key: 'light',          label: '☀️ Свет' },
+  ];
+  for (const { key: field, label } of scalarFields) {
+    const values = readings.map(r => r[field]).filter(v => v != null);
+    if (values.length < STUCK_MIN_SAMPLES) continue;
+    const distinct = new Set(values);
+    const alertKey = `${zoneId}:stuck:${field}`;
+    if (distinct.size === 1) {
+      await sendStuckAlert(alertKey, label, [...distinct][0]);
+    } else {
+      await sendRecoveryAlert(alertKey, label);
+    }
+  }
+
+  // Per-sensor temperatures (DS18B20 / SHT45 — skip Zigbee)
+  const tempBySensor = new Map(); // sensorId -> { values, location }
+  for (const r of readings) {
+    for (const t of (r.temperatures || [])) {
+      if (t.value == null) continue;
+      if (t.sensorId?.startsWith('zigbee-')) continue; // Zigbee is event-based
+      if (!tempBySensor.has(t.sensorId)) tempBySensor.set(t.sensorId, { values: [], location: t.location });
+      tempBySensor.get(t.sensorId).values.push(t.value);
+    }
+  }
+  for (const [sensorId, { values, location }] of tempBySensor) {
+    if (values.length < STUCK_MIN_SAMPLES) continue;
+    const distinct = new Set(values);
+    const alertKey = `${zoneId}:stuck:temp:${sensorId}`;
+    const label = `🌡 ${location || sensorId}`;
+    if (distinct.size === 1) {
+      await sendStuckAlert(alertKey, label, [...distinct][0], '°C');
+    } else {
+      await sendRecoveryAlert(alertKey, label);
+    }
+  }
+
+  // Per-sensor humidity (I2C — Zigbee excluded)
+  const humBySensor = new Map();
+  for (const r of readings) {
+    for (const h of (r.humidityReadings || [])) {
+      if (h.value == null) continue;
+      if (h.sensorId?.startsWith('zigbee-')) continue;
+      if (!humBySensor.has(h.sensorId)) humBySensor.set(h.sensorId, { values: [], location: h.location });
+      humBySensor.get(h.sensorId).values.push(h.value);
+    }
+  }
+  for (const [sensorId, { values, location }] of humBySensor) {
+    if (values.length < STUCK_MIN_SAMPLES) continue;
+    const distinct = new Set(values);
+    const alertKey = `${zoneId}:stuck:hum:${sensorId}`;
+    const label = `💧 ${location || sensorId}`;
+    if (distinct.size === 1) {
+      await sendStuckAlert(alertKey, label, [...distinct][0], '%');
+    } else {
+      await sendRecoveryAlert(alertKey, label);
+    }
+  }
+}
+
 async function checkAlerts() {
   try {
     const configs = await AlertConfig.find({ enabled: true }).lean();
@@ -345,6 +458,12 @@ async function checkAlerts() {
           await AlertLog.create({ zoneId, metric: rule.metric, type: 'recovery', value, message: msg });
         }
       }
+
+      // ── Stuck sensor detection ──
+      // Flags any metric that returned identical values for STUCK_WINDOW_MIN
+      // (e.g. DS18B20 hung at an exact mC reading, STCC4 latching its buffer).
+      // Skips event-based Zigbee sensors which legitimately report only on change.
+      await checkStuckSensors(zoneId, zoneName, chatId);
 
       // ── Light anomaly detection ──
       // Learns normal schedule from last 7 days, alerts only on deviations
