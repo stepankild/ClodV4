@@ -306,7 +306,8 @@ export const getDeletedVegBatches = async (req, res) => {
     const list = await VegBatch.find(deletedOnly)
       .populate({ path: 'sourceCloneCut', select: 'cutDate strain quantity strains room', populate: { path: 'room', select: 'name roomNumber' } })
       .populate('flowerRoom', 'name roomNumber')
-      .sort({ deletedAt: -1 });
+      .sort({ deletedAt: -1 })
+      .limit(200);
     res.json(list);
   } catch (error) {
     console.error('Get deleted veg batches error:', error);

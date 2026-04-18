@@ -1031,8 +1031,34 @@ export const restoreArchive = async (req, res) => {
     if (!doc) return res.status(404).json({ message: t('archive.notFoundOrRestored', req.lang) });
     doc.deletedAt = null;
     await doc.save();
-    await createAuditLog(req, { action: 'archive.restore', entityType: 'CycleArchive', entityId: doc._id, details: { cycleName: doc.cycleName } });
-    res.json(doc);
+
+    // Каскад: восстановить связанные удалённые TrimLog записи
+    const result = await TrimLog.updateMany(
+      { archive: doc._id, ...deletedOnly },
+      { $set: { deletedAt: null } }
+    );
+    const restoredTrimCount = result.modifiedCount || 0;
+
+    if (restoredTrimCount > 0) {
+      // Пересчёт trimWeight
+      const agg = await TrimLog.aggregate([
+        { $match: { archive: doc._id, deletedAt: null } },
+        { $group: { _id: null, total: { $sum: '$weight' } } }
+      ]);
+      const totalTrimmed = agg.length > 0 ? agg[0].total : 0;
+      doc.harvestData = doc.harvestData || {};
+      doc.harvestData.trimWeight = totalTrimmed;
+      if (totalTrimmed > 0 && doc.trimStatus === 'pending') doc.trimStatus = 'in_progress';
+      await doc.save();
+    }
+
+    await createAuditLog(req, {
+      action: 'archive.restore',
+      entityType: 'CycleArchive',
+      entityId: doc._id,
+      details: { cycleName: doc.cycleName, cascadedTrimLogs: restoredTrimCount }
+    });
+    res.json({ ...doc.toObject(), restoredTrimCount });
   } catch (error) {
     console.error('Restore archive error:', error);
     res.status(500).json({ message: t('common.serverError', req.lang) });

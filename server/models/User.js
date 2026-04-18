@@ -46,6 +46,11 @@ const userSchema = new mongoose.Schema({
     type: Date,
     default: null
   },
+  // Сохраняется при soft-delete, чтобы restore вернул прежнее состояние активации
+  isActiveBeforeDelete: {
+    type: Boolean,
+    default: null
+  },
   lastActivity: {
     type: Date,
     default: null

@@ -1931,8 +1931,15 @@
     "roles": "Roles",
     "strains": "Strains",
     "templates": "Room Templates",
+    "motherPlants": "Mother Plants",
+    "treatmentRecords": "Treatment Records",
+    "treatmentProducts": "Treatment Products",
     "rows": "rows",
-    "pcs": "pcs"
+    "pcs": "pcs",
+    "confirmRestoreUser": "Restore user \"{{name}}\"?",
+    "confirmRestoreRole": "Restore role \"{{name}}\"?",
+    "confirmRestoreArchive": "Restore archive \"{{name}}\"? Related deleted trim records will be restored as well.",
+    "archiveCascadedTrim": "Restored trim records: {{count}}"
   },
   "strains": {
     "title": "Strain Library",

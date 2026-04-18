@@ -182,7 +182,8 @@ export const getDeletedPlans = async (req, res) => {
   try {
     const plans = await PlannedCycle.find({ ...deletedOnly })
       .populate('room', 'name roomNumber')
-      .sort({ deletedAt: -1 });
+      .sort({ deletedAt: -1 })
+      .limit(200);
     res.json(plans);
   } catch (error) {
     console.error('Get deleted plans error:', error);

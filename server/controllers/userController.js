@@ -169,6 +169,7 @@ export const deleteUser = async (req, res) => {
     const deletedEmail = user.email;
     const deletedName = user.name;
     user.deletedAt = new Date();
+    user.isActiveBeforeDelete = user.isActive;
     user.isActive = false;
     await user.save();
 
@@ -318,7 +319,8 @@ export const getDeletedUsers = async (req, res) => {
     const users = await User.find({ ...deletedOnly })
       .select('-password -refreshToken')
       .populate('roles', 'name')
-      .sort({ deletedAt: -1 });
+      .sort({ deletedAt: -1 })
+      .limit(200);
     res.json(users);
   } catch (error) {
     console.error('Get deleted users error:', error);
@@ -333,7 +335,9 @@ export const restoreUser = async (req, res) => {
     const user = await User.findOne({ _id: req.params.id, ...deletedOnly }).select('-password -refreshToken');
     if (!user) return res.status(404).json({ message: t('users.deletedNotFound', req.lang) });
     user.deletedAt = null;
-    user.isActive = true;
+    // Восстанавливаем прежнее состояние активации; если флаг не был записан (старая запись) — активируем
+    user.isActive = user.isActiveBeforeDelete == null ? true : user.isActiveBeforeDelete;
+    user.isActiveBeforeDelete = null;
     await user.save();
     await createAuditLog(req, { action: 'user.restore', entityType: 'User', entityId: user._id, details: { email: user.email, name: user.name } });
     res.json(user);
@@ -349,7 +353,8 @@ export const getDeletedRoles = async (req, res) => {
   try {
     const roles = await Role.find({ ...deletedOnly })
       .populate('permissions', 'name description module')
-      .sort({ deletedAt: -1 });
+      .sort({ deletedAt: -1 })
+      .limit(200);
     res.json(roles);
   } catch (error) {
     console.error('Get deleted roles error:', error);

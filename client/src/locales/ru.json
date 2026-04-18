@@ -1930,8 +1930,15 @@
     "roles": "Роли",
     "strains": "Сорта",
     "templates": "Шаблоны комнат",
+    "motherPlants": "Материнские растения",
+    "treatmentRecords": "Записи обработок",
+    "treatmentProducts": "Препараты для обработок",
     "rows": "рядов",
-    "pcs": "шт"
+    "pcs": "шт",
+    "confirmRestoreUser": "Восстановить пользователя «{{name}}»?",
+    "confirmRestoreRole": "Восстановить роль «{{name}}»?",
+    "confirmRestoreArchive": "Восстановить архив «{{name}}»? Связанные удалённые записи трима также будут восстановлены.",
+    "archiveCascadedTrim": "Восстановлено записей трима: {{count}}"
   },
   "strains": {
     "title": "Библиотека сортов",

@@ -76,7 +76,7 @@ export const deleteTemplate = async (req, res) => {
 
 export const getDeletedTemplates = async (req, res) => {
   try {
-    const templates = await RoomTemplate.find({ ...deletedOnly }).sort({ deletedAt: -1 });
+    const templates = await RoomTemplate.find({ ...deletedOnly }).sort({ deletedAt: -1 }).limit(200);
     res.json(templates);
   } catch (error) {
     console.error('Get deleted templates error:', error);

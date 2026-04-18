@@ -350,19 +350,22 @@ export const restoreTrimLog = async (req, res) => {
     const log = await TrimLog.findOne({ _id: req.params.id, ...deletedOnly });
     if (!log) return res.status(404).json({ message: t('trim.deletedNotFound', req.lang) });
 
+    // Нельзя восстановить лог к удалённому архиву — сначала нужно восстановить сам архив
+    const archive = await CycleArchive.findOne({ _id: log.archive, ...notDeleted });
+    if (!archive) {
+      return res.status(409).json({ message: t('trim.archiveDeleted', req.lang) });
+    }
+
     log.deletedAt = null;
     await log.save();
 
     // Пересчитать trimWeight в архиве
-    const archive = await CycleArchive.findById(log.archive);
-    if (archive) {
-      const totalTrimmed = await recalcTrimWeight(archive._id);
-      archive.harvestData.trimWeight = totalTrimmed;
-      if (totalTrimmed > 0 && archive.trimStatus === 'pending') {
-        archive.trimStatus = 'in_progress';
-      }
-      await archive.save();
+    const totalTrimmed = await recalcTrimWeight(archive._id);
+    archive.harvestData.trimWeight = totalTrimmed;
+    if (totalTrimmed > 0 && archive.trimStatus === 'pending') {
+      archive.trimStatus = 'in_progress';
     }
+    await archive.save();
 
     await createAuditLog(req, {
       action: 'trim.log_restore',

@@ -144,7 +144,7 @@ export const deletePlant = async (req, res) => {
 // @route   GET /api/mother-room/plants/deleted
 export const getDeletedPlants = async (req, res) => {
   try {
-    const list = await MotherPlant.find(deletedOnly).sort({ deletedAt: -1 });
+    const list = await MotherPlant.find(deletedOnly).sort({ deletedAt: -1 }).limit(200);
     res.json(list);
   } catch (error) {
     console.error('Get deleted mother plants error:', error);

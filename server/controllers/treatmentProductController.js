@@ -160,7 +160,7 @@ export const deleteProduct = async (req, res) => {
 // @route   GET /api/treatment-products/deleted
 export const getDeletedProducts = async (req, res) => {
   try {
-    const products = await TreatmentProduct.find({ ...deletedOnly }).sort({ deletedAt: -1 }).lean();
+    const products = await TreatmentProduct.find({ ...deletedOnly }).sort({ deletedAt: -1 }).limit(200).lean();
     res.json(products);
   } catch (error) {
     console.error('Get deleted treatment products error:', error);

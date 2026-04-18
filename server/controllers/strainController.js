@@ -136,7 +136,7 @@ export const deleteStrain = async (req, res) => {
 // @route   GET /api/strains/deleted
 export const getDeletedStrains = async (req, res) => {
   try {
-    const strains = await Strain.find({ ...deletedOnly }).sort({ deletedAt: -1 }).lean();
+    const strains = await Strain.find({ ...deletedOnly }).sort({ deletedAt: -1 }).limit(200).lean();
     res.json(strains);
   } catch (error) {
     console.error('Get deleted strains error:', error);

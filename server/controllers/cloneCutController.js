@@ -174,7 +174,7 @@ export const deleteCloneCut = async (req, res) => {
 // @route   GET /api/clone-cuts/deleted
 export const getDeletedCloneCuts = async (req, res) => {
   try {
-    const list = await CloneCut.find(deletedOnly).populate('room', 'name roomNumber').sort({ deletedAt: -1 });
+    const list = await CloneCut.find(deletedOnly).populate('room', 'name roomNumber').sort({ deletedAt: -1 }).limit(200);
     res.json(list);
   } catch (error) {
     console.error('Get deleted clone cuts error:', error);

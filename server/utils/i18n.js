@@ -139,6 +139,7 @@ const messages = {
   'trim.invalidStrain': { ru: 'Выберите сорт из списка сортов этой комнаты', en: 'Select strain from this room strain list' },
   'trim.logDeleted': { ru: 'Запись удалена', en: 'Record deleted' },
   'trim.deletedNotFound': { ru: 'Удалённая запись не найдена', en: 'Deleted record not found' },
+  'trim.archiveDeleted': { ru: 'Сначала восстановите архив цикла', en: 'Restore the cycle archive first' },
   'trim.completeRequiresPopcorn': { ru: 'Заполните вес попкорна с отсевочного стола и с машинки перед завершением', en: 'Enter popcorn weight from sorting table and machine before completing' },
   'trim.completeRequiresFinalWeight': { ru: 'Внесите финальный вес перед завершением', en: 'Enter final weight before completing' },
 
