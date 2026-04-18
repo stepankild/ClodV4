@@ -222,6 +222,40 @@ class Handler(http.server.SimpleHTTPRequestHandler):
                     "generated_at": datetime.now().isoformat(),
                 })
 
+            # /send-telegram?zone=vega&days=N — send existing video to Telegram on demand.
+            # Bypasses the weekly throttle (user explicitly requested it).
+            if path == "/send-telegram":
+                zone = query.get("zone", ["vega"])[0]
+                try:
+                    days = int(query.get("days", ["7"])[0])
+                except ValueError:
+                    return self._send_json(400, {"error": "days must be integer"})
+                if days < 1 or days > 90:
+                    return self._send_json(400, {"error": "days must be 1..90"})
+
+                import timelapse_build as tb
+                import time as _time
+
+                is_preset = days in tb.PRESET_DAYS
+                key_suffix = f"{days}d" if is_preset else f"custom-{days}d"
+                local_file = tb.OUTPUT_DIR / f"{zone}-{key_suffix}.mp4"
+
+                MAX_AGE_SEC = 24 * 3600
+                need_rebuild = (
+                    not local_file.exists()
+                    or (_time.time() - local_file.stat().st_mtime) > MAX_AGE_SEC
+                )
+                if need_rebuild:
+                    ok, _url = tb.build_one(zone, days, telegram=False, key_suffix=key_suffix)
+                    if not ok or not local_file.exists():
+                        return self._send_json(500, {"error": "video build failed"})
+
+                snapshots = tb.collect_snapshots(zone, days)
+                caption = f"🌱 Таймлапс {zone} — {days} дн., {len(snapshots)} кадров (по запросу)"
+                if tb.send_to_telegram(local_file, caption, force=True):
+                    return self._send_json(200, {"sent": True, "days": days, "rebuilt": need_rebuild})
+                return self._send_json(500, {"error": "telegram send failed"})
+
             # /videos?zone=vega — list all available videos in R2 (presets + customs)
             if path == "/videos":
                 zone = query.get("zone", ["vega"])[0]

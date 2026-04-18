@@ -188,4 +188,41 @@ router.post('/:zone/video/build', protect, express.json(), async (req, res) => {
   }
 });
 
+// POST /api/timelapse/:zone/video/send-telegram — on-demand Telegram digest
+// Body: { days: N }. Pi reuses its local video file if fresh (<24h), else rebuilds.
+router.post('/:zone/video/send-telegram', protect, express.json(), async (req, res) => {
+  try {
+    const zone = req.params.zone;
+    const days = parseInt(req.body?.days || req.query.days, 10);
+    if (!Number.isInteger(days) || days < 1 || days > 90) {
+      return res.status(400).json({ error: 'days must be integer in 1..90' });
+    }
+    if (!FARM_API_KEY) {
+      return res.status(500).json({ error: 'SENSOR_API_KEY not configured on server' });
+    }
+    const piUrl = `${FARM_URL}/send-telegram?zone=${encodeURIComponent(zone)}&days=${days}`;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 180000); // 3 min max
+    try {
+      const r = await fetch(piUrl, {
+        headers: { 'X-API-Key': FARM_API_KEY },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) return res.status(r.status).json(data);
+      res.json(data);
+    } catch (e) {
+      clearTimeout(timeout);
+      if (e.name === 'AbortError') {
+        return res.status(504).json({ error: 'send timed out' });
+      }
+      throw e;
+    }
+  } catch (e) {
+    console.error('telegram send error:', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;

@@ -235,6 +235,8 @@ function VideoModal({ zone, onClose }) {
   const [selected, setSelected] = useState(null); // 'preset:3' | 'custom:10' | null
   const [customDays, setCustomDays] = useState('');
   const [building, setBuilding] = useState(false);
+  const [sendingTg, setSendingTg] = useState(false);
+  const [tgNotice, setTgNotice] = useState(null); // { kind: 'ok'|'err', msg }
 
   const refresh = async () => {
     setLoading(true);
@@ -255,6 +257,28 @@ function VideoModal({ zone, onClose }) {
   const presetDays = data?.presetDays || [3, 7, 14, 30];
   const currentUrl = selected && data ? resolveUrl(data, selected) : null;
   const currentMeta = selected && data ? resolveMeta(data, selected) : null;
+
+  const sendToTelegram = async () => {
+    if (!selected) return;
+    const n = parseInt(selected.split(':')[1], 10);
+    if (!Number.isInteger(n)) return;
+    setSendingTg(true);
+    setTgNotice(null);
+    try {
+      const { data: res } = await api.post(`/timelapse/${zone}/video/send-telegram`, { days: n });
+      setTgNotice({
+        kind: 'ok',
+        msg: res?.rebuilt
+          ? `Отправлено в Telegram (видео пересобрано)`
+          : `Отправлено в Telegram`,
+      });
+    } catch (e) {
+      setTgNotice({ kind: 'err', msg: e?.response?.data?.error || e.message });
+    } finally {
+      setSendingTg(false);
+      setTimeout(() => setTgNotice(null), 5000);
+    }
+  };
 
   const buildCustom = async () => {
     const n = parseInt(customDays, 10);
@@ -377,11 +401,35 @@ function VideoModal({ zone, onClose }) {
                 autoPlay
                 className="w-full rounded bg-black"
               />
-              {currentMeta && (
-                <div className="text-xs text-dark-500 mt-2">
-                  Обновлено: {new Date(currentMeta.generatedAt).toLocaleString()} · {Math.round((currentMeta.sizeKB || 0) / 1024 * 10) / 10} MB
+              <div className="flex items-center justify-between gap-2 mt-2 flex-wrap">
+                {currentMeta && (
+                  <div className="text-xs text-dark-500">
+                    Обновлено: {new Date(currentMeta.generatedAt).toLocaleString()} · {Math.round((currentMeta.sizeKB || 0) / 1024 * 10) / 10} MB
+                  </div>
+                )}
+                <div className="flex items-center gap-2 ml-auto">
+                  {tgNotice && (
+                    <span className={`text-xs ${tgNotice.kind === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                      {tgNotice.msg}
+                    </span>
+                  )}
+                  <button
+                    onClick={sendToTelegram}
+                    disabled={sendingTg || !selected}
+                    className="px-3 py-1.5 bg-sky-700 hover:bg-sky-600 disabled:bg-dark-700 disabled:text-dark-500 text-white rounded text-sm flex items-center gap-1.5"
+                    title="Отправить это видео в группу TrueGrow Alerts"
+                  >
+                    {sendingTg ? (
+                      <>
+                        <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Отправка…
+                      </>
+                    ) : (
+                      <>📤 В Telegram</>
+                    )}
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
           ) : (
             <div className="aspect-video bg-dark-800 rounded flex items-center justify-center text-dark-500 text-sm">
