@@ -845,7 +845,7 @@ const ZoneDetail = () => {
                   name={s.label}
                   stroke={s.color}
                   yAxisId={s.yAxisId}
-                  dot={s.eventBased ? { r: 2, stroke: s.color, fill: s.color } : false}
+                  dot={false}
                   strokeWidth={2}
                   connectNulls={s.eventBased}
                   isAnimationActive={false}
