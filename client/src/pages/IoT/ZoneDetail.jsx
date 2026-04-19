@@ -1045,30 +1045,46 @@ const ZoneDetail = () => {
                               {s.abandoned ? '—' : fmtDur(durMs)}
                             </span>
                             <span className="text-dark-500">
-                              {s.onHumidity != null && (
+                              {(s.onHumidity != null || s.offHumidity != null) && (
                                 <>
                                   <span className="text-dark-600 text-[10px] mr-1">RH</span>
-                                  <span
-                                    className={s.onHumidity < rhLow ? 'text-red-400' : s.onHumidity > rhHigh ? 'text-amber-400' : 'text-dark-300'}
-                                    title={`При включении (порог вкл. ≤ ${rhLow}%)`}
-                                  >
-                                    {s.onHumidity.toFixed(0)}%
-                                  </span>
-                                  {s.offHumidity != null && (
-                                    <>
-                                      <span className="mx-1 text-dark-600">→</span>
-                                      <span
-                                        className={s.offHumidity >= rhHigh ? 'text-green-400' : s.offHumidity < rhLow ? 'text-red-400' : 'text-dark-300'}
-                                        title={`При выключении (порог выкл. ≥ ${rhHigh}%)`}
-                                      >
-                                        {s.offHumidity.toFixed(0)}%
-                                      </span>
-                                      {delta != null && delta !== 0 && (
-                                        <span className={`ml-1 text-[10px] ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
-                                          {delta > 0 ? '+' : ''}{delta.toFixed(0)}
-                                        </span>
-                                      )}
-                                    </>
+                                  {s.onHumidity != null ? (
+                                    <span
+                                      className={s.onHumidity < rhLow ? 'text-red-400' : s.onHumidity > rhHigh ? 'text-amber-400' : 'text-dark-300'}
+                                      title={`При включении (ожидалось: ≤ ${rhLow}%)`}
+                                    >
+                                      {s.onHumidity.toFixed(0)}%
+                                    </span>
+                                  ) : (
+                                    <span
+                                      className="text-dark-600"
+                                      title="RH при включении не записан (legacy/ручной трigger)"
+                                    >
+                                      ?
+                                    </span>
+                                  )}
+                                  <span className="mx-1 text-dark-600">→</span>
+                                  {s.offHumidity != null ? (
+                                    <span
+                                      className={s.offHumidity >= rhHigh ? 'text-green-400' : s.offHumidity < rhLow ? 'text-red-400' : 'text-dark-300'}
+                                      title={`При выключении (цель: ≥ ${rhHigh}%)`}
+                                    >
+                                      {s.offHumidity.toFixed(0)}%
+                                    </span>
+                                  ) : s.ongoing ? (
+                                    <span className="text-dark-500 italic" title="Ещё работает">…</span>
+                                  ) : (
+                                    <span
+                                      className="text-dark-600"
+                                      title="RH при выключении не записан (legacy/внешнее отключение)"
+                                    >
+                                      ?
+                                    </span>
+                                  )}
+                                  {delta != null && delta !== 0 && (
+                                    <span className={`ml-1 text-[10px] ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                      {delta > 0 ? '+' : ''}{delta.toFixed(0)}
+                                    </span>
                                   )}
                                 </>
                               )}

@@ -552,6 +552,43 @@ export const getHumidifierLog = async (req, res) => {
       .limit(limit)
       .lean();
 
+    // Back-fill missing humidity on legacy entries (the rogue humidity-ctrl.py
+    // POSTed without sensor fields, so ~half the rows have humidity=null).
+    // Pick the closest SensorReading within ±3 min of the log timestamp.
+    const missing = logs.filter(l => l.humidity == null);
+    if (missing.length) {
+      const tsList = missing.map(l => new Date(l.timestamp));
+      const windowStart = new Date(Math.min(...tsList) - 3 * 60 * 1000);
+      const windowEnd = new Date(Math.max(...tsList) + 3 * 60 * 1000);
+      const readings = await SensorReading.find({
+        zoneId,
+        timestamp: { $gte: windowStart, $lte: windowEnd },
+        $or: [
+          { humidity_sht45: { $ne: null } },
+          { humidity: { $ne: null } },
+        ],
+      }, { timestamp: 1, humidity: 1, humidity_sht45: 1 }).lean();
+
+      if (readings.length) {
+        // Sort by timestamp asc for binary-ish search
+        readings.sort((a, b) => a.timestamp - b.timestamp);
+        for (const log of missing) {
+          const t = new Date(log.timestamp).getTime();
+          let best = null;
+          let bestDist = Infinity;
+          for (const r of readings) {
+            const d = Math.abs(new Date(r.timestamp).getTime() - t);
+            if (d < bestDist) { bestDist = d; best = r; }
+            else if (new Date(r.timestamp).getTime() > t + 3 * 60 * 1000) break;
+          }
+          if (best && bestDist <= 3 * 60 * 1000) {
+            log.humidity = best.humidity_sht45 ?? best.humidity;
+            log.humidityBackfilled = true; // hint for UI
+          }
+        }
+      }
+    }
+
     // Prague-local midnight → now (not server-local, fixes the 1-2h UTC skew)
     const todayStart = pragueDayStart();
     const nowDate = new Date();
