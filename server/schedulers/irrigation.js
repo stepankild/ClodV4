@@ -1,10 +1,53 @@
 import IrrigationSchedule from '../models/IrrigationSchedule.js';
 import IrrigationLog from '../models/IrrigationLog.js';
+import Zone from '../models/Zone.js';
+import AlertConfig from '../models/AlertConfig.js';
 
 // In-flight triggers to avoid double-firing within the same minute.
 // Key: "zoneId:HH:MM". Cleared automatically on the next tick once the
 // schedule minute rolls past.
 const triggeredThisMinute = new Set();
+
+// ── Telegram notifier with per-event-type cooldown ─────────────────────
+// Key: "zoneId:type" → { lastSent: ms }
+const notifyCooldowns = new Map();
+const NOTIFY_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour per (zone, eventType)
+
+async function sendTelegram(chatId, text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !chatId) return false;
+  try {
+    const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text, parse_mode: 'HTML', disable_web_page_preview: true })
+    });
+    return resp.ok;
+  } catch (e) {
+    console.error('[irrigation] telegram send error:', e.message);
+    return false;
+  }
+}
+
+async function notify(zoneId, type, buildMessage) {
+  const key = `${zoneId}:${type}`;
+  const prev = notifyCooldowns.get(key);
+  if (prev && Date.now() - prev.lastSent < NOTIFY_COOLDOWN_MS) return;
+
+  const zone = await Zone.findOne({ zoneId }).lean();
+  const config = await AlertConfig.findOne({ zoneId }).lean();
+  const chatId = config?.telegramChatId || process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) return;
+
+  const zoneName = zone?.name || zoneId;
+  const msg = buildMessage(zoneName);
+  const ok = await sendTelegram(chatId, msg);
+  if (ok) notifyCooldowns.set(key, { lastSent: Date.now() });
+}
+
+function pragueNow() {
+  return new Date().toLocaleString('cs-CZ', { timeZone: 'Europe/Prague', hour: '2-digit', minute: '2-digit', hour12: false });
+}
 
 /**
  * Get current time in Europe/Prague timezone as HH:MM
@@ -70,6 +113,35 @@ async function haGetState(entityId) {
     console.error('[irrigation] HA state query error:', e.message);
     return 'unknown';
   }
+}
+
+/**
+ * Turn the pump ON with retries. Returns:
+ *   { ok: true, state: 'on' }             — confirmed ON
+ *   { ok: false, state: 'off' | 'unknown', reason: string } — failure
+ *
+ * Retries because Xiaomi plugs via Mi-Home ↔ HA sometimes drop the first
+ * service call when the device was idle.
+ */
+async function haTurnOnConfirmed(entityId, attempts = 3) {
+  let lastState = 'unknown';
+  let lastErr = null;
+  for (let i = 0; i < attempts; i++) {
+    const ok = await haSwitch(entityId, 'on');
+    if (!ok) lastErr = 'HA service call failed';
+    await new Promise(r => setTimeout(r, 1200));
+    const state = await haGetState(entityId);
+    lastState = state;
+    if (state === 'on') return { ok: true, state: 'on' };
+    if (state === 'unknown') lastErr = lastErr || 'HA unreachable';
+  }
+  return {
+    ok: false,
+    state: lastState,
+    reason: lastState === 'unknown'
+      ? (lastErr || 'HA unreachable')
+      : `Pump still ${lastState} after ${attempts} attempts`,
+  };
 }
 
 /**
@@ -161,6 +233,16 @@ async function reconcileZones() {
               ? 'HA unreachable during scheduled off'
               : 'Pump reports ON past scheduled off time';
             console.error(`[irrigation] ${config.zoneId}: STUCK — ${stuckReason}`);
+            // Urgent Telegram alert so user can physically pull the plug
+            const overdueMin = Math.round((now.getTime() - expectedOff.getTime()) / 60000);
+            await notify(config.zoneId, 'stuck', (zoneName) => (
+              `🚨 <b>Насос полива ЗАВИС</b>\n` +
+              `Зона: <b>${zoneName}</b>\n` +
+              `Работает уже ${overdueMin} мин сверх расписания\n` +
+              `Причина: ${stuckReason}\n` +
+              `⚠️ Проверьте Home Assistant или выдерните вилку вручную\n` +
+              `🕐 ${pragueNow()} Prague`
+            ));
           }
         }
       }
@@ -191,6 +273,48 @@ async function reconcileZones() {
         { _id: config._id },
         { $set: { liveState: finalLive, liveStateAt: new Date(), stuck, stuckReason } }
       );
+
+      // 4. Missed-schedule detection: for each scheduled HH:MM, check
+      // whether we're 2-15 min past the expected time AND no ON/failure
+      // log exists for it today. That means the tick fell off the rails
+      // (Railway restart or HA blackout covering the exact minute).
+      const pragueNowStr = getPragueTime();
+      const [nowH, nowM] = pragueNowStr.split(':').map(Number);
+      const nowMinutes = nowH * 60 + nowM;
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      for (const sched of config.schedules) {
+        if (!sched.enabled) continue;
+        const [h, m] = sched.time.split(':').map(Number);
+        const schedMinutes = h * 60 + m;
+        const elapsedMin = nowMinutes - schedMinutes;
+        if (elapsedMin < 2 || elapsedMin > 15) continue; // only fire once in the 2-15 min window
+
+        const existing = await IrrigationLog.findOne({
+          zoneId: config.zoneId,
+          scheduleTime: sched.time,
+          timestamp: { $gte: todayStart },
+        }).lean();
+        if (existing) continue; // fired or logged as failure/miss already
+
+        console.warn(`[irrigation] ${config.zoneId} ${sched.time}: MISSED (no log today, ${elapsedMin}min past)`);
+        await IrrigationLog.create({
+          zoneId: config.zoneId,
+          action: 'miss',
+          trigger: 'system',
+          scheduleTime: sched.time,
+          duration: sched.duration,
+          notes: `Tick didn't fire — Railway restart or HA blackout during ${sched.time}`,
+        });
+        await notify(config.zoneId, `miss_${sched.time}`, (zoneName) => (
+          `⚠️ <b>Полив пропущен</b>\n` +
+          `Зона: <b>${zoneName}</b>\n` +
+          `Расписание ${sched.time} не сработало (Railway рестарт или HA недоступен)\n` +
+          `💡 Запустите вручную если нужно\n` +
+          `🕐 ${pragueNow()} Prague`
+        ));
+      }
     }
   } catch (e) {
     console.error('[irrigation] Reconciliation error:', e.message);
@@ -242,8 +366,29 @@ async function checkSchedules() {
         console.log(`[irrigation] Triggering ${config.zoneId} at ${sched.time} for ${sched.duration}min`);
 
         const entityId = config.entityId || 'switch.cuco_v2eur_f6d3_switch';
-        const ok = await haSwitch(entityId, 'on');
-        if (!ok) continue;
+        const result = await haTurnOnConfirmed(entityId);
+
+        if (!result.ok) {
+          // Confirmed failure — log + alert user so they can act
+          console.error(`[irrigation] ${config.zoneId} ${sched.time}: FAILED — ${result.reason}`);
+          await IrrigationLog.create({
+            zoneId: config.zoneId,
+            action: 'failure',
+            trigger: 'schedule',
+            scheduleTime: sched.time,
+            duration: sched.duration,
+            notes: result.reason,
+          });
+          await notify(config.zoneId, 'fire_failed', (zoneName) => (
+            `🚨 <b>Полив не сработал</b>\n` +
+            `Зона: <b>${zoneName}</b>\n` +
+            `Расписание: ${sched.time} · ${sched.duration} мин\n` +
+            `Причина: ${result.reason}\n` +
+            `🕐 ${pragueNow()} Prague`
+          ));
+          triggeredThisMinute.add(triggerKey);
+          continue;
+        }
 
         const expectedOffAt = new Date(Date.now() + sched.duration * 60 * 1000);
 

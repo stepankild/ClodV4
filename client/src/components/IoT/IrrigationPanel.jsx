@@ -233,36 +233,166 @@ const IrrigationPanel = ({ zoneId }) => {
         </button>
       </div>
 
-      {/* Log */}
-      {showLog && log.length > 0 && (
-        <div className="mt-4 border-t border-dark-700 pt-3">
-          <div className="space-y-1 max-h-48 overflow-y-auto">
-            {log.map((entry, i) => (
-              <div key={i} className="flex items-center gap-2 text-xs">
-                <span className={entry.action === 'on' ? 'text-green-400' : 'text-red-400'}>
-                  {entry.action === 'on' ? '▲' : '▼'}
-                </span>
-                <span className="text-dark-500">
-                  {new Date(entry.timestamp).toLocaleString('ru-RU', {
-                    day: '2-digit', month: '2-digit',
-                    hour: '2-digit', minute: '2-digit'
+      {/* Log — paired ON→OFF sessions + failure/miss rows, grouped by day */}
+      {showLog && log.length > 0 && (() => {
+        const asc = [...log].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const items = []; // sessions AND standalone failure/miss events, chronological
+        let open = null;
+        for (const entry of asc) {
+          if (entry.action === 'on') {
+            if (open) items.push({ kind: 'session', ...open, offAt: null, abandoned: true });
+            open = {
+              onAt: entry.timestamp,
+              scheduleTime: entry.scheduleTime,
+              duration: entry.duration,
+              trigger: entry.trigger,
+              expectedOffAt: entry.expectedOffAt,
+            };
+          } else if (entry.action === 'off' && open) {
+            items.push({ kind: 'session', ...open, offAt: entry.timestamp, offTrigger: entry.trigger });
+            open = null;
+          } else if (entry.action === 'off') {
+            // OFF without matching ON — rare (external toggle off). Still show.
+            items.push({ kind: 'orphan-off', offAt: entry.timestamp, trigger: entry.trigger });
+          } else if (entry.action === 'failure' || entry.action === 'miss') {
+            items.push({
+              kind: entry.action,
+              at: entry.timestamp,
+              scheduleTime: entry.scheduleTime,
+              duration: entry.duration,
+              notes: entry.notes,
+              trigger: entry.trigger,
+            });
+          }
+        }
+        if (open) items.push({ kind: 'session', ...open, offAt: null, ongoing: true });
+        items.reverse();
+
+        const now = Date.now();
+        const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const fmtDur = (ms) => {
+          const m = Math.max(0, Math.round(ms / 60000));
+          return m >= 60 ? `${Math.floor(m / 60)}ч ${m % 60}м` : `${m}м`;
+        };
+        const dayKey = (ts) => { const d = new Date(ts); d.setHours(0,0,0,0); return d.getTime(); };
+        const today0 = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+        const dayLabel = (k) => {
+          if (k === today0) return 'Сегодня';
+          if (k === today0 - 86400000) return 'Вчера';
+          return new Date(k).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+        };
+        const triggerIcon = (t) => {
+          if (t === 'schedule') return { icon: '🕐', tip: 'По расписанию' };
+          if (t === 'manual') return { icon: '✋', tip: 'Вручную (кнопка в портале)' };
+          if (t === 'external') return { icon: '🔌', tip: 'Извне (Xiaomi Home, HA, кнопка на плагине)' };
+          if (t === 'system') return { icon: '⚙️', tip: 'Автоматически системой' };
+          return { icon: '•', tip: t };
+        };
+
+        const byDay = new Map();
+        for (const it of items.slice(0, 40)) {
+          const ts = it.onAt || it.at || it.offAt;
+          const k = dayKey(ts);
+          if (!byDay.has(k)) byDay.set(k, []);
+          byDay.get(k).push(it);
+        }
+
+        return (
+          <div className="mt-4 border-t border-dark-700 pt-3 space-y-2 max-h-72 overflow-y-auto">
+            {[...byDay.entries()].map(([k, day]) => {
+              const totalMs = day.reduce((acc, it) => {
+                if (it.kind !== 'session' || it.abandoned) return acc;
+                const end = it.offAt ? new Date(it.offAt).getTime() : now;
+                return acc + (end - new Date(it.onAt).getTime());
+              }, 0);
+              const sessionCount = day.filter(it => it.kind === 'session' && !it.abandoned).length;
+              const issueCount = day.filter(it => it.kind === 'failure' || it.kind === 'miss').length;
+              return (
+                <div key={k} className="rounded border border-dark-700 overflow-hidden">
+                  <div className="flex items-center justify-between px-3 py-1.5 bg-dark-700/50 text-[10px] uppercase tracking-wider">
+                    <span className="text-dark-400">{dayLabel(k)}</span>
+                    <span className="text-dark-500 normal-case">
+                      {sessionCount > 0 && `${sessionCount} полив${sessionCount === 1 ? '' : sessionCount < 5 ? 'а' : 'ов'} · всего ${fmtDur(totalMs)}`}
+                      {issueCount > 0 && <span className="text-red-400 ml-2">⚠ {issueCount} проблем{issueCount === 1 ? 'а' : issueCount < 5 ? 'ы' : ''}</span>}
+                    </span>
+                  </div>
+                  {day.map((it, i) => {
+                    if (it.kind === 'session') {
+                      const onMs = new Date(it.onAt).getTime();
+                      const offMs = it.offAt ? new Date(it.offAt).getTime() : now;
+                      const durMs = offMs - onMs;
+                      const expDur = it.duration ? it.duration * 60 * 1000 : null;
+                      const runLong = expDur && !it.ongoing && !it.abandoned && durMs > expDur * 1.5;
+                      const { icon, tip } = triggerIcon(it.trigger);
+                      return (
+                        <div
+                          key={i}
+                          className={`grid grid-cols-[auto_56px_1fr_auto] gap-x-3 px-3 py-1.5 text-xs items-center ${i % 2 === 0 ? 'bg-dark-800' : 'bg-dark-800/50'}`}
+                        >
+                          <span className="font-mono tabular-nums text-dark-300">
+                            {fmtTime(it.onAt)}
+                            <span className="text-dark-600 mx-1">→</span>
+                            {it.ongoing ? (
+                              <span className="text-green-400">сейчас</span>
+                            ) : it.abandoned ? (
+                              <span className="text-dark-600">?</span>
+                            ) : (
+                              fmtTime(it.offAt)
+                            )}
+                          </span>
+                          <span className={`font-medium tabular-nums text-right ${it.ongoing ? 'text-green-400 animate-pulse' : runLong ? 'text-amber-400' : 'text-cyan-400'}`}>
+                            {it.abandoned ? '—' : fmtDur(durMs)}
+                          </span>
+                          <span className="text-dark-500">
+                            {it.scheduleTime && <span className="text-dark-400">{it.scheduleTime}</span>}
+                            {it.duration && <span className="text-dark-600"> · план {it.duration}м</span>}
+                            {runLong && <span className="text-amber-400 ml-1">(дольше плана)</span>}
+                            {it.abandoned && <span className="text-amber-600 ml-1">сессия прервана</span>}
+                          </span>
+                          <span className="text-sm opacity-70 cursor-help" title={tip}>{icon}</span>
+                        </div>
+                      );
+                    }
+                    if (it.kind === 'failure') {
+                      const { icon, tip } = triggerIcon(it.trigger);
+                      return (
+                        <div key={i} className="px-3 py-1.5 text-xs bg-red-900/20 border-l-2 border-red-500">
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono tabular-nums text-red-300">{fmtTime(it.at)}</span>
+                            <span className="text-red-400 font-medium">🚨 НЕ СРАБОТАЛ</span>
+                            {it.scheduleTime && <span className="text-dark-400">{it.scheduleTime}</span>}
+                            <span className="text-sm ml-auto opacity-70 cursor-help" title={tip}>{icon}</span>
+                          </div>
+                          {it.notes && <div className="text-red-300/70 text-[11px] mt-0.5 ml-[52px]">{it.notes}</div>}
+                        </div>
+                      );
+                    }
+                    if (it.kind === 'miss') {
+                      return (
+                        <div key={i} className="px-3 py-1.5 text-xs bg-amber-900/20 border-l-2 border-amber-500">
+                          <div className="flex items-center gap-3">
+                            <span className="font-mono tabular-nums text-amber-300">{fmtTime(it.at)}</span>
+                            <span className="text-amber-400 font-medium">⚠ ПРОПУЩЕН</span>
+                            {it.scheduleTime && <span className="text-dark-400">{it.scheduleTime}</span>}
+                            <span className="text-[11px] text-dark-500 ml-auto">scheduler не сработал</span>
+                          </div>
+                          {it.notes && <div className="text-amber-300/70 text-[11px] mt-0.5 ml-[52px]">{it.notes}</div>}
+                        </div>
+                      );
+                    }
+                    // orphan-off
+                    return (
+                      <div key={i} className="px-3 py-1.5 text-xs text-dark-500 italic">
+                        {fmtTime(it.offAt)} — выключение без предшествующего включения
+                      </div>
+                    );
                   })}
-                </span>
-                <span className="text-dark-300">
-                  {entry.action === 'on' ? 'Вкл' : 'Выкл'}
-                  {entry.scheduleTime && ` (${entry.scheduleTime})`}
-                  {entry.duration && entry.action === 'on' && ` ${entry.duration}мин`}
-                </span>
-                <span className="text-dark-600 ml-auto">
-                  {entry.trigger === 'schedule' ? 'авто'
-                    : entry.trigger === 'external' ? 'извне'
-                    : 'ручн.'}
-                </span>
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 };
