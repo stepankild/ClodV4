@@ -1007,12 +1007,15 @@ const ZoneDetail = () => {
                     const end = s.offAt ? new Date(s.offAt).getTime() : now;
                     return acc + (end - new Date(s.onAt).getTime());
                   }, 0);
+                  const rhLow = humidifier.rhLow ?? 60;
+                  const rhHigh = humidifier.rhHigh ?? 70;
                   return (
                     <div key={k} className="rounded border border-dark-700 overflow-hidden">
                       <div className="flex items-center justify-between px-3 py-1.5 bg-dark-700/50 text-[10px] uppercase tracking-wider">
                         <span className="text-dark-400">{dayLabel(k)}</span>
                         <span className="text-dark-500 normal-case">
                           {day.length} {day.length === 1 ? 'сессия' : day.length < 5 ? 'сессии' : 'сессий'} · всего {fmtDur(dayTotalMs)}
+                          <span className="text-dark-600 ml-2">· цель RH {rhLow}–{rhHigh}%</span>
                         </span>
                       </div>
                       {day.map((s, i) => {
@@ -1044,11 +1047,22 @@ const ZoneDetail = () => {
                             <span className="text-dark-500">
                               {s.onHumidity != null && (
                                 <>
-                                  <span className="text-blue-400">{s.onHumidity.toFixed(0)}%</span>
+                                  <span className="text-dark-600 text-[10px] mr-1">RH</span>
+                                  <span
+                                    className={s.onHumidity < rhLow ? 'text-red-400' : s.onHumidity > rhHigh ? 'text-amber-400' : 'text-dark-300'}
+                                    title={`При включении (порог вкл. ≤ ${rhLow}%)`}
+                                  >
+                                    {s.onHumidity.toFixed(0)}%
+                                  </span>
                                   {s.offHumidity != null && (
                                     <>
                                       <span className="mx-1 text-dark-600">→</span>
-                                      <span className="text-cyan-400">{s.offHumidity.toFixed(0)}%</span>
+                                      <span
+                                        className={s.offHumidity >= rhHigh ? 'text-green-400' : s.offHumidity < rhLow ? 'text-red-400' : 'text-dark-300'}
+                                        title={`При выключении (порог выкл. ≥ ${rhHigh}%)`}
+                                      >
+                                        {s.offHumidity.toFixed(0)}%
+                                      </span>
                                       {delta != null && delta !== 0 && (
                                         <span className={`ml-1 text-[10px] ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
                                           {delta > 0 ? '+' : ''}{delta.toFixed(0)}
