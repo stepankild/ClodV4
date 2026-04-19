@@ -57,6 +57,32 @@ async function haSwitch(entityId, action) {
 }
 
 /**
+ * Read the ACTUAL current state of a switch entity from Home Assistant.
+ * Returns 'on' | 'off' | 'unavailable' | null (on network/auth error).
+ *
+ * Necessary because plugs can be toggled outside of our scheduler (Xiaomi
+ * Home app, HA automations, physical button) and our in-memory state
+ * then desyncs — leading to e.g. the pump running while both humidifier
+ * plugs are actually OFF.
+ */
+async function haGetState(entityId) {
+  const haUrl = process.env.HA_URL || 'http://localhost:8123';
+  const haToken = process.env.HA_TOKEN;
+  if (!haToken) return null;
+  try {
+    const resp = await fetch(`${haUrl}/api/states/${encodeURIComponent(entityId)}`, {
+      headers: { 'Authorization': `Bearer ${haToken}` }
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data?.state ?? null;
+  } catch (e) {
+    console.error('[humidifier] haGetState error:', e.message);
+    return null;
+  }
+}
+
+/**
  * Get current humidity from latest sensor reading
  * Prefers SHT45 (humidity_sht45) as it's more accurate, falls back to STCC4 (humidity)
  */
@@ -75,38 +101,46 @@ async function getCurrentHumidity(zoneId) {
 }
 
 /**
- * Sync pump state: ON if any humidifier is ON, OFF if all are OFF.
- * Checks both auto-mode states (zoneStates map) and manual-on zones.
+ * Sync pump state: ON if any humidifier plug is actually ON, OFF otherwise.
+ *
+ * CRITICAL: reads the real plug states from Home Assistant rather than trusting
+ * the in-memory zoneStates map. A plug could have been toggled manually via
+ * Xiaomi Home app or an HA automation while the scheduler wasn't looking.
+ * Bug symptom caught before: both humidifier plugs were OFF in Xiaomi app,
+ * but our cached state said 'on' for both → pump kept running dry.
  */
 async function syncPump() {
   try {
-    // Check if any zone has humidifier ON (auto or manual_on)
     const allZones = await Zone.find({
       'config.humidifierMode': { $exists: true }
     }).lean();
 
     let anyOn = false;
-
     for (const zone of allZones) {
-      const mode = zone.config?.humidifierMode;
-      if (mode === 'manual_on') {
+      const entityId = zone.config?.humidifierEntityId;
+      if (!entityId) continue;
+      const actual = await haGetState(entityId);
+      if (actual === 'on') {
         anyOn = true;
-        break;
+        // Keep our in-memory cache in sync with reality while we're at it
+        zoneStates.set(zone.zoneId, 'on');
+      } else if (actual === 'off') {
+        zoneStates.set(zone.zoneId, 'off');
       }
-      if (mode === 'auto' && zoneStates.get(zone.zoneId) === 'on') {
-        anyOn = true;
-        break;
-      }
+      // 'unavailable' / null → don't override cache
+    }
+
+    // Also confirm actual pump state — our cached pumpState can drift
+    const actualPump = await haGetState(PUMP_ENTITY_ID);
+    if (actualPump === 'on' || actualPump === 'off') {
+      pumpState = actualPump;
     }
 
     const desiredPump = anyOn ? 'on' : 'off';
-
     if (pumpState !== desiredPump) {
-      console.log(`[humidifier] Pump ${PUMP_ENTITY_ID}: ${pumpState} -> ${desiredPump} (any humidifier on: ${anyOn})`);
+      console.log(`[humidifier] Pump ${PUMP_ENTITY_ID}: actual=${pumpState} -> ${desiredPump} (any humidifier on: ${anyOn})`);
       const ok = await haSwitch(PUMP_ENTITY_ID, desiredPump);
-      if (ok) {
-        pumpState = desiredPump;
-      }
+      if (ok) pumpState = desiredPump;
     }
   } catch (e) {
     console.error('[humidifier] syncPump error:', e.message);
@@ -130,6 +164,13 @@ async function checkHumidity() {
       const humidity = await getCurrentHumidity(zoneId);
       if (humidity == null) continue; // no fresh data, skip
 
+      // Sync our cache with the real HA plug state first. Picks up manual
+      // toggles via Xiaomi app or HA automations, so we don't send a stale
+      // "OFF" when user already turned it off (or vice versa).
+      const actualState = await haGetState(entityId);
+      if (actualState === 'on' || actualState === 'off') {
+        zoneStates.set(zoneId, actualState);
+      }
       const currentState = zoneStates.get(zoneId);
 
       if (humidity < rhLow && currentState !== 'on') {
@@ -166,11 +207,43 @@ async function checkHumidity() {
  */
 export { syncPump };
 
+/**
+ * Seed in-memory state from the real plug states in Home Assistant.
+ * Falls back to HumidifierLog if HA is unreachable on startup.
+ */
+async function seedStatesFromHa() {
+  let seededFromHa = false;
+  try {
+    const zones = await Zone.find({ 'config.humidifierMode': { $exists: true } }).lean();
+    for (const zone of zones) {
+      const entityId = zone.config?.humidifierEntityId;
+      if (!entityId) continue;
+      const state = await haGetState(entityId);
+      if (state === 'on' || state === 'off') {
+        zoneStates.set(zone.zoneId, state);
+        seededFromHa = true;
+        console.log(`[humidifier] ${zone.zoneId}: seeded state="${state}" from HA`);
+      }
+    }
+    const ps = await haGetState(PUMP_ENTITY_ID);
+    if (ps === 'on' || ps === 'off') {
+      pumpState = ps;
+      console.log(`[humidifier] Pump: seeded state="${ps}" from HA`);
+    }
+  } catch (e) {
+    console.error('[humidifier] seedStatesFromHa error:', e.message);
+  }
+  return seededFromHa;
+}
+
 export async function initHumidifierScheduler() {
-  await seedStatesFromLog();
-  // Seed pump state: if any humidifier was last ON, pump should be ON
-  const anyOn = [...zoneStates.values()].includes('on');
-  pumpState = anyOn ? 'on' : 'off';
+  const haSeeded = await seedStatesFromHa();
+  if (!haSeeded) {
+    console.log('[humidifier] HA seed empty/failed — falling back to log');
+    await seedStatesFromLog();
+    const anyOn = [...zoneStates.values()].includes('on');
+    pumpState = anyOn ? 'on' : 'off';
+  }
   console.log(`[humidifier] Scheduler started (30s interval, pump=${pumpState})`);
   setInterval(checkHumidity, 30 * 1000);
   setTimeout(checkHumidity, 5000);
