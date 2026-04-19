@@ -75,6 +75,36 @@ router.post('/', requireApiKey, async (req, res) => {
         continue;
       }
 
+      // Detect "state-only" messages (humidifierState without any sensor fields).
+      // Legacy Pi controllers POST these as a side-effect of toggling a plug;
+      // creating an empty SensorReading here would overwrite zoneStates.lastData
+      // with null and make the zone's sensor cards blink in the UI.
+      const hasSensorData =
+        (data.temperatures?.length > 0) ||
+        data.temperature != null ||
+        data.humidity != null ||
+        data.humidity_sht45 != null ||
+        data.co2 != null ||
+        data.light != null;
+
+      if (!hasSensorData) {
+        // Still log the humidifier state change to HumidifierLog,
+        // but DO NOT create a SensorReading and DO NOT touch zoneStates.
+        if (data.humidifierState === 'on' || data.humidifierState === 'off') {
+          const lastLog = await HumidifierLog.findOne({ zoneId: data.zoneId }).sort({ timestamp: -1 });
+          if (!lastLog || lastLog.action !== data.humidifierState) {
+            await HumidifierLog.create({
+              zoneId: data.zoneId,
+              action: data.humidifierState,
+              trigger: 'auto',
+              humidity: null,
+            });
+          }
+        }
+        saved.push('state-only');
+        continue; // skip the rest of the full-reading path
+      }
+
       const reading = await SensorReading.create({
         zoneId: data.zoneId,
         timestamp: data.timestamp || new Date(),

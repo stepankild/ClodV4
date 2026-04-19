@@ -19,8 +19,20 @@ export const getZones = async (req, res) => {
     // Attach live status and last reading to each zone
     const result = await Promise.all(zones.map(async (zone) => {
       const live = states[zone.zoneId];
-      const lastReading = await SensorReading.findOne({ zoneId: zone.zoneId })
-        .sort({ timestamp: -1 }).lean();
+      const lastReading = await SensorReading.findOne({
+        zoneId: zone.zoneId,
+        // Skip "state-only" docs (humidifierState without any sensor reading).
+        // Legacy empty docs created by rogue humidity-ctrl.py are still in DB
+        // and would otherwise poison zone.lastData on cold-start fallback.
+        $or: [
+          { temperature: { $ne: null } },
+          { humidity: { $ne: null } },
+          { humidity_sht45: { $ne: null } },
+          { co2: { $ne: null } },
+          { light: { $ne: null } },
+          { 'temperatures.0': { $exists: true } },
+        ],
+      }).sort({ timestamp: -1 }).lean();
       return {
         ...zone,
         piStatus: {
@@ -53,8 +65,17 @@ export const getZone = async (req, res) => {
       online: live?.online ?? zone.piStatus?.online ?? false,
       lastSeen: live?.lastSeen ?? zone.piStatus?.lastSeen,
     };
-    const lastReading = await SensorReading.findOne({ zoneId: zone.zoneId })
-      .sort({ timestamp: -1 }).lean();
+    const lastReading = await SensorReading.findOne({
+      zoneId: zone.zoneId,
+      $or: [
+        { temperature: { $ne: null } },
+        { humidity: { $ne: null } },
+        { humidity_sht45: { $ne: null } },
+        { co2: { $ne: null } },
+        { light: { $ne: null } },
+        { 'temperatures.0': { $exists: true } },
+      ],
+    }).sort({ timestamp: -1 }).lean();
     zone.lastData = live?.lastData ?? lastReading ?? null;
 
     // Attach Zigbee device data — in-memory (live) merged with MongoDB (persisted)
@@ -281,9 +302,18 @@ export const getReadings = async (req, res) => {
 // @route   GET /api/zones/:zoneId/readings/latest
 export const getLatestReading = async (req, res) => {
   try {
-    const reading = await SensorReading.findOne({ zoneId: req.params.zoneId })
-      .sort({ timestamp: -1 })
-      .lean();
+    // Filter out state-only docs (humidifierState with no sensor values)
+    const reading = await SensorReading.findOne({
+      zoneId: req.params.zoneId,
+      $or: [
+        { temperature: { $ne: null } },
+        { humidity: { $ne: null } },
+        { humidity_sht45: { $ne: null } },
+        { co2: { $ne: null } },
+        { light: { $ne: null } },
+        { 'temperatures.0': { $exists: true } },
+      ],
+    }).sort({ timestamp: -1 }).lean();
     res.json(reading || null);
   } catch (error) {
     console.error('Get latest reading error:', error);
@@ -301,8 +331,17 @@ export const getDisplayData = async (req, res) => {
 
     // Get live state or last reading
     const live = getZoneState(zoneId);
-    const lastReading = await SensorReading.findOne({ zoneId })
-      .sort({ timestamp: -1 }).lean();
+    const lastReading = await SensorReading.findOne({
+      zoneId,
+      $or: [
+        { temperature: { $ne: null } },
+        { humidity: { $ne: null } },
+        { humidity_sht45: { $ne: null } },
+        { co2: { $ne: null } },
+        { light: { $ne: null } },
+        { 'temperatures.0': { $exists: true } },
+      ],
+    }).sort({ timestamp: -1 }).lean();
     const data = live?.lastData ?? lastReading;
 
     // Calculate light cycle from last 24h
