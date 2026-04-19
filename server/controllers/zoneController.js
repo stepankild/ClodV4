@@ -496,6 +496,51 @@ export const getHumidifierStatus = async (req, res) => {
 
 // @desc    Get humidifier action log
 // @route   GET /api/zones/:zoneId/humidifier/log
+/**
+ * Return Prague-local midnight for a given instant (as a UTC Date object).
+ * Railway containers run in UTC, so Date#setHours(0) gives UTC midnight =
+ * 02:00 Prague summer / 01:00 winter, which shifts daily stats by 1-2 hours.
+ */
+function pragueDayStart(now = new Date()) {
+  const pragueStr = now.toLocaleString('en-US', { timeZone: 'Europe/Prague' });
+  const pragueNow = new Date(pragueStr);
+  const offsetMs = now.getTime() - pragueNow.getTime();
+  pragueNow.setHours(0, 0, 0, 0);
+  return new Date(pragueNow.getTime() + offsetMs);
+}
+
+/**
+ * Sum ON-time inside [windowStart, windowEnd].
+ * Handles the "already on at window start" case by looking up the last log
+ * BEFORE the window; if it was 'on' we treat the humidifier as already on
+ * at windowStart.
+ */
+async function computeOnMs(zoneId, windowStart, windowEnd) {
+  const inWindow = await HumidifierLog.find({
+    zoneId,
+    timestamp: { $gte: windowStart, $lt: windowEnd },
+  }).sort({ timestamp: 1 }).lean();
+
+  const priorLog = await HumidifierLog.findOne({
+    zoneId,
+    timestamp: { $lt: windowStart },
+  }).sort({ timestamp: -1 }).lean();
+
+  let lastOn = priorLog?.action === 'on' ? windowStart.getTime() : null;
+  let totalMs = 0;
+  for (const log of inWindow) {
+    const t = new Date(log.timestamp).getTime();
+    if (log.action === 'on') {
+      if (lastOn == null) lastOn = t; // ignore duplicate 'on' while already on
+    } else if (log.action === 'off' && lastOn != null) {
+      totalMs += t - lastOn;
+      lastOn = null;
+    }
+  }
+  if (lastOn != null) totalMs += windowEnd.getTime() - lastOn;
+  return { totalMs, inWindow };
+}
+
 export const getHumidifierLog = async (req, res) => {
   try {
     const { zoneId } = req.params;
@@ -507,33 +552,21 @@ export const getHumidifierLog = async (req, res) => {
       .limit(limit)
       .lean();
 
-    // Calculate stats
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const todayLogs = logs.filter(l => new Date(l.timestamp) >= today);
+    // Prague-local midnight → now (not server-local, fixes the 1-2h UTC skew)
+    const todayStart = pragueDayStart();
+    const nowDate = new Date();
+    const todayLogs = logs.filter(l => new Date(l.timestamp) >= todayStart);
     const onCount = todayLogs.filter(l => l.action === 'on').length;
     const offCount = todayLogs.filter(l => l.action === 'off').length;
 
-    // Calculate total ON time today
-    let totalOnMs = 0;
-    const sortedToday = [...todayLogs].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-    let lastOn = null;
-    for (const log of sortedToday) {
-      if (log.action === 'on') {
-        lastOn = new Date(log.timestamp);
-      } else if (log.action === 'off' && lastOn) {
-        totalOnMs += new Date(log.timestamp) - lastOn;
-        lastOn = null;
-      }
-    }
-    // If still on, count to now
-    if (lastOn) totalOnMs += Date.now() - lastOn;
+    const { totalMs } = await computeOnMs(zoneId, todayStart, nowDate);
 
     res.json({
       logs,
       stats: {
         todayOnCount: onCount,
         todayOffCount: offCount,
-        todayOnMinutes: Math.round(totalOnMs / 60000)
+        todayOnMinutes: Math.round(totalMs / 60000)
       }
     });
   } catch (error) {

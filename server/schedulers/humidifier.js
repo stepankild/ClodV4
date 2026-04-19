@@ -167,9 +167,25 @@ async function checkHumidity() {
       // Sync our cache with the real HA plug state first. Picks up manual
       // toggles via Xiaomi app or HA automations, so we don't send a stale
       // "OFF" when user already turned it off (or vice versa).
+      const prevState = zoneStates.get(zoneId);
       const actualState = await haGetState(entityId);
       if (actualState === 'on' || actualState === 'off') {
         zoneStates.set(zoneId, actualState);
+        // If the plug state diverged from our cache, someone toggled it
+        // externally (Xiaomi app, HA automation, physical button). Log it so
+        // daily runtime stats include that ON/OFF period.
+        if (prevState != null && prevState !== actualState) {
+          const lastLog = await HumidifierLog.findOne({ zoneId }).sort({ timestamp: -1 }).lean();
+          if (!lastLog || lastLog.action !== actualState) {
+            await HumidifierLog.create({
+              zoneId,
+              action: actualState,
+              trigger: 'manual',  // not from our scheduler
+              humidity,
+            });
+            console.log(`[humidifier] ${zoneId}: external toggle detected -> logged as '${actualState}'`);
+          }
+        }
       }
       const currentState = zoneStates.get(zoneId);
 

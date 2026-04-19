@@ -15,6 +15,19 @@ const lightState = new Map();
 
 const LIGHT_THRESHOLD = 50; // lux — above = day, below = night
 
+/**
+ * Return Prague-local midnight for a given instant (as a UTC Date).
+ * Railway runs in UTC so naive setHours(0) would give UTC midnight
+ * which is 02:00 Prague summer / 01:00 winter, shifting daily stats.
+ */
+function pragueDayStart(now = new Date()) {
+  const pragueStr = now.toLocaleString('en-US', { timeZone: 'Europe/Prague' });
+  const pragueNow = new Date(pragueStr);
+  const offsetMs = now.getTime() - pragueNow.getTime();
+  pragueNow.setHours(0, 0, 0, 0);
+  return new Date(pragueNow.getTime() + offsetMs);
+}
+
 // Flapping guard: a threshold breach / recovery must persist for SUSTAIN_MIN
 // consecutive minutes before we fire to Telegram. Prevents spam when a value
 // oscillates right at the threshold (e.g. temp jumping between 19.9 and 20.1
@@ -642,20 +655,32 @@ async function buildZoneSummary(zone, yesterday, todayStart) {
   const nightHours = dayHours != null ? Math.round((24 - dayHours) * 10) / 10 : null;
 
   // ── Humidifier stats ──
+  // Seed "lastOn" from the last log BEFORE the window so time from
+  // window-start to the first OFF isn't dropped.
   const humLogs = await import_HumidifierLog.find({
     zoneId: zone.zoneId,
     timestamp: { $gte: yesterday, $lt: todayStart }
   }).sort({ timestamp: 1 }).lean();
 
+  const priorHumLog = await import_HumidifierLog.findOne({
+    zoneId: zone.zoneId,
+    timestamp: { $lt: yesterday }
+  }).sort({ timestamp: -1 }).lean();
+
   const humOnCount = humLogs.filter(l => l.action === 'on').length;
   const humOffCount = humLogs.filter(l => l.action === 'off').length;
   let humTotalMs = 0;
-  let lastOn = null;
+  let lastOn = priorHumLog?.action === 'on' ? yesterday.getTime() : null;
   for (const log of humLogs) {
-    if (log.action === 'on') lastOn = new Date(log.timestamp).getTime();
-    else if (log.action === 'off' && lastOn) { humTotalMs += new Date(log.timestamp).getTime() - lastOn; lastOn = null; }
+    const t = new Date(log.timestamp).getTime();
+    if (log.action === 'on') {
+      if (lastOn == null) lastOn = t; // dedupe duplicate 'on'
+    } else if (log.action === 'off' && lastOn != null) {
+      humTotalMs += t - lastOn;
+      lastOn = null;
+    }
   }
-  if (lastOn) humTotalMs += todayStart.getTime() - lastOn; // was still on at end of day
+  if (lastOn != null) humTotalMs += todayStart.getTime() - lastOn; // still on at end of window
   const humMinutes = Math.round(humTotalMs / 60000);
 
   // ── Format message ──
@@ -724,8 +749,8 @@ async function checkDailySummary() {
 
   try {
     const zones = await Zone.find().lean();
-    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(0, 0, 0, 0);
-    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+    const todayStart = pragueDayStart(now);
+    const yesterday = new Date(todayStart.getTime() - 24 * 3600 * 1000);
 
     for (const zone of zones) {
       const msg = await buildZoneSummary(zone, yesterday, todayStart);
@@ -747,8 +772,8 @@ export async function sendDailySummaryNow() {
   try {
     const zones = await Zone.find().lean();
     const now = new Date();
-    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate() - 1); yesterday.setHours(0, 0, 0, 0);
-    const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+    const todayStart = pragueDayStart(now);
+    const yesterday = new Date(todayStart.getTime() - 24 * 3600 * 1000);
 
     for (const zone of zones) {
       const msg = await buildZoneSummary(zone, yesterday, todayStart);
