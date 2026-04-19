@@ -1090,10 +1090,20 @@ const ZoneDetail = () => {
                               )}
                             </span>
                             <span
-                              className="text-sm opacity-70 cursor-help"
-                              title={s.trigger === 'manual' ? 'Включено/выключено вручную (Xiaomi Home, HA, кнопка)' : 'Автоматически по влажности'}
+                              className="flex items-center gap-1 text-[11px] whitespace-nowrap cursor-help"
+                              title={s.trigger === 'manual' ? 'Включено/выключено вручную (Xiaomi Home, HA, кнопка)' : 'Автоматически по порогу влажности'}
                             >
-                              {s.trigger === 'manual' ? '✋' : '⚡'}
+                              {s.trigger === 'manual' ? (
+                                <>
+                                  <span className="text-sm">✋</span>
+                                  <span className="text-amber-400">вручную</span>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="text-sm">⚡</span>
+                                  <span className="text-cyan-400">авто</span>
+                                </>
+                              )}
                             </span>
                           </div>
                         );

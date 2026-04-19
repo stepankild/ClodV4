@@ -281,12 +281,12 @@ const IrrigationPanel = ({ zoneId }) => {
           if (k === today0 - 86400000) return 'Вчера';
           return new Date(k).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
         };
-        const triggerIcon = (t) => {
-          if (t === 'schedule') return { icon: '🕐', tip: 'По расписанию' };
-          if (t === 'manual') return { icon: '✋', tip: 'Вручную (кнопка в портале)' };
-          if (t === 'external') return { icon: '🔌', tip: 'Извне (Xiaomi Home, HA, кнопка на плагине)' };
-          if (t === 'system') return { icon: '⚙️', tip: 'Автоматически системой' };
-          return { icon: '•', tip: t };
+        const triggerBadge = (t) => {
+          if (t === 'schedule') return { icon: '🕐', label: 'по расписанию', color: 'text-cyan-400', tip: 'Сработало автоматически по таймеру' };
+          if (t === 'manual')   return { icon: '✋', label: 'вручную',        color: 'text-amber-400', tip: 'Включено/выключено через кнопку в портале' };
+          if (t === 'external') return { icon: '🔌', label: 'извне',          color: 'text-purple-400', tip: 'Переключено снаружи (Xiaomi Home, HA, кнопка на плагине)' };
+          if (t === 'system')   return { icon: '⚙️', label: 'служебное',     color: 'text-dark-400', tip: 'Системная запись (пропуск расписания, сверка с HA)' };
+          return { icon: '•', label: t, color: 'text-dark-500', tip: t };
         };
 
         const byDay = new Map();
@@ -323,7 +323,7 @@ const IrrigationPanel = ({ zoneId }) => {
                       const durMs = offMs - onMs;
                       const expDur = it.duration ? it.duration * 60 * 1000 : null;
                       const runLong = expDur && !it.ongoing && !it.abandoned && durMs > expDur * 1.5;
-                      const { icon, tip } = triggerIcon(it.trigger);
+                      const badge = triggerBadge(it.trigger);
                       return (
                         <div
                           key={i}
@@ -349,19 +349,25 @@ const IrrigationPanel = ({ zoneId }) => {
                             {runLong && <span className="text-amber-400 ml-1">(дольше плана)</span>}
                             {it.abandoned && <span className="text-amber-600 ml-1">сессия прервана</span>}
                           </span>
-                          <span className="text-sm opacity-70 cursor-help" title={tip}>{icon}</span>
+                          <span className="flex items-center gap-1 text-[11px] whitespace-nowrap cursor-help" title={badge.tip}>
+                            <span className="text-sm">{badge.icon}</span>
+                            <span className={badge.color}>{badge.label}</span>
+                          </span>
                         </div>
                       );
                     }
                     if (it.kind === 'failure') {
-                      const { icon, tip } = triggerIcon(it.trigger);
+                      const badge = triggerBadge(it.trigger);
                       return (
                         <div key={i} className="px-3 py-1.5 text-xs bg-red-900/20 border-l-2 border-red-500">
                           <div className="flex items-center gap-3">
                             <span className="font-mono tabular-nums text-red-300">{fmtTime(it.at)}</span>
                             <span className="text-red-400 font-medium">🚨 НЕ СРАБОТАЛ</span>
                             {it.scheduleTime && <span className="text-dark-400">{it.scheduleTime}</span>}
-                            <span className="text-sm ml-auto opacity-70 cursor-help" title={tip}>{icon}</span>
+                            <span className="flex items-center gap-1 text-[11px] whitespace-nowrap ml-auto cursor-help" title={badge.tip}>
+                              <span className="text-sm">{badge.icon}</span>
+                              <span className={badge.color}>{badge.label}</span>
+                            </span>
                           </div>
                           {it.notes && <div className="text-red-300/70 text-[11px] mt-0.5 ml-[52px]">{it.notes}</div>}
                         </div>
