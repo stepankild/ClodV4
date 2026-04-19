@@ -1025,15 +1025,36 @@ const ZoneDetail = () => {
                 <div className="space-y-2">
                   {alertConfig.rules.map(rule => {
                     const labels = {
-                      temperature: { icon: '🌡', name: 'Температура', unit: '°C' },
-                      humidity: { icon: '💧', name: 'Влажность', unit: '%' },
-                      co2: { icon: '🫧', name: 'CO2', unit: 'ppm' },
-                      light: { icon: '☀️', name: 'Свет', unit: 'lux' },
-                      vpd: { icon: '🌱', name: 'VPD', unit: 'kPa' },
-                      offline: { icon: '🔌', name: 'Офлайн', unit: '' },
-                      light_anomaly: { icon: '💡', name: 'Аномалия света', unit: '' }
+                      temperature: {
+                        icon: '🌡', name: 'Температура', unit: '°C',
+                        help: 'Алерт если температура ниже min или выше max и держится там ≥5 мин подряд. Возврат "в норме" — когда значение вернулось глубже в диапазон (hysteresis 5% от ширины), тоже на ≥5 мин. Одиночные скачки у границы игнорируются.',
+                      },
+                      humidity: {
+                        icon: '💧', name: 'Влажность', unit: '%',
+                        help: 'Влажность (SHT45 приоритет, STCC4 fallback) вне min/max ≥5 мин подряд — алерт. Защита от спама у самой границы встроена. Zigbee-пропагаторы сюда не входят — они event-based.',
+                      },
+                      co2: {
+                        icon: '🫧', name: 'CO₂', unit: 'ppm',
+                        help: 'CO₂ вне min/max ≥5 мин подряд — алерт. Типичные пороги: min 400ppm (датчик сломан ниже), max 1500ppm (опасно для людей, вредно для растений).',
+                      },
+                      light: {
+                        icon: '☀️', name: 'Свет', unit: 'lux',
+                        help: 'Освещённость (BH1750) вне порогов ≥5 мин — алерт. Для отслеживания сбоев расписания вкл/выкл ламп используй "Аномалия света" ниже.',
+                      },
+                      vpd: {
+                        icon: '🌱', name: 'VPD', unit: 'kPa',
+                        help: 'Vapor Pressure Deficit = SVP(air temp) × (1 − RH/100). Норма для вегетации 0.8–1.2, для цветения 1.0–1.5. Алерт при выходе за min/max ≥5 мин.',
+                      },
+                      offline: {
+                        icon: '🔌', name: 'Офлайн', unit: '',
+                        help: 'Если Pi перестал слать данные более чем N минут подряд — алерт. Восстановление (✅) приходит когда связь вернулась. Отлавливает сбои Wi-Fi / питания на Pi.',
+                      },
+                      light_anomaly: {
+                        icon: '💡', name: 'Аномалия света', unit: '',
+                        help: 'Умнее обычного light-порога: учит твоё нормальное расписание ламп из последних 7 дней. Алерт только если лампы вкл/выкл с отклонением >30 мин от обычного. Регулярные включения по графику НЕ триггерят.',
+                      },
                     };
-                    const l = labels[rule.metric] || { icon: '', name: rule.metric, unit: '' };
+                    const l = labels[rule.metric] || { icon: '', name: rule.metric, unit: '', help: '' };
                     const isOffline = rule.metric === 'offline';
                     const isLightAnomaly = rule.metric === 'light_anomaly';
                     const isSpecial = isOffline || isLightAnomaly;
@@ -1046,7 +1067,15 @@ const ZoneDetail = () => {
                         >
                           <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${rule.enabled ? 'left-[18px]' : 'left-0.5'}`} />
                         </button>
-                        <span className="text-sm w-28 flex-shrink-0">{l.icon} {l.name}</span>
+                        <span className="text-sm w-28 flex-shrink-0 flex items-center gap-1">
+                          {l.icon} {l.name}
+                          {l.help && (
+                            <span
+                              className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-dark-600 text-dark-300 text-[10px] font-bold cursor-help select-none hover:bg-dark-500"
+                              title={l.help}
+                            >ⓘ</span>
+                          )}
+                        </span>
                         {!isSpecial && rule.enabled && (
                           <div className="flex items-center gap-2 text-xs">
                             <span className="text-dark-500">мин</span>
@@ -1106,6 +1135,45 @@ const ZoneDetail = () => {
                   </button>
                   {alertTestResult === 'ok' && <span className="text-green-400 text-sm">✓ Отправлено</span>}
                   {alertTestResult === 'error' && <span className="text-red-400 text-sm">✕ Ошибка (проверь токен)</span>}
+                </div>
+
+                {/* Automatic (non-configurable) checks */}
+                <div className="pt-3 mt-3 border-t border-dark-700">
+                  <h3 className="text-xs text-dark-400 uppercase mb-2 flex items-center gap-1">
+                    🤖 Автоматические проверки
+                    <span className="text-[10px] text-dark-500 normal-case">(всегда включены, настройки не требуют)</span>
+                  </h3>
+                  <div className="space-y-1.5 text-xs text-dark-400">
+                    <div className="flex items-start gap-2">
+                      <span className="text-dark-500 flex-shrink-0">⚠️</span>
+                      <div>
+                        <span className="text-dark-300">Зависший датчик</span> —
+                        если один из датчиков (DS18B20, SHT45, STCC4, CO₂, свет) возвращает
+                        <b> абсолютно идентичные значения ≥60 мин подряд</b> (≥15 показаний), придёт алерт
+                        «Датчик X завис на Y». Это ловит случай когда 1-Wire-шина закешировала буфер
+                        или драйвер датчика завис. Zigbee-датчики пропагаторов исключены (они event-based).
+                        Кулдаун 4 часа между повторами.
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-dark-500 flex-shrink-0">🔇</span>
+                      <div>
+                        <span className="text-dark-300">Антиспам у порогов</span> —
+                        threshold-алерты (температура/влажность/CO₂/VPD/свет) срабатывают только
+                        если условие <b>держится непрерывно ≥5 мин</b>. Восстановление
+                        («в норме») приходит только когда значение вернулось с запасом 5% от диапазона.
+                        Колебания прямо у границы не вызывают чередование alert↔recovery.
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-dark-500 flex-shrink-0">⏱</span>
+                      <div>
+                        <span className="text-dark-300">Кулдаун</span> —
+                        каждое правило имеет индивидуальный cooldown (по умолчанию 30 мин), чтобы не
+                        спамить одним и тем же алертом. При возврате в норму таймер сбрасывается.
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Alert log */}
