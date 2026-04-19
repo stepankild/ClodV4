@@ -952,38 +952,128 @@ const ZoneDetail = () => {
             </div>
           )}
 
-          {/* Recent log entries */}
-          {humidifierLog.logs?.length > 0 && (
-            <div className="space-y-0 max-h-40 overflow-y-auto rounded border border-dark-700">
-              <div className="grid grid-cols-[44px_36px_auto] gap-x-3 px-3 py-1.5 bg-dark-700/50 text-[10px] text-dark-500 uppercase tracking-wider sticky top-0">
-                <span>Время</span>
-                <span></span>
-                <span>Влажность</span>
+          {/* Sessions — paired ON→OFF rows grouped by day */}
+          {humidifierLog.logs?.length > 0 && (() => {
+            // Pair ON→OFF into sessions (input is DESC, work in ASC)
+            const asc = [...humidifierLog.logs].sort(
+              (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+            );
+            const sessions = [];
+            let open = null;
+            for (const log of asc) {
+              if (log.action === 'on') {
+                if (open) sessions.push({ ...open, offAt: null, offHumidity: null, abandoned: true });
+                open = { onAt: log.timestamp, onHumidity: log.humidity, trigger: log.trigger };
+              } else if (log.action === 'off' && open) {
+                sessions.push({ ...open, offAt: log.timestamp, offHumidity: log.humidity });
+                open = null;
+              }
+            }
+            if (open) sessions.push({ ...open, offAt: null, offHumidity: null, ongoing: true });
+            sessions.reverse(); // newest first
+
+            const now = Date.now();
+            const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false });
+            const fmtDur = (ms) => {
+              const m = Math.max(0, Math.round(ms / 60000));
+              return m >= 60 ? `${Math.floor(m / 60)}ч ${m % 60}м` : `${m}м`;
+            };
+            const dayKey = (ts) => {
+              const d = new Date(ts);
+              d.setHours(0, 0, 0, 0);
+              return d.getTime();
+            };
+            const today0 = (() => { const d = new Date(); d.setHours(0,0,0,0); return d.getTime(); })();
+            const dayLabel = (k) => {
+              if (k === today0) return 'Сегодня';
+              if (k === today0 - 86400000) return 'Вчера';
+              return new Date(k).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long' });
+            };
+
+            // Group
+            const byDay = new Map();
+            for (const s of sessions.slice(0, 30)) {
+              const k = dayKey(s.onAt);
+              if (!byDay.has(k)) byDay.set(k, []);
+              byDay.get(k).push(s);
+            }
+
+            return (
+              <div className="space-y-2 max-h-72 overflow-y-auto">
+                {[...byDay.entries()].map(([k, day]) => {
+                  // Day total (excluding abandoned unpaired, including ongoing up to now)
+                  const dayTotalMs = day.reduce((acc, s) => {
+                    if (s.abandoned) return acc;
+                    const end = s.offAt ? new Date(s.offAt).getTime() : now;
+                    return acc + (end - new Date(s.onAt).getTime());
+                  }, 0);
+                  return (
+                    <div key={k} className="rounded border border-dark-700 overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-1.5 bg-dark-700/50 text-[10px] uppercase tracking-wider">
+                        <span className="text-dark-400">{dayLabel(k)}</span>
+                        <span className="text-dark-500 normal-case">
+                          {day.length} {day.length === 1 ? 'сессия' : day.length < 5 ? 'сессии' : 'сессий'} · всего {fmtDur(dayTotalMs)}
+                        </span>
+                      </div>
+                      {day.map((s, i) => {
+                        const onMs = new Date(s.onAt).getTime();
+                        const offMs = s.offAt ? new Date(s.offAt).getTime() : now;
+                        const durMs = offMs - onMs;
+                        const delta = s.offHumidity != null && s.onHumidity != null
+                          ? s.offHumidity - s.onHumidity
+                          : null;
+                        return (
+                          <div
+                            key={i}
+                            className={`grid grid-cols-[auto_40px_1fr_auto] gap-x-3 px-3 py-1.5 text-xs items-center ${i % 2 === 0 ? 'bg-dark-800' : 'bg-dark-800/50'}`}
+                          >
+                            <span className="font-mono tabular-nums text-dark-300">
+                              {fmtTime(s.onAt)}
+                              <span className="text-dark-600 mx-1">→</span>
+                              {s.ongoing ? (
+                                <span className="text-green-400">сейчас</span>
+                              ) : s.abandoned ? (
+                                <span className="text-dark-600">?</span>
+                              ) : (
+                                fmtTime(s.offAt)
+                              )}
+                            </span>
+                            <span className={`font-medium tabular-nums text-right ${s.ongoing ? 'text-green-400 animate-pulse' : 'text-cyan-400'}`}>
+                              {s.abandoned ? '—' : fmtDur(durMs)}
+                            </span>
+                            <span className="text-dark-500">
+                              {s.onHumidity != null && (
+                                <>
+                                  <span className="text-blue-400">{s.onHumidity.toFixed(0)}%</span>
+                                  {s.offHumidity != null && (
+                                    <>
+                                      <span className="mx-1 text-dark-600">→</span>
+                                      <span className="text-cyan-400">{s.offHumidity.toFixed(0)}%</span>
+                                      {delta != null && delta !== 0 && (
+                                        <span className={`ml-1 text-[10px] ${delta > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                          {delta > 0 ? '+' : ''}{delta.toFixed(0)}
+                                        </span>
+                                      )}
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </span>
+                            <span
+                              className="text-sm opacity-70 cursor-help"
+                              title={s.trigger === 'manual' ? 'Включено/выключено вручную (Xiaomi Home, HA, кнопка)' : 'Автоматически по влажности'}
+                            >
+                              {s.trigger === 'manual' ? '✋' : '⚡'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
               </div>
-              {humidifierLog.logs.slice(0, 15).map((log, i) => {
-                const d = new Date(log.timestamp);
-                const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', hour12: false });
-                const today = new Date();
-                const isToday = d.toDateString() === today.toDateString();
-                const isYesterday = d.toDateString() === new Date(today - 86400000).toDateString();
-                const dateLabel = isToday ? '' : isYesterday ? 'вчера ' : d.toLocaleDateString('ru-RU', { day: 'numeric', month: '2-digit' }) + ' ';
-                const isOn = log.action === 'on';
-                return (
-                  <div key={log._id || i} className={`grid grid-cols-[44px_36px_auto] gap-x-3 px-3 py-1 text-xs items-center ${i % 2 === 0 ? 'bg-dark-800' : 'bg-dark-800/50'}`}>
-                    <span className="text-dark-400 font-mono tabular-nums">{dateLabel}{time}</span>
-                    <span className={`font-medium ${isOn ? 'text-green-400' : 'text-dark-500'}`}>
-                      {isOn ? 'ON' : 'OFF'}
-                    </span>
-                    <span className="text-dark-400">
-                      {log.humidity != null && <span className="text-blue-400">{log.humidity.toFixed(0)}%</span>}
-                      {log.trigger === 'auto' && <span className="text-dark-600 ml-1.5">авто</span>}
-                      {log.trigger === 'manual' && <span className="text-yellow-600 ml-1.5">вручную</span>}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+            );
+          })()}
         </div>
       </div>
 
