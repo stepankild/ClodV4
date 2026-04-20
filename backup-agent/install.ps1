@@ -31,33 +31,44 @@ Write-Host "Registering scheduled task '$TaskName'" -ForegroundColor Cyan
 Write-Host "  node:  $node"
 Write-Host "  agent: $entry"
 
-# Команда: node <полный путь к index.js>. Рабочая папка — agentDir,
-# чтобы dotenv нашёл .env.
-$tr = "`"$node`" `"$entry`""
+# schtasks /TR плохо переваривает пути с пробелами + argument, поэтому
+# используем PowerShell ScheduledTask API (Register-ScheduledTask).
+# Это строит XML с правильным экранированием под капотом.
 
-# Запускаем при логине текущего пользователя. /RL LIMITED — обычные права.
-$args = @(
-    '/Create',
-    '/TN', $TaskName,
-    '/TR', $tr,
-    '/SC', 'ONLOGON',
-    '/RL', 'LIMITED',
-    '/F'
-)
-Write-Host "schtasks $args" -ForegroundColor DarkGray
-& schtasks.exe @args
-if ($LASTEXITCODE -ne 0) { throw "schtasks failed (exit $LASTEXITCODE)" }
+# Если задача уже есть — снесём и создадим заново (идемпотентно).
+$existing = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+if ($existing) {
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    Write-Host "Old task removed" -ForegroundColor DarkGray
+}
 
-# Настройки: рабочая папка, auto-restart при падении, без timeout.
-$task = Get-ScheduledTask -TaskName $TaskName
-$task.Actions[0].WorkingDirectory = $agentDir
-$task.Settings.StartWhenAvailable = $true
-$task.Settings.ExecutionTimeLimit = 'PT0S'        # без ограничения
-$task.Settings.RestartInterval    = 'PT1M'        # рестарт через 1 мин
-$task.Settings.RestartCount       = 5
-$task.Settings.DisallowStartIfOnBatteries = $false
-$task.Settings.StopIfGoingOnBatteries     = $false
-Set-ScheduledTask -InputObject $task | Out-Null
+$action = New-ScheduledTaskAction `
+    -Execute $node `
+    -Argument ('"{0}"' -f $entry) `
+    -WorkingDirectory $agentDir
+
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN\$env:USERNAME"
+
+$principal = New-ScheduledTaskPrincipal `
+    -UserId "$env:USERDOMAIN\$env:USERNAME" `
+    -LogonType Interactive `
+    -RunLevel Limited
+
+$settings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -ExecutionTimeLimit ([TimeSpan]::Zero) `
+    -RestartInterval (New-TimeSpan -Minutes 1) `
+    -RestartCount 5 `
+    -MultipleInstances IgnoreNew
+
+Register-ScheduledTask `
+    -TaskName $TaskName `
+    -Action $action `
+    -Trigger $trigger `
+    -Principal $principal `
+    -Settings $settings | Out-Null
 
 Write-Host ""
 Write-Host "Done. Task '$TaskName' registered." -ForegroundColor Green
