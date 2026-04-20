@@ -63,7 +63,53 @@
     "workers": "Workers",
     "auditLog": "Audit Log",
     "trash": "Trash",
+    "backups": "Backups",
     "iot": "IoT Monitoring"
+  },
+  "backups": {
+    "title": "Portal Backups",
+    "description": "History of automated and manual backups on the admin's laptop. The agent listens for the 'Run' command and executes the matching PowerShell script.",
+    "agent": "Agent",
+    "agentOnline": "online",
+    "agentOffline": "offline",
+    "agentOfflineHint": "Start the backup-agent on the laptop (scheduled task ClodV4-Backup-Agent)",
+    "runWeekly": "Run weekly now",
+    "runMonthly": "Run monthly now",
+    "running": "Running...",
+    "cols": {
+      "when": "When",
+      "type": "Type",
+      "status": "Status",
+      "duration": "Duration",
+      "size": "Size",
+      "triggeredBy": "By",
+      "warnings": "Warn"
+    },
+    "statusLabels": {
+      "pending": "queued",
+      "running": "running",
+      "ok": "OK",
+      "failed": "FAILED"
+    },
+    "typeLabels": {
+      "weekly": "Weekly (scheduled)",
+      "monthly": "Monthly (scheduled)",
+      "manual-weekly": "Weekly (manual)",
+      "manual-monthly": "Monthly (manual)"
+    },
+    "triggerSchedule": "schedule",
+    "empty": "No records yet. Trigger a backup with the button above or wait for the weekly schedule.",
+    "errors": {
+      "agentOffline": "Backup agent is offline",
+      "conflict": "A backup is already running",
+      "generic": "Failed to start backup"
+    },
+    "details": {
+      "sections": "Sections",
+      "warnings": "Warnings",
+      "error": "Error",
+      "git": "Git"
+    }
   },
   "iot": {
     "title": "Environmental Monitoring",

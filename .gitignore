@@ -23,5 +23,5 @@ Thumbs.db
 *.swp
 *.swo
 
-# Backups
-backups/
+# Backups — только top-level (не задевает client/src/pages/Backups/ на Windows)
+/backups/

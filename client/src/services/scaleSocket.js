@@ -50,6 +50,14 @@ export function connectScale() {
     listeners.forEach(cb => cb('sync_status', data));
   });
 
+  // Backup events
+  socket.on('backup:updated', (data) => {
+    listeners.forEach(cb => cb('backup_updated', data));
+  });
+  socket.on('backup:agent-status', (data) => {
+    listeners.forEach(cb => cb('backup_agent_status', data));
+  });
+
   // IoT sensor events
   socket.on('sensor:data', (data) => {
     listeners.forEach(cb => cb('sensor_data', data));

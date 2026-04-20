@@ -15,6 +15,16 @@
 
 ---
 
+## Интеграция с порталом
+
+Скрипты при завершении отправляют отчёт в Railway (`POST /api/backups/report`) —
+их видно в портале на странице `/backups` (раздел «Бэкапы» в sidebar для админа).
+Также там есть кнопка «Запустить сейчас», которую обслуживает `backup-agent/`
+(отдельный Node.js-процесс на ноуте). Настройка — см. §1.6 ниже и
+[backup-agent/README.md](../backup-agent/README.md).
+
+---
+
 ## 1. Установка (один раз)
 
 ### 1.1 Установить MongoDB Database Tools
@@ -93,7 +103,35 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 Сам планировщик запускает с `-ExecutionPolicy Bypass`, так что это нужно только
 для ручных запусков.
 
-### 1.5 Зарегистрировать задачи в Task Scheduler
+### 1.5 Задать `BACKUP_API_KEY` (для интеграции с порталом)
+
+Общий секрет, которым скрипты авторизуются при отправке отчёта в Railway и
+которым агент подключается по Socket.io. Ставится в **трёх местах одинаково**:
+
+| Место | Переменная |
+|-------|-----------|
+| Railway → Project → Variables | `BACKUP_API_KEY=<случайная строка 32+ символов>` |
+| `server\.env` локально | `BACKUP_API_KEY=<та же>`, `SERVER_URL=https://clodv4-production.up.railway.app` |
+| `backup-agent\.env` | `BACKUP_API_KEY=<та же>`, `SERVER_URL=<тот же>` |
+
+Если `BACKUP_API_KEY` не задан — скрипты просто пропустят отчёт, бэкап сам
+по себе не упадёт (WARN в `backup.log`). Но в UI история будет пустая.
+
+### 1.6 (опционально) Установить backup-agent для кнопки «Run now»
+
+Если хочешь запускать бэкапы с кнопки в портале (не только по расписанию):
+
+```powershell
+cd backup-agent
+npm install
+Copy-Item .env.example .env
+# открой .env, впиши BACKUP_API_KEY (тот же что в §1.5)
+.\install.ps1
+```
+
+Подробнее: [backup-agent/README.md](../backup-agent/README.md).
+
+### 1.7 Зарегистрировать задачи в Task Scheduler
 
 ```powershell
 cd "C:\Users\Stepa\Desktop\Harvest scale\ClodV4"

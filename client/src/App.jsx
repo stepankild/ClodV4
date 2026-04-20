@@ -25,6 +25,7 @@ import IoTOverview from './pages/IoT/IoTOverview';
 import ZoneDetail from './pages/IoT/ZoneDetail';
 import Profile from './pages/Profile/Profile';
 import MotherRoom from './pages/MotherRoom/MotherRoom';
+import Backups from './pages/Backups/Backups';
 
 function App() {
   const { isAuthenticated, loading } = useAuth();
@@ -89,6 +90,14 @@ function App() {
           element={
             <ProtectedRoute permission="audit:read">
               <Trash />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/backups"
+          element={
+            <ProtectedRoute permission="audit:read">
+              <Backups />
             </ProtectedRoute>
           }
         />

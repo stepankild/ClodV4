@@ -469,6 +469,52 @@ function Invoke-SshCommand {
     return ($out | Out-String).Trim()
 }
 
+function Send-BackupReport {
+    <#
+    .SYNOPSIS
+      Best-effort POST JSON-отчёта в Railway /api/backups/report.
+      Ошибки репортинга НЕ роняют бэкап.
+    .PARAMETER ProjectRoot
+      Корень проекта для чтения server\.env (SERVER_URL + BACKUP_API_KEY).
+    .PARAMETER Payload
+      Hashtable с полями type/status/startedAt/finishedAt/sizeMB/sections/
+      warnings/errorMessage/gitSha/gitBranch/host/logId (если обновляем запись).
+    #>
+    param(
+        [Parameter(Mandatory)][string]$ProjectRoot,
+        [Parameter(Mandatory)][hashtable]$Payload
+    )
+    $envFile = Join-Path $ProjectRoot 'server\.env'
+    if (-not (Test-Path $envFile)) {
+        Write-BackupLog -Level WARN -Message "Report skipped: server\.env not found"
+        return
+    }
+    $serverUrl = Get-EnvValue -File $envFile -Key 'SERVER_URL'
+    $apiKey    = Get-EnvValue -File $envFile -Key 'BACKUP_API_KEY'
+    if (-not $serverUrl -or -not $apiKey) {
+        Write-BackupLog -Level WARN -Message "Report skipped: SERVER_URL or BACKUP_API_KEY not set in server\.env"
+        return
+    }
+    # Автоматически добавляем host если его нет
+    if (-not $Payload.ContainsKey('host')) { $Payload['host'] = $env:COMPUTERNAME }
+
+    $url = ($serverUrl.TrimEnd('/')) + '/api/backups/report'
+    $json = $Payload | ConvertTo-Json -Depth 6 -Compress
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        $resp = Invoke-RestMethod -Uri $url -Method POST -Body $json `
+                -ContentType 'application/json' `
+                -Headers @{ 'X-Backup-Api-Key' = $apiKey } `
+                -TimeoutSec 20
+        Write-BackupLog -Message "Report sent OK (logId=$($resp.logId))"
+    } catch {
+        Write-BackupLog -Level WARN -Message "Report POST failed: $($_.Exception.Message)"
+    } finally {
+        $ErrorActionPreference = $prev
+    }
+}
+
 function Remove-IrrelevantPythonArtifacts {
     <#
     .SYNOPSIS

@@ -71,6 +71,22 @@ export function initializeSocket(httpServer, allowedOrigins) {
       return next(new Error('Invalid scale API key'));
     }
 
+    // Backup agent (Node.js на ноуте админа) — проверка BACKUP_API_KEY
+    if (deviceType === 'backup') {
+      const serverKey = process.env.BACKUP_API_KEY;
+      if (!serverKey) {
+        console.warn('BACKUP_API_KEY not set — backup agent rejected');
+        return next(new Error('Backup API key not configured on server'));
+      }
+      if (apiKey === serverKey) {
+        socket.data.deviceType = 'backup';
+        socket.data.label = 'BackupAgent';
+        socket.data.host = socket.handshake.auth.host || null;
+        return next();
+      }
+      return next(new Error('Invalid backup API key'));
+    }
+
     // Браузер — проверка JWT
     if (token) {
       try {
@@ -99,6 +115,8 @@ export function initializeSocket(httpServer, allowedOrigins) {
       handlePiConnection(io, socket);
     } else if (deviceType === 'browser') {
       handleBrowserConnection(io, socket);
+    } else if (deviceType === 'backup') {
+      handleBackupConnection(io, socket);
     }
   });
 
@@ -320,5 +338,39 @@ function handleBrowserConnection(io, socket) {
 
   socket.on('disconnect', () => {
     // Браузер отключился — ничего особенного
+  });
+}
+
+// ── Backup agent подключение (Node.js на ноуте админа) ──
+// Только один агент разрешён; если подключился новый — старый отвалится.
+// Состояние храним в io.backupAgent, чтобы контроллер мог проверить онлайн-статус.
+function handleBackupConnection(io, socket) {
+  console.log(`Backup agent connected: ${socket.id} host=${socket.data.host || '?'}`);
+
+  // Отключить предыдущего агента, если есть.
+  const prev = io.backupAgent?.socketId;
+  if (prev && prev !== socket.id) {
+    const oldSocket = io.sockets.sockets.get(prev);
+    if (oldSocket) {
+      console.log(`Disconnecting previous backup agent: ${prev}`);
+      oldSocket.disconnect(true);
+    }
+  }
+
+  io.backupAgent = {
+    socketId: socket.id,
+    connectedAt: new Date().toISOString(),
+    host: socket.data.host || null,
+  };
+
+  // Сообщить браузерам, что агент онлайн (чтобы включились кнопки Run).
+  io.emit('backup:agent-status', { online: true, host: io.backupAgent.host });
+
+  socket.on('disconnect', (reason) => {
+    console.log(`Backup agent disconnected: ${socket.id} (${reason})`);
+    if (io.backupAgent?.socketId === socket.id) {
+      io.backupAgent = null;
+      io.emit('backup:agent-status', { online: false });
+    }
   });
 }

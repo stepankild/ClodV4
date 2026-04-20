@@ -63,7 +63,53 @@
     "workers": "Работники",
     "auditLog": "Лог действий",
     "trash": "Корзина",
+    "backups": "Бэкапы",
     "iot": "IoT мониторинг"
+  },
+  "backups": {
+    "title": "Бэкапы портала",
+    "description": "История автоматических и ручных бэкапов на ноуте админа. Агент на ноуте слушает команду «Запустить» и выполняет соответствующий PowerShell-скрипт.",
+    "agent": "Агент",
+    "agentOnline": "онлайн",
+    "agentOffline": "оффлайн",
+    "agentOfflineHint": "Запусти backup-agent на ноуте (scheduled task ClodV4-Backup-Agent)",
+    "runWeekly": "Запустить weekly сейчас",
+    "runMonthly": "Запустить monthly сейчас",
+    "running": "Идёт...",
+    "cols": {
+      "when": "Когда",
+      "type": "Тип",
+      "status": "Статус",
+      "duration": "Длительность",
+      "size": "Размер",
+      "triggeredBy": "Кто",
+      "warnings": "Предупр."
+    },
+    "statusLabels": {
+      "pending": "в очереди",
+      "running": "выполняется",
+      "ok": "OK",
+      "failed": "FAILED"
+    },
+    "typeLabels": {
+      "weekly": "Weekly (scheduled)",
+      "monthly": "Monthly (scheduled)",
+      "manual-weekly": "Weekly (manual)",
+      "manual-monthly": "Monthly (manual)"
+    },
+    "triggerSchedule": "по расписанию",
+    "empty": "Пока нет записей. Запусти бэкап кнопкой выше или дождись еженедельного расписания.",
+    "errors": {
+      "agentOffline": "Агент бэкапа не подключён",
+      "conflict": "Бэкап уже выполняется",
+      "generic": "Не удалось запустить бэкап"
+    },
+    "details": {
+      "sections": "Секции",
+      "warnings": "Предупреждения",
+      "error": "Ошибка",
+      "git": "Git"
+    }
   },
   "iot": {
     "title": "Мониторинг окружающей среды",

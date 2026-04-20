@@ -9,7 +9,10 @@
 [CmdletBinding()]
 param(
     [switch]$DryRun,
-    [int]$KeepCount = 4
+    [int]$KeepCount = 4,
+    # Агент передаёт -BackupLogId при ручном запуске из UI, чтобы мы
+    # обновляли конкретную запись, а не создавали новую.
+    [string]$BackupLogId = $null
 )
 
 Set-StrictMode -Version Latest
@@ -124,10 +127,44 @@ try {
 
     $duration = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
     Write-BackupLog -Message "=== $type backup OK === zip=$zipSizeMB MB, duration=${duration}s"
+
+    # Report to Railway (если настроено в server\.env)
+    if (-not $DryRun) {
+        $report = @{
+            type        = if ($BackupLogId) { 'manual-weekly' } else { 'weekly' }
+            status      = 'ok'
+            startedAt   = $startTime.ToUniversalTime().ToString('o')
+            finishedAt  = (Get-Date).ToUniversalTime().ToString('o')
+            durationSec = [math]::Round($duration, 1)
+            sizeMB      = $zipSizeMB
+            gitSha      = Get-GitSha    -RepoRoot $projectRoot
+            gitBranch   = Get-GitBranch -RepoRoot $projectRoot
+            sections    = @{
+                'code'    = "$codeSizeMB MB"
+                'db-dump' = "$dumpSizeMB MB"
+                'db-dump-prod' = if ($prodInfo.dumped) { "$(Get-DirectorySizeMB $prodDumpDest) MB" } else { "SKIPPED ($($prodInfo.reason))" }
+            }
+        }
+        if ($BackupLogId) { $report['logId'] = $BackupLogId }
+        Send-BackupReport -ProjectRoot $projectRoot -Payload $report
+    }
 }
 catch {
-    Write-BackupLog -Level ERROR -Message "$type backup FAILED: $($_.Exception.Message)"
+    $errMsg = $_.Exception.Message
+    Write-BackupLog -Level ERROR -Message "$type backup FAILED: $errMsg"
     $exitCode = 1
+    if (-not $DryRun) {
+        $failReport = @{
+            type         = if ($BackupLogId) { 'manual-weekly' } else { 'weekly' }
+            status       = 'failed'
+            startedAt    = $startTime.ToUniversalTime().ToString('o')
+            finishedAt   = (Get-Date).ToUniversalTime().ToString('o')
+            durationSec  = [math]::Round(((Get-Date) - $startTime).TotalSeconds, 1)
+            errorMessage = $errMsg
+        }
+        if ($BackupLogId) { $failReport['logId'] = $BackupLogId }
+        try { Send-BackupReport -ProjectRoot $projectRoot -Payload $failReport } catch {}
+    }
 }
 finally {
     if (Test-Path $staging) {
