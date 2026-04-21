@@ -1298,11 +1298,13 @@ const ZoneDetail = () => {
                     <div className="flex items-start gap-2">
                       <span className="text-dark-500 flex-shrink-0">📡</span>
                       <div>
-                        <span className="text-dark-300">Zigbee шлюз молчит</span> —
-                        если у зоны есть Zigbee-устройства (пропагаторы и т.п.) и ни одно из них
-                        не прислало событие <b>более 30 минут</b>, придёт алерт «Zigbee шлюз не отвечает».
-                        Ловит падение Sonoff CC2652P dongle или Zigbee2MQTT на Pi. Кулдаун 24 ч,
-                        recovery-сообщение когда события возобновятся.
+                        <span className="text-dark-300">Zigbee шлюз упал</span> —
+                        проверяется напрямую статус Zigbee2MQTT (топик <code>bridge/state</code>).
+                        Если Z2M реально рухнул (или dongle не отвечает), MQTT last-will
+                        переключит его в <b>offline</b> и через 5 мин придёт алерт.
+                        Не путать с молчанием датчиков — пропагаторы event-based и могут
+                        часами не слать событий если температура/влажность стабильны.
+                        Кулдаун 24 ч, recovery-сообщение при возврате.
                       </div>
                     </div>
                     <div className="flex items-start gap-2">

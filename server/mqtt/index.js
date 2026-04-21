@@ -94,6 +94,42 @@ function setZoneOffline(zoneId) {
   }
 }
 
+// ── Zigbee bridge liveness ──
+// Sourced directly from the zigbee2mqtt/bridge/state MQTT topic which Z2M
+// publishes as a retained message and flips to "offline" via MQTT last-will
+// when the process dies. The value reflects the coordinator dongle + the
+// Z2M daemon, NOT individual sensor traffic.
+let zigbeeBridgeState = {
+  state: 'unknown',  // 'online' | 'offline' | 'unknown'
+  changedAt: null,
+  // When the server starts up there's a brief window before the retained
+  // message arrives. Track whether we've ever seen a real value.
+  everSeen: false,
+};
+const zigbeeBridgeListeners = new Set();
+
+export function getZigbeeBridgeState() {
+  return { ...zigbeeBridgeState };
+}
+
+export function onZigbeeBridgeStateChange(cb) {
+  zigbeeBridgeListeners.add(cb);
+  return () => zigbeeBridgeListeners.delete(cb);
+}
+
+function handleZigbeeBridgeState(state) {
+  const prev = zigbeeBridgeState.state;
+  zigbeeBridgeState = {
+    state,
+    changedAt: new Date(),
+    everSeen: true,
+  };
+  console.log(`[MQTT] zigbee2mqtt/bridge/state: ${prev} → ${state}`);
+  for (const cb of zigbeeBridgeListeners) {
+    try { cb(state, prev); } catch (e) { console.error('[MQTT] zigbee listener error:', e.message); }
+  }
+}
+
 let globalIo = null;
 let mqttClient = null;
 
@@ -126,10 +162,35 @@ export function initializeMqtt(io) {
       if (err) console.error('[MQTT] Subscribe error:', err);
       else console.log('[MQTT] Subscribed to grow/#');
     });
+    // Zigbee2MQTT publishes its own liveness status at bridge/state as a
+    // retained message, plus last-will flips it to "offline" if z2m dies.
+    // This is far more reliable than guessing from device silence, because
+    // propagator sensors are event-based and may legitimately be quiet for
+    // hours when temperature/humidity is stable.
+    mqttClient.subscribe('zigbee2mqtt/bridge/state', (err) => {
+      if (err) console.error('[MQTT] zigbee bridge subscribe error:', err);
+      else console.log('[MQTT] Subscribed to zigbee2mqtt/bridge/state');
+    });
   });
 
   mqttClient.on('message', async (topic, message) => {
     try {
+      // Z2M bridge state: {"state":"online"} | {"state":"offline"}
+      if (topic === 'zigbee2mqtt/bridge/state') {
+        let state = null;
+        try {
+          const parsed = JSON.parse(message.toString());
+          state = parsed?.state || null;
+        } catch {
+          // older z2m versions publish the plain string "online"/"offline"
+          state = message.toString().trim();
+        }
+        if (state === 'online' || state === 'offline') {
+          handleZigbeeBridgeState(state);
+        }
+        return;
+      }
+
       const parts = topic.split('/');
       // grow/zone/{zoneId}/sensors
       if (parts[0] === 'grow' && parts[1] === 'zone' && parts.length >= 4) {

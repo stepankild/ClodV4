@@ -3,7 +3,7 @@ import AlertLog from '../models/AlertLog.js';
 import SensorReading from '../models/SensorReading.js';
 import IrrigationLog from '../models/IrrigationLog.js';
 import Zone from '../models/Zone.js';
-import { getZoneState } from '../mqtt/index.js';
+import { getZoneState, getZigbeeBridgeState } from '../mqtt/index.js';
 
 // In-memory cooldown cache (seeded from MongoDB on start, persisted on each alert)
 const alertCooldowns = new Map(); // "zoneId:metric" → { lastSent, count }
@@ -38,11 +38,16 @@ function pragueDayStart(now = new Date()) {
 const SUSTAIN_MIN = 5;
 const RECOVER_MARGIN_PCT = 0.05;  // 5% of the configured min↔max range
 
-// Zigbee gateway liveness: if a zone has any known Zigbee devices but we
-// haven't received an event from ANY of them for more than this window,
-// assume the coordinator (Sonoff CC2652P dongle or MQTT bridge) is down.
-// Last outage went unnoticed for ~20 hours because there was no alert.
-const ZIGBEE_SILENT_MIN = 30;
+// Zigbee gateway liveness: tracked via the authoritative
+// zigbee2mqtt/bridge/state MQTT topic instead of guessing from device
+// silence. Z2M publishes this as a retained message and MQTT last-will
+// flips it to "offline" if the daemon dies. Propagator sensors are
+// event-based and legitimately stay quiet for hours, so traffic heuristics
+// produced false positives. This one is ground truth.
+//
+// Require the offline state to persist this many minutes before firing,
+// so a brief Z2M restart doesn't spam the chat.
+const ZIGBEE_OFFLINE_SUSTAIN_MIN = 5;
 const ZIGBEE_ALERT_COOLDOWN_MIN = 24 * 60; // 1 day between repeat alerts
 
 // Stuck-sensor detector: a reading is considered stuck when every sample in
@@ -396,53 +401,47 @@ async function checkStuckSensors(zoneId, zoneName, chatId) {
 }
 
 /**
- * Detect when a zone's Zigbee coordinator / dongle has gone silent.
+ * Detect when the Zigbee coordinator itself is down.
  *
- * For zones that have ≥1 Zigbee device configured (e.g. "Материнская" with
- * propagator sensors), look at the latest SensorReading carrying a
- * humidityReadings or temperatures entry with sensorId prefixed "zigbee-".
- * If that's older than ZIGBEE_SILENT_MIN minutes, fire a Telegram alert.
+ * Reads the authoritative Z2M liveness state from MQTT. That value comes
+ * from the `zigbee2mqtt/bridge/state` topic which Z2M publishes on start
+ * and gets flipped to "offline" automatically via MQTT last-will if the
+ * daemon crashes or the USB dongle is unresponsive.
  *
- * Catches the scenario where the Sonoff ZBDongle-P falls off the USB bus
- * (happened 2026-04-20 during an unplanned Pi reboot and wasn't noticed
- * until the user looked at the portal ~20 h later). Recovery message fires
- * when events resume.
+ * We deliberately do NOT infer gateway status from individual device
+ * silence — propagator sensors report on change and can legitimately be
+ * quiet for hours when temp/humidity is stable.
+ *
+ * This is a zone-agnostic check (the coordinator is shared across all
+ * zones using Zigbee), so we only fire once per offline event and only
+ * for zones that actually use Zigbee.
  */
 async function checkZigbeeGateway(zoneId, zoneName, chatId) {
   const zone = await Zone.findOne({ zoneId }, { zigbeeDevices: 1 }).lean();
   const deviceCount = Object.keys(zone?.zigbeeDevices || {}).length;
   if (!deviceCount) return; // zone doesn't use Zigbee at all
 
-  const lastZigbee = await SensorReading.findOne(
-    {
-      zoneId,
-      $or: [
-        { 'temperatures.sensorId': { $regex: '^zigbee-' } },
-        { 'humidityReadings.sensorId': { $regex: '^zigbee-' } },
-      ],
-    },
-    { timestamp: 1 },
-  ).sort({ timestamp: -1 }).lean();
+  const bridge = getZigbeeBridgeState();
+  // While we haven't yet seen any retained MQTT message, we simply don't know
+  // the state. Skip — once Z2M or MQTT finally publishes it we'll act.
+  if (!bridge.everSeen) return;
 
   const key = `${zoneId}:zigbee_offline`;
-  const now = Date.now();
-  const silentMs = lastZigbee ? now - new Date(lastZigbee.timestamp).getTime() : Infinity;
-  const isOffline = silentMs > ZIGBEE_SILENT_MIN * 60 * 1000;
+  const offlineForMs = bridge.state === 'offline' && bridge.changedAt
+    ? Date.now() - new Date(bridge.changedAt).getTime()
+    : 0;
+  const sustainedOffline = bridge.state === 'offline'
+    && offlineForMs >= ZIGBEE_OFFLINE_SUSTAIN_MIN * 60 * 1000;
 
-  if (isOffline) {
+  if (sustainedOffline) {
     if (!activeAlerts.get(key) && cooldownPassed(key, ZIGBEE_ALERT_COOLDOWN_MIN)) {
-      const lastStr = lastZigbee
-        ? new Date(lastZigbee.timestamp).toLocaleString('ru-RU', { timeZone: 'Europe/Prague' })
-        : 'никогда';
-      const silentText = Number.isFinite(silentMs)
-        ? `${Math.floor(silentMs / 60000)} мин назад`
-        : 'никогда не приходило';
+      const offlineMin = Math.floor(offlineForMs / 60000);
       const msg =
-        `📡 <b>Zigbee шлюз не отвечает</b>\n` +
+        `📡 <b>Zigbee шлюз упал</b>\n` +
         `Зона: <b>${zoneName}</b>\n` +
-        `${deviceCount} Zigbee-устройств, последний сигнал ${silentText}\n` +
-        `Последний event: ${lastStr}\n` +
-        `💡 Проверьте USB-dongle (Sonoff CC2652P) на Pi фермы\n` +
+        `Zigbee2MQTT offline уже ${offlineMin} мин\n` +
+        `${deviceCount} устройств ждут связи\n` +
+        `💡 Проверьте USB-dongle (Sonoff CC2652P) и службу zigbee2mqtt на Pi фермы\n` +
         `🕐 ${formatTime()}`;
       const ok = await sendTelegram(chatId, msg);
       if (ok) {
@@ -454,7 +453,7 @@ async function checkZigbeeGateway(zoneId, zoneName, chatId) {
         });
       }
     }
-  } else if (activeAlerts.get(key)) {
+  } else if (bridge.state === 'online' && activeAlerts.get(key)) {
     const msg =
       `✅ <b>Zigbee шлюз снова онлайн</b>\n` +
       `Зона: <b>${zoneName}</b>\n` +
