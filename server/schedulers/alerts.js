@@ -50,14 +50,20 @@ const RECOVER_MARGIN_PCT = 0.05;  // 5% of the configured min↔max range
 const ZIGBEE_OFFLINE_SUSTAIN_MIN = 5;
 const ZIGBEE_ALERT_COOLDOWN_MIN = 24 * 60; // 1 day between repeat alerts
 
-// Stuck-sensor detector: a reading is considered stuck when every sample in
-// the last STUCK_WINDOW_MIN minutes has the exact same value (down to the
-// sensor's native precision). Even a truly stable grow-room normally jitters
-// by at least 1 LSB (e.g. DS18B20 0.0625°C) within an hour, so an identical
-// stream for that long indicates a frozen driver/bus cache, not real stability.
-const STUCK_WINDOW_MIN = 60;
-const STUCK_MIN_SAMPLES = 15;          // at least this many non-null samples in the window
-const STUCK_COOLDOWN_MIN = 4 * 60;     // 4 hours between repeat alerts for the same sensor
+// Stuck-sensor detector. A reading is considered stuck only if ALL of these hold:
+//   1. Every sample in the last STUCK_WINDOW_MIN minutes is identical.
+//   2. At least one OTHER sensor in the same zone DID change in that window
+//      (otherwise it's a zone-wide silence → Pi/network problem, not a
+//      frozen driver on this particular sensor; that case is covered by
+//      the offline alert).
+//   3. For the ☀️ light sensor: skip when the held value is at darkness
+//      level (≤LIGHT_THRESHOLD). Lights off for hours is normal, not stuck.
+// With a 3-hour window a live DS18B20 in the most stable room still
+// produces ≥1 LSB of 0.0625°C jitter, so a dead-flat stream that long
+// really does mean the driver/bus is wedged.
+const STUCK_WINDOW_MIN = 180;
+const STUCK_MIN_SAMPLES = 30;          // at least this many non-null samples in the window
+const STUCK_COOLDOWN_MIN = 6 * 60;     // 6 hours between repeat alerts for the same sensor
 
 // Learned light schedule cache: zoneId → { onHour, offHour, dayLength, updatedAt }
 const learnedLightSchedule = new Map();
@@ -315,6 +321,76 @@ async function checkStuckSensors(zoneId, zoneName, chatId) {
 
   if (readings.length < STUCK_MIN_SAMPLES) return;
 
+  // ── Collect every sensor's values in the window ──
+  // candidates: [{ key, label, unit, values, isLight }]
+  const candidates = [];
+
+  const scalarFields = [
+    { field: 'temperature',    label: '🌡 Температура',             unit: '°C' },
+    { field: 'humidity',       label: '💧 Влажность (STCC4)',       unit: '%' },
+    { field: 'humidity_sht45', label: '💧 Влажность (SHT45)',       unit: '%' },
+    { field: 'co2',            label: '🫧 CO₂',                      unit: ' ppm' },
+    { field: 'light',          label: '☀️ Свет',                     unit: ' lux' },
+  ];
+  for (const { field, label, unit } of scalarFields) {
+    const values = readings.map(r => r[field]).filter(v => v != null);
+    if (values.length < STUCK_MIN_SAMPLES) continue;
+    candidates.push({
+      key: `${zoneId}:stuck:${field}`,
+      label, unit, values,
+      isLight: field === 'light',
+    });
+  }
+
+  // Per-sensor temperatures (DS18B20 / SHT45 — skip Zigbee, they're event-based)
+  const tempBySensor = new Map();
+  for (const r of readings) {
+    for (const t of (r.temperatures || [])) {
+      if (t.value == null || t.sensorId?.startsWith('zigbee-')) continue;
+      if (!tempBySensor.has(t.sensorId)) tempBySensor.set(t.sensorId, { values: [], location: t.location });
+      tempBySensor.get(t.sensorId).values.push(t.value);
+    }
+  }
+  for (const [sensorId, { values, location }] of tempBySensor) {
+    if (values.length < STUCK_MIN_SAMPLES) continue;
+    candidates.push({
+      key: `${zoneId}:stuck:temp:${sensorId}`,
+      label: `🌡 ${location || sensorId}`,
+      unit: '°C', values, isLight: false,
+    });
+  }
+
+  // Per-sensor humidity
+  const humBySensor = new Map();
+  for (const r of readings) {
+    for (const h of (r.humidityReadings || [])) {
+      if (h.value == null || h.sensorId?.startsWith('zigbee-')) continue;
+      if (!humBySensor.has(h.sensorId)) humBySensor.set(h.sensorId, { values: [], location: h.location });
+      humBySensor.get(h.sensorId).values.push(h.value);
+    }
+  }
+  for (const [sensorId, { values, location }] of humBySensor) {
+    if (values.length < STUCK_MIN_SAMPLES) continue;
+    candidates.push({
+      key: `${zoneId}:stuck:hum:${sensorId}`,
+      label: `💧 ${location || sensorId}`,
+      unit: '%', values, isLight: false,
+    });
+  }
+
+  // ── Classify each candidate as frozen (one distinct value) or live ──
+  for (const c of candidates) {
+    c.distinct = new Set(c.values);
+    c.frozen = c.distinct.size === 1;
+  }
+
+  // Peer-activity check: is there ANY live sensor in the zone right now?
+  // If everything is frozen, it's almost certainly a Pi/connectivity
+  // stall, not individual-sensor breakage — that case is handled by
+  // the offline alert, not by spamming one alert per silent metric.
+  const anyPeerLive = candidates.some(c => !c.frozen);
+
+  // ── Fire / recover per sensor ──
   const sendStuckAlert = async (key, label, value, unit = '') => {
     if (!cooldownPassed(key, STUCK_COOLDOWN_MIN)) return;
     const msg = `⚠️ <b>Зона: ${zoneName}</b>\nДатчик <b>${label}</b> завис на <code>${value}${unit}</code>\nЗначение не меняется ≥${STUCK_WINDOW_MIN} мин\n🕐 ${formatTime()}`;
@@ -335,68 +411,28 @@ async function checkStuckSensors(zoneId, zoneName, chatId) {
     await AlertLog.create({ zoneId, metric: key.split(':').slice(1).join(':'), type: 'recovery', message: msg });
   };
 
-  // Scalar fields
-  const scalarFields = [
-    { key: 'temperature',    label: '🌡 Температура' },
-    { key: 'humidity',       label: '💧 Влажность (STCC4)' },
-    { key: 'humidity_sht45', label: '💧 Влажность (SHT45)' },
-    { key: 'co2',            label: '🫧 CO₂' },
-    { key: 'light',          label: '☀️ Свет' },
-  ];
-  for (const { key: field, label } of scalarFields) {
-    const values = readings.map(r => r[field]).filter(v => v != null);
-    if (values.length < STUCK_MIN_SAMPLES) continue;
-    const distinct = new Set(values);
-    const alertKey = `${zoneId}:stuck:${field}`;
-    if (distinct.size === 1) {
-      await sendStuckAlert(alertKey, label, [...distinct][0]);
-    } else {
-      await sendRecoveryAlert(alertKey, label);
+  for (const c of candidates) {
+    if (!c.frozen) {
+      await sendRecoveryAlert(c.key, c.label);
+      continue;
     }
-  }
 
-  // Per-sensor temperatures (DS18B20 / SHT45 — skip Zigbee)
-  const tempBySensor = new Map(); // sensorId -> { values, location }
-  for (const r of readings) {
-    for (const t of (r.temperatures || [])) {
-      if (t.value == null) continue;
-      if (t.sensorId?.startsWith('zigbee-')) continue; // Zigbee is event-based
-      if (!tempBySensor.has(t.sensorId)) tempBySensor.set(t.sensorId, { values: [], location: t.location });
-      tempBySensor.get(t.sensorId).values.push(t.value);
-    }
-  }
-  for (const [sensorId, { values, location }] of tempBySensor) {
-    if (values.length < STUCK_MIN_SAMPLES) continue;
-    const distinct = new Set(values);
-    const alertKey = `${zoneId}:stuck:temp:${sensorId}`;
-    const label = `🌡 ${location || sensorId}`;
-    if (distinct.size === 1) {
-      await sendStuckAlert(alertKey, label, [...distinct][0], '°C');
-    } else {
-      await sendRecoveryAlert(alertKey, label);
-    }
-  }
+    const heldValue = [...c.distinct][0];
 
-  // Per-sensor humidity (I2C — Zigbee excluded)
-  const humBySensor = new Map();
-  for (const r of readings) {
-    for (const h of (r.humidityReadings || [])) {
-      if (h.value == null) continue;
-      if (h.sensorId?.startsWith('zigbee-')) continue;
-      if (!humBySensor.has(h.sensorId)) humBySensor.set(h.sensorId, { values: [], location: h.location });
-      humBySensor.get(h.sensorId).values.push(h.value);
+    // Skip: light sensor at darkness level is "stuck" at night on purpose
+    if (c.isLight && heldValue <= LIGHT_THRESHOLD) {
+      await sendRecoveryAlert(c.key, c.label); // clear if we'd alerted earlier
+      continue;
     }
-  }
-  for (const [sensorId, { values, location }] of humBySensor) {
-    if (values.length < STUCK_MIN_SAMPLES) continue;
-    const distinct = new Set(values);
-    const alertKey = `${zoneId}:stuck:hum:${sensorId}`;
-    const label = `💧 ${location || sensorId}`;
-    if (distinct.size === 1) {
-      await sendStuckAlert(alertKey, label, [...distinct][0], '%');
-    } else {
-      await sendRecoveryAlert(alertKey, label);
+
+    // Skip: no peer sensor in this zone is changing either. Probably a
+    // Pi/connectivity issue rather than a specific sensor freeze.
+    if (!anyPeerLive) {
+      // Don't recover here — we just don't have enough signal to decide
+      continue;
     }
+
+    await sendStuckAlert(c.key, c.label, heldValue, c.unit.trim() ? c.unit : '');
   }
 }
 
