@@ -56,9 +56,15 @@ cd client && npm run build
 - **Service**: `scale-client` (systemd, auto-restart)
 - **Python**: 3.13.5 (venv at `/home/stepan/pi-scale-client/venv/`)
 - **Working dir**: `/home/stepan/pi-scale-client/`
-- **Scale**: Ohaus R31P3 via RS-232→USB at `/dev/ttyUSB0`, 9600 baud
-- **Scanner**: Honeywell Voyager XP 1470g via USB HID at `/dev/input/event4`
+- **Scale**: Ohaus R31P3 via RS-232→USB (Prolific), 9600 baud.
+  Stable path: `/dev/serial/by-id/usb-Prolific_Technology_Inc._USB-Serial_Controller_DICGg146B12-if00-port0`.
+  **NEVER use `/dev/ttyUSBN` — enumeration order changes across reboots.**
+- **Zigbee coordinator**: Sonoff ZBDongle-P (CC2652P, chip Silicon Labs CP2102) at
+  `/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0`.
+  Used by `zigbee2mqtt.service` (publishes to Mosquitto → Home Assistant).
+- **Scanner**: Honeywell Voyager XP 1470g via USB HID (evdev autodetect by name)
 - **Scale mode**: CP (continuous print) + IP polling for unstable readings
+- **If Sonoff or scale suddenly stop working** → see [PI_USB_DEVICES.md](PI_USB_DEVICES.md)
 
 ### Pi systemd service
 
