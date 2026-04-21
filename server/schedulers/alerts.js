@@ -43,7 +43,7 @@ const RECOVER_MARGIN_PCT = 0.05;  // 5% of the configured min↔max range
 // assume the coordinator (Sonoff CC2652P dongle or MQTT bridge) is down.
 // Last outage went unnoticed for ~20 hours because there was no alert.
 const ZIGBEE_SILENT_MIN = 30;
-const ZIGBEE_ALERT_COOLDOWN_MIN = 6 * 60; // 6 hours between repeat alerts
+const ZIGBEE_ALERT_COOLDOWN_MIN = 24 * 60; // 1 day between repeat alerts
 
 // Stuck-sensor detector: a reading is considered stuck when every sample in
 // the last STUCK_WINDOW_MIN minutes has the exact same value (down to the

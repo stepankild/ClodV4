@@ -1301,7 +1301,7 @@ const ZoneDetail = () => {
                         <span className="text-dark-300">Zigbee шлюз молчит</span> —
                         если у зоны есть Zigbee-устройства (пропагаторы и т.п.) и ни одно из них
                         не прислало событие <b>более 30 минут</b>, придёт алерт «Zigbee шлюз не отвечает».
-                        Ловит падение Sonoff CC2652P dongle или Zigbee2MQTT на Pi. Кулдаун 6 ч,
+                        Ловит падение Sonoff CC2652P dongle или Zigbee2MQTT на Pi. Кулдаун 24 ч,
                         recovery-сообщение когда события возобновятся.
                       </div>
                     </div>
