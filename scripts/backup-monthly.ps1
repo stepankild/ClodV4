@@ -239,6 +239,54 @@ try {
         }
     }
 
+    # 6b2. Zigbee2MQTT config (/opt/zigbee2mqtt/data/). Там configuration.yaml
+    # с serial-портом, network_key, paired devices — БЕЗ этого после переустановки
+    # пришлось бы заново сопрягать все Zigbee-устройства. Root-owned → -Sudo.
+    $z2mDest = Join-Path $staging 'zigbee2mqtt-data'
+    if ($DryRun) {
+        $sections['zigbee2mqtt-data'] = '(dry-run)'
+    } else {
+        $exists = Invoke-SshCommand -RemoteUserHost $PiScaleUserHost `
+                   -Command "test -d /opt/zigbee2mqtt/data && echo yes || echo no"
+        if ($exists -eq 'yes') {
+            # log.log и base_db.db excluded: логи не нужны, база соседей —
+            # регенерируется. Всё что НУЖНО: configuration.yaml, state.json,
+            # database.db (paired devices), coordinator_backup.json.
+            $z2mExclude = @('log','log.log','*.log','*.log.*')
+            $ok = Invoke-SshFetch -RemoteUserHost $PiScaleUserHost `
+                  -RemotePath '/opt/zigbee2mqtt/data/' -LocalDir $z2mDest `
+                  -Exclude $z2mExclude -Sudo
+            if ($ok) {
+                $sections['zigbee2mqtt-data'] = "$(Get-DirectorySizeMB $z2mDest) MB"
+            } else {
+                $warnings += 'zigbee2mqtt-data: fetch failed'
+                $sections['zigbee2mqtt-data'] = 'SKIPPED (fetch failed)'
+            }
+        } else {
+            $sections['zigbee2mqtt-data'] = 'SKIPPED (/opt/zigbee2mqtt/data not present)'
+        }
+    }
+
+    # 6b3. iptables persistent rules (наш UDP-блок 41641 для DERP-forced Tailscale).
+    # Без этого файла после восстановления Pi придётся вручную повторять настройку
+    # из PI_USB_DEVICES.md (это не здесь документировано). Мелкий — просто cat.
+    $iptDest = Join-Path $staging 'iptables-rules'
+    if (-not $DryRun) {
+        New-Item -ItemType Directory -Path $iptDest -Force | Out-Null
+        $iptCount = 0
+        foreach ($f in @('rules.v4', 'rules.v6')) {
+            $content = Invoke-SshCommand -RemoteUserHost $PiScaleUserHost `
+                -Command "sudo cat /etc/iptables/$f 2>/dev/null"
+            if ($content) {
+                Set-Content -Path (Join-Path $iptDest $f) -Value $content -Encoding UTF8
+                $iptCount++
+            }
+        }
+        $sections['iptables-rules'] = if ($iptCount) { "$iptCount file(s)" } else { 'SKIPPED (not installed)' }
+    } else {
+        $sections['iptables-rules'] = '(dry-run)'
+    }
+
     # 6c. SSH-ключи текущего пользователя Windows — без них после восстановления
     #     не зайдёшь на Pi. Берём публичные+приватные.
     $sshSrc  = Join-Path $env:USERPROFILE '.ssh'
