@@ -38,6 +38,13 @@ function pragueDayStart(now = new Date()) {
 const SUSTAIN_MIN = 5;
 const RECOVER_MARGIN_PCT = 0.05;  // 5% of the configured min↔max range
 
+// Zigbee gateway liveness: if a zone has any known Zigbee devices but we
+// haven't received an event from ANY of them for more than this window,
+// assume the coordinator (Sonoff CC2652P dongle or MQTT bridge) is down.
+// Last outage went unnoticed for ~20 hours because there was no alert.
+const ZIGBEE_SILENT_MIN = 30;
+const ZIGBEE_ALERT_COOLDOWN_MIN = 6 * 60; // 6 hours between repeat alerts
+
 // Stuck-sensor detector: a reading is considered stuck when every sample in
 // the last STUCK_WINDOW_MIN minutes has the exact same value (down to the
 // sensor's native precision). Even a truly stable grow-room normally jitters
@@ -388,6 +395,80 @@ async function checkStuckSensors(zoneId, zoneName, chatId) {
   }
 }
 
+/**
+ * Detect when a zone's Zigbee coordinator / dongle has gone silent.
+ *
+ * For zones that have ≥1 Zigbee device configured (e.g. "Материнская" with
+ * propagator sensors), look at the latest SensorReading carrying a
+ * humidityReadings or temperatures entry with sensorId prefixed "zigbee-".
+ * If that's older than ZIGBEE_SILENT_MIN minutes, fire a Telegram alert.
+ *
+ * Catches the scenario where the Sonoff ZBDongle-P falls off the USB bus
+ * (happened 2026-04-20 during an unplanned Pi reboot and wasn't noticed
+ * until the user looked at the portal ~20 h later). Recovery message fires
+ * when events resume.
+ */
+async function checkZigbeeGateway(zoneId, zoneName, chatId) {
+  const zone = await Zone.findOne({ zoneId }, { zigbeeDevices: 1 }).lean();
+  const deviceCount = Object.keys(zone?.zigbeeDevices || {}).length;
+  if (!deviceCount) return; // zone doesn't use Zigbee at all
+
+  const lastZigbee = await SensorReading.findOne(
+    {
+      zoneId,
+      $or: [
+        { 'temperatures.sensorId': { $regex: '^zigbee-' } },
+        { 'humidityReadings.sensorId': { $regex: '^zigbee-' } },
+      ],
+    },
+    { timestamp: 1 },
+  ).sort({ timestamp: -1 }).lean();
+
+  const key = `${zoneId}:zigbee_offline`;
+  const now = Date.now();
+  const silentMs = lastZigbee ? now - new Date(lastZigbee.timestamp).getTime() : Infinity;
+  const isOffline = silentMs > ZIGBEE_SILENT_MIN * 60 * 1000;
+
+  if (isOffline) {
+    if (!activeAlerts.get(key) && cooldownPassed(key, ZIGBEE_ALERT_COOLDOWN_MIN)) {
+      const lastStr = lastZigbee
+        ? new Date(lastZigbee.timestamp).toLocaleString('ru-RU', { timeZone: 'Europe/Prague' })
+        : 'никогда';
+      const silentText = Number.isFinite(silentMs)
+        ? `${Math.floor(silentMs / 60000)} мин назад`
+        : 'никогда не приходило';
+      const msg =
+        `📡 <b>Zigbee шлюз не отвечает</b>\n` +
+        `Зона: <b>${zoneName}</b>\n` +
+        `${deviceCount} Zigbee-устройств, последний сигнал ${silentText}\n` +
+        `Последний event: ${lastStr}\n` +
+        `💡 Проверьте USB-dongle (Sonoff CC2652P) на Pi фермы\n` +
+        `🕐 ${formatTime()}`;
+      const ok = await sendTelegram(chatId, msg);
+      if (ok) {
+        recordAlert(key);
+        activeAlerts.set(key, true);
+        await AlertLog.create({
+          zoneId, metric: 'zigbee_offline', type: 'alert',
+          message: msg,
+        });
+      }
+    }
+  } else if (activeAlerts.get(key)) {
+    const msg =
+      `✅ <b>Zigbee шлюз снова онлайн</b>\n` +
+      `Зона: <b>${zoneName}</b>\n` +
+      `🕐 ${formatTime()}`;
+    await sendTelegram(chatId, msg);
+    activeAlerts.delete(key);
+    resetCooldown(key);
+    await AlertLog.create({
+      zoneId, metric: 'zigbee_offline', type: 'recovery',
+      message: msg,
+    });
+  }
+}
+
 async function checkAlerts() {
   try {
     const configs = await AlertConfig.find({ enabled: true }).lean();
@@ -522,6 +603,7 @@ async function checkAlerts() {
       // (e.g. DS18B20 hung at an exact mC reading, STCC4 latching its buffer).
       // Skips event-based Zigbee sensors which legitimately report only on change.
       await checkStuckSensors(zoneId, zoneName, chatId);
+      await checkZigbeeGateway(zoneId, zoneName, chatId);
 
       // ── Light anomaly detection ──
       // Learns normal schedule from last 7 days, alerts only on deviations

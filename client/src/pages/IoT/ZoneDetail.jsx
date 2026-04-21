@@ -1296,6 +1296,16 @@ const ZoneDetail = () => {
                       </div>
                     </div>
                     <div className="flex items-start gap-2">
+                      <span className="text-dark-500 flex-shrink-0">📡</span>
+                      <div>
+                        <span className="text-dark-300">Zigbee шлюз молчит</span> —
+                        если у зоны есть Zigbee-устройства (пропагаторы и т.п.) и ни одно из них
+                        не прислало событие <b>более 30 минут</b>, придёт алерт «Zigbee шлюз не отвечает».
+                        Ловит падение Sonoff CC2652P dongle или Zigbee2MQTT на Pi. Кулдаун 6 ч,
+                        recovery-сообщение когда события возобновятся.
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
                       <span className="text-dark-500 flex-shrink-0">⏱</span>
                       <div>
                         <span className="text-dark-300">Кулдаун</span> —
