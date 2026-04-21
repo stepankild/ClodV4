@@ -104,23 +104,65 @@ try {
         }
     }
 
-    # 3. Pi scale-client (live from farm Pi)
-    $piScaleDest = Join-Path $staging 'pi-scale-client-live'
-    Write-BackupLog -Message "scp $PiScaleUserHost`:$PiScalePath -> $piScaleDest"
+    # 3. Main Pi: ВСЯ /home/stepan/ целиком (с разумными exclude'ами).
+    #    Раньше бэкапили отдельно pi-scale-client/, homeassistant/ — но там рядом
+    #    лежит куча "живого" кода которого нет в git: iot-sensor-client (mqtt_bridge,
+    #    display_proxy, r2_uploader, timelapse*), doorbell.py, humidity_controller.py,
+    #    .ha_token, bridge_config.yaml. Забираем всё одним tar'ом под sudo
+    #    (часть файлов root-owned — например home-assistant_v2.db, humidity_controller.py).
+    $piHomeDest = Join-Path $staging 'main-pi-home-live'
     if ($DryRun) {
-        $sections['pi-scale-client-live'] = '(dry-run)'
+        $sections['main-pi-home-live'] = '(dry-run)'
     } else {
-        $ok = Invoke-SshFetch -RemoteUserHost $PiScaleUserHost -RemotePath $PiScalePath -LocalDir $piScaleDest
+        $homeExclude = @(
+            # Python/Node junk
+            'venv','.venv','__pycache__','*.pyc','node_modules',
+            # Desktop/OS cache (Pi с GUI — бесполезный мусор)
+            # .config/systemd/user содержит symlinks для rpi-connect, которые Windows
+            # не умеет создавать при распаковке (нужны elevated). Фильтруем всё .config.
+            '.cache','.local','.npm','.docker','.mozilla','.thunderbird',
+            '.config',
+            '.gnupg','.Xauthority','.xsession-errors','.xsession-errors.old',
+            '.bash_history','.viminfo','.wget-hsts','.sudo_as_admin_successful',
+            # Пустые default XDG-папки
+            'Desktop','Downloads','Music','Pictures','Videos','Public','Templates','Documents',
+            # HA history DB (~260 MB) и HACS components (~54 MB, регенерируемы)
+            'home-assistant_v2.db','home-assistant_v2.db-wal','home-assistant_v2.db-shm',
+            'deps','tts','custom_components',
+            # Timelapse media (~131 MB, растёт со временем). Снимки и видео загружаются
+            # в Cloudflare R2 через r2_uploader.py — это первичный бэкап этой истории.
+            # Если R2 умрёт — история с начала использования портала теряется, но для
+            # защиты именно от этого случая лучше иметь отдельный rclone-sync R2→local,
+            # а не дублировать тут.
+            'timelapse',
+            # Логи, runtime-буферы
+            '*.log','*.log.*','*.log.fault',
+            'buffer.db','bridge_buffer.db','sensor_buffer.db',
+            'sensor_buffer.db-wal','sensor_buffer.db-shm'
+        )
+        # -Sudo обязателен: на Pi есть root-owned файлы (humidity_controller.py,
+        # HA .storage/, в homeassistant некоторые файлы тоже от root).
+        $ok = Invoke-SshFetch -RemoteUserHost $PiScaleUserHost `
+              -RemotePath '/home/stepan/' -LocalDir $piHomeDest -Exclude $homeExclude -Sudo
         if ($ok) {
-            Remove-IrrelevantPythonArtifacts -Dir $piScaleDest
-            $sections['pi-scale-client-live'] = "$(Get-DirectorySizeMB $piScaleDest) MB"
+            # Сохраняем listing HACS-компонентов отдельно — зная список после восстановления
+            # можно переустановить custom_components заново через HACS.
+            $haBase = '/home/stepan/homeassistant'
+            $listing = Invoke-SshCommand -RemoteUserHost $PiScaleUserHost `
+                -Command "sudo ls -1 $haBase/custom_components/ 2>/dev/null || true"
+            if ($listing) {
+                $target = Join-Path $piHomeDest 'homeassistant\custom_components.list.txt'
+                New-Item -ItemType Directory -Path (Split-Path $target) -Force | Out-Null
+                Set-Content -Path $target -Value $listing -Encoding UTF8
+            }
+            $sections['main-pi-home-live'] = "$(Get-DirectorySizeMB $piHomeDest) MB"
         } else {
-            $warnings += "pi-scale-client: scp failed"
-            $sections['pi-scale-client-live'] = 'SKIPPED (scp failed)'
+            $warnings += 'main-pi-home: scp failed'
+            $sections['main-pi-home-live'] = 'SKIPPED (scp failed)'
         }
     }
 
-    # 4. Pi Zero iot-sensor-client
+    # 4. Pi Zero iot-sensor-client (отдельный хост, user pi)
     $piZeroDest = Join-Path $staging 'iot-sensor-client-live'
     Write-BackupLog -Message "scp $PiZeroUserHost`:$PiZeroPath -> $piZeroDest"
     if ($DryRun) {
@@ -136,95 +178,38 @@ try {
         }
     }
 
-    # 5. Home Assistant config — ищем mount path у docker-контейнера, потом fallback.
-    $haDest = Join-Path $staging 'homeassistant-config'
-    if ($DryRun) {
-        $sections['homeassistant-config'] = '(dry-run)'
-    } else {
-        $haPath = $null
-        Write-BackupLog -Message "Probing HA config path via docker inspect"
-        $inspectFmt = "{{range .Mounts}}{{.Source}}`n{{end}}"
-        $inspectOut = Invoke-SshCommand -RemoteUserHost $PiScaleUserHost `
-                       -Command "sudo docker inspect homeassistant --format '$inspectFmt'"
-        if ($inspectOut) {
-            $candidate = $inspectOut -split "`r?`n" |
-                         Where-Object { $_ -match '/config$' -or $_ -match '/homeassistant$' } |
-                         Select-Object -First 1
-            if ($candidate) { $haPath = $candidate.Trim() }
-        }
-        if (-not $haPath) {
-            # Try fallback paths by testing existence.
-            foreach ($p in $HaFallbackPaths) {
-                $exists = Invoke-SshCommand -RemoteUserHost $PiScaleUserHost `
-                          -Command "test -d '$p' && echo yes || echo no"
-                if ($exists -eq 'yes') { $haPath = $p; break }
-            }
-        }
-        if ($haPath) {
-            Write-BackupLog -Message "HA config path: $haPath"
-            # Бэкапим только то, что УНИКАЛЬНО для этой инсталяции HA:
-            #   - *.yaml (configuration, automations, scenes, scripts, secrets)
-            #   - .storage/ (состояние интеграций, токены, entity registry) ~10 MB
-            #   - blueprints/ (пользовательские автоматизации)
-            # Исключаем:
-            #   - home-assistant_v2.db* (история метрик, ~260 MB) — не критично
-            #   - custom_components/ (~54 MB) — ставится заново через HACS
-            #   - deps/ (Python-пакеты) и tts/ (аудиокэш) — регенерируются
-            #   - *.log* — ни к чему
-            # Для списка установленных custom_components сохраняем текстовое listing отдельно.
-            $haExclude = @(
-                'venv','.venv','__pycache__','*.pyc',
-                'home-assistant_v2.db','home-assistant_v2.db-wal','home-assistant_v2.db-shm',
-                '*.log','*.log.*','*.log.fault',
-                'deps','tts','custom_components'
-            )
-            # HA config в Docker volume → .storage/ и часть файлов root-owned.
-            # Поэтому -Sudo — запускаем remote tar через sudo на Pi.
-            $ok = Invoke-SshFetch -RemoteUserHost $PiScaleUserHost -RemotePath "$haPath/" `
-                  -LocalDir $haDest -Exclude $haExclude -Sudo
-            if ($ok) {
-                # Сохраняем список custom_components отдельным текстовым файлом
-                # (чтобы после восстановления знать, какие интеграции переустанавливать).
-                $listing = Invoke-SshCommand -RemoteUserHost $PiScaleUserHost `
-                    -Command "sudo ls -1 $haPath/custom_components/ 2>/dev/null"
-                if ($listing) {
-                    Set-Content -Path (Join-Path $haDest 'custom_components.list.txt') -Value $listing -Encoding UTF8
-                }
-            }
-            if ($ok) {
-                $sections['homeassistant-config'] = "$(Get-DirectorySizeMB $haDest) MB (from $haPath, только .storage+yamls+blueprints)"
-            } else {
-                $warnings += 'HA config: fetch failed'
-                $sections['homeassistant-config'] = 'SKIPPED (fetch failed)'
-            }
-        } else {
-            Write-BackupLog -Level WARN -Message "HA config path not found (docker inspect + fallbacks)"
-            $warnings += 'HA config: path not found'
-            $sections['homeassistant-config'] = 'SKIPPED (path unknown)'
-        }
-    }
-
     # 6. Systemd unit files (маленькие, забираем точечно)
     $systemdDest = Join-Path $staging 'pi-systemd'
     if (-not $DryRun) {
         New-Item -ItemType Directory -Path $systemdDest -Force | Out-Null
-        # Список юнитов, которые реально установлены в /etc/systemd/system/.
-        # mqtt_bridge.service лежит в iot-sensor-client/ (не установлен в systemd) —
-        # он попадает в бэкап через iot-sensor-client-live, здесь его не ищем.
-        $units = @(
-            @{ Host = $PiScaleUserHost; Path = '/etc/systemd/system/scale-client.service'; Dest = 'scale-client.service' },
-            @{ Host = $PiScaleUserHost; Path = '/etc/systemd/system/display-proxy.service'; Dest = 'display-proxy.service' },
-            @{ Host = $PiZeroUserHost;  Path = '/etc/systemd/system/sensor-node.service';  Dest = 'sensor-node.service' }
-        )
+        # Забираем все non-system юниты с main Pi одним махом через wildcard.
+        # Фильтруем системные (cloud-*, ssh, docker, networkd, nfs-*, tailscaled, ...) —
+        # они воспроизводятся при установке пакетов, и их часто нет в /etc/systemd/system/
+        # (они в /lib/systemd/system/).
+        # С Pi Zero — только sensor-node.service (больше там нет кастомного).
         $collected = 0
-        foreach ($u in $units) {
-            $dstFile = Join-Path $systemdDest $u.Dest
-            # Use ssh + cat + redirect (avoids permissions issues on /etc).
-            $content = Invoke-SshCommand -RemoteUserHost $u.Host -Command "sudo cat '$($u.Path)' 2>/dev/null || cat '$($u.Path)'"
-            if ($content) {
-                Set-Content -Path $dstFile -Value $content -Encoding UTF8
-                $collected++
+        $listRaw = Invoke-SshCommand -RemoteUserHost $PiScaleUserHost `
+                    -Command "sudo ls -1 /etc/systemd/system/*.service 2>/dev/null | grep -vE '/(ssh|ssh\.service|getty|console-setup|keyboard-setup|networkd-dispatcher|NetworkManager|ModemManager|wpa_supplicant|bluetooth|avahi-daemon|cups|ufw|fake-hwclock|rsyslog|iscsi|dbus-|accounts-daemon|polkit|acpi|upower|udisks2|apparmor|apport|cron|e2scrub|emergency|rescue|rfkill|unattended|kmod|packagekit|plymouth|systemd-|multi-user|default|sysinit|graphical|basic|cloud-init|cloud-config|cloud-final|netfilter-persistent|iptables|ip6tables|redis|mysql|postgresql|nginx|apache2|snap)' || true"
+        if ($listRaw) {
+            foreach ($path in ($listRaw -split "`r?`n")) {
+                $path = $path.Trim()
+                if (-not $path -or $path -notmatch '\.service$') { continue }
+                $name = ($path -split '/')[-1]
+                $dst  = Join-Path $systemdDest $name
+                $content = Invoke-SshCommand -RemoteUserHost $PiScaleUserHost `
+                    -Command "sudo cat '$path' 2>/dev/null"
+                if ($content) {
+                    Set-Content -Path $dst -Value $content -Encoding UTF8
+                    $collected++
+                }
             }
+        }
+        # Pi Zero: единственный кастомный юнит
+        $zeroUnit = Invoke-SshCommand -RemoteUserHost $PiZeroUserHost `
+                    -Command "sudo cat /etc/systemd/system/sensor-node.service 2>/dev/null"
+        if ($zeroUnit) {
+            Set-Content -Path (Join-Path $systemdDest 'sensor-node.service') -Value $zeroUnit -Encoding UTF8
+            $collected++
         }
         $sections['pi-systemd'] = "$collected unit file(s)"
     } else {

@@ -425,16 +425,28 @@ function Invoke-SshFetch {
     # прямо в $LocalDir — как раньше после scp -r.
     $bsdtar = Join-Path $env:SystemRoot 'System32\tar.exe'
     if (-not (Test-Path $bsdtar)) { $bsdtar = 'tar' }   # fallback, вдруг нет (очень редкий случай)
+    $tarErrors = $null
     $prev = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
     try {
-        & $bsdtar -xzf $tmpTgz -C $LocalDir --strip-components=1 2>&1 | Out-Null
+        $tarErrors = & $bsdtar -xzf $tmpTgz -C $LocalDir --strip-components=1 2>&1 | ForEach-Object { $_.ToString() }
         $xcode = $LASTEXITCODE
     } finally { $ErrorActionPreference = $prev }
     Remove-Item $tmpTgz -Force -ErrorAction SilentlyContinue
 
     if ($xcode -ne 0) {
-        Write-BackupLog -Level WARN -Message "local tar -x failed for $RemotePath (exit $xcode)"
-        return $false
+        # bsdtar часто возвращает exit 1 не из-за фатальной ошибки, а из-за warning'ов
+        # (например: символические ссылки с абсолютными путями — они safely игнорируются;
+        # или permission denied на mode/owner установке — на NTFS это ожидаемо).
+        # Если распаковка дала больше 0 файлов — считаем успехом, но логируем stderr.
+        $extracted = @(Get-ChildItem -LiteralPath $LocalDir -Recurse -Force -ErrorAction SilentlyContinue).Count
+        $errSample = if ($tarErrors) { ($tarErrors | Select-Object -First 3) -join ' | ' } else { '(no stderr)' }
+        if ($extracted -gt 0) {
+            Write-BackupLog -Level WARN -Message "local tar -x exit $xcode for $RemotePath but extracted $extracted items; stderr sample: $errSample"
+            return $true
+        } else {
+            Write-BackupLog -Level WARN -Message "local tar -x failed for $RemotePath (exit $xcode, 0 files); stderr: $errSample"
+            return $false
+        }
     }
     return $true
 }

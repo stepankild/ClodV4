@@ -191,14 +191,33 @@ C:\Backups\ClodV4\
 - `MANIFEST.txt` — timestamp, git SHA, ветка, размеры, scrubbed URIs
 
 **Monthly zip** — всё из weekly плюс:
-- `pi-scale-client-live/` — живые файлы с Pi (`/home/stepan/pi-scale-client/`)
+- `main-pi-home-live/` — **вся `/home/stepan/`** с main Pi под sudo. Включает
+  `pi-scale-client/`, `homeassistant/` (без `home-assistant_v2.db`, `custom_components`,
+  `deps`, `tts`), `iot-sensor-client/` (живая копия: `mqtt_bridge.py`,
+  `display_proxy.py`, `r2_uploader.py`, `timelapse*.py`, `doorbell.py`),
+  `humidity_controller.py`, `display_proxy.py`, `doorbell.mp3`, `.ha_token`,
+  `.humidity_ctrl_env`, `.ssh/` (ключи Pi для деплоя на Pi Zero), `.bashrc` и т.п.
 - `iot-sensor-client-live/` — живые файлы с Pi Zero (`/home/pi/iot-sensor-client/`)
-- `homeassistant-config/` — HA config (docker volume)
-- `pi-systemd/` — `scale-client.service`, `display-proxy.service`, `sensor-node.service`, `mqtt_bridge.service`
+- `pi-systemd/` — все кастомные юниты из `/etc/systemd/system/` (обычно 11+):
+  `scale-client`, `zigbee2mqtt`, `doorbell`, `humidity-ctrl`, `mqtt-bridge`,
+  `display-proxy`, `timelapse-server`, `timelapse-vega`, `timelapse-build-vega`,
+  `sensor-node` (с Pi Zero), итд.
 - `mosquitto-config/` — `/etc/mosquitto/` с main Pi (MQTT-брокер)
 - `windows-ssh/` — ключи из `%USERPROFILE%\.ssh\` (id_ed25519, config, known_hosts и т.п.)
 - `claude-memory/` — файлы из `%USERPROFILE%\.claude\projects\...\memory\` (токены HA, инфра)
 - `railway-env/variables.json` — prod-переменные Railway (если CLI установлен и `railway link` сделан)
+
+**Что НЕ попадает** в `main-pi-home-live/` (осознанно, чтобы zip не раздувался):
+- `venv/`, `__pycache__/`, `*.pyc`, `node_modules/` — воспроизводимый мусор
+- `home-assistant_v2.db*` (~260 MB метрик), `custom_components/` (~54 MB HACS),
+  `deps/`, `tts/` — регенерируются
+- `timelapse/` (~131 MB снимков/видео) — **первично бэкапятся в Cloudflare R2**
+  через `r2_uploader.py`. Если хочешь ещё один слой защиты — отдельно
+  настраивай `rclone sync r2:bucket → local` (вне scope этой задачи).
+- `.cache/`, `.config/`, `.local/`, `.docker/`, `Desktop/`, `Downloads/` и пр.
+  XDG-мусор c Pi OS Desktop
+- `*.log`, `buffer.db`, `sensor_buffer.db*` — runtime-state
+- `.bash_history`, `.xsession-errors*`, `.gnupg/`
 
 ESP32-CAM и espink-display исходники попадают в `code/` (они и так в репозитории).
 
