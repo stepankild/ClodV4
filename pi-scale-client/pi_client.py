@@ -49,7 +49,9 @@ SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyUSB0')
 BAUD_RATE = int(os.getenv('BAUD_RATE', '9600'))
 READ_INTERVAL = float(os.getenv('READ_INTERVAL', '0.05'))  # секунды между чтениями
 SCALE_MODE = os.getenv('SCALE_MODE', 'continuous')
-BARCODE_DEVICE = os.getenv('BARCODE_DEVICE', '')  # путь к /dev/input/eventX или пусто для автоопределения
+BARCODE_DEVICE = os.getenv('BARCODE_DEVICE', '')  # оставить пустым для автоопределения (рекомендуется).
+                                                  # Если задавать явно — только стабильный путь /dev/input/by-id/*-event-kbd,
+                                                  # НЕ /dev/input/eventX — этот номер плавает при ре-энумерации USB.
 
 if not SCALE_API_KEY:
     print('ERROR: SCALE_API_KEY not set in .env')

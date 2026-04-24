@@ -64,13 +64,63 @@ class BarcodeReader:
         self.device = None
         self._buffer = ''
 
+    def _find_by_id(self):
+        """
+        Поиск стабильного symlink в /dev/input/by-id/*-event-kbd.
+        Эти symlink создаются udev на основе USB VID/PID/serial и НЕ меняются
+        при ре-энумерации устройств (в отличие от /dev/input/eventX).
+        Возвращает путь к symlink или None.
+        """
+        by_id_dir = '/dev/input/by-id'
+        try:
+            entries = os.listdir(by_id_dir)
+        except OSError:
+            return None
+
+        filter_lower = self.device_name_filter.lower()
+        keywords = {filter_lower, 'honeywell', 'voyager', 'barcode', 'scanner'}
+
+        for entry in entries:
+            if not entry.endswith('-event-kbd'):
+                continue
+            entry_lower = entry.lower()
+            if not any(kw in entry_lower for kw in keywords):
+                continue
+
+            full_path = os.path.join(by_id_dir, entry)
+
+            # Проверить что symlink валиден и устройство имеет digit-keys
+            try:
+                dev = InputDevice(full_path)
+                caps = dev.capabilities(verbose=False)
+                ev_key_caps = caps.get(ecodes.EV_KEY, [])
+                has_digit_keys = any(k in ev_key_caps for k in range(2, 12))
+                dev.close()
+                if has_digit_keys:
+                    print(f'[Barcode] Found scanner via by-id: {full_path} → {os.path.realpath(full_path)}')
+                    return full_path
+            except (OSError, IOError) as e:
+                print(f'[Barcode] by-id candidate {full_path} not usable: {e}')
+                continue
+
+        return None
+
     def find_device(self):
         """
-        Найти сканер среди /dev/input/event* устройств.
-        Фильтрует по EV_KEY capabilities (цифры + Enter), чтобы выбрать
-        правильный интерфейс (Honeywell создаёт несколько event-устройств).
+        Найти сканер. Приоритет:
+          1. /dev/input/by-id/*-event-kbd — стабильный udev-symlink (не плавает при ребуте)
+          2. /dev/input/eventX — автопоиск по имени устройства через evdev
+
+        Фильтрует по EV_KEY capabilities (цифры), чтобы выбрать правильный
+        интерфейс (Honeywell создаёт несколько event-устройств).
         Возвращает путь к устройству или None.
         """
+        # 1. Стабильный путь через udev by-id symlink
+        by_id_path = self._find_by_id()
+        if by_id_path:
+            return by_id_path
+
+        # 2. Fallback: перебор /dev/input/eventX по имени
         devices = [InputDevice(path) for path in list_devices()]
         filter_lower = self.device_name_filter.lower()
         candidates = []
