@@ -71,6 +71,23 @@ export function initializeSocket(httpServer, allowedOrigins) {
       return next(new Error('Invalid scale API key'));
     }
 
+    // Pi health probe (Python daemon на main Pi) — тот же SCALE_API_KEY что у scale-client.
+    // Отдельный deviceType даёт нам отдельный сокет-слот io.probeSocket для команды
+    // probe:run-now, чтобы не смешиваться с scale-каналом.
+    if (deviceType === 'probe') {
+      const serverKey = process.env.SCALE_API_KEY;
+      if (!serverKey) {
+        console.warn('SCALE_API_KEY not set — probe rejected');
+        return next(new Error('Scale API key not configured on server'));
+      }
+      if (apiKey === serverKey) {
+        socket.data.deviceType = 'probe';
+        socket.data.label = 'HealthProbe';
+        return next();
+      }
+      return next(new Error('Invalid scale API key (probe)'));
+    }
+
     // Backup agent (Node.js на ноуте админа) — проверка BACKUP_API_KEY
     if (deviceType === 'backup') {
       const serverKey = process.env.BACKUP_API_KEY;
@@ -117,6 +134,8 @@ export function initializeSocket(httpServer, allowedOrigins) {
       handleBrowserConnection(io, socket);
     } else if (deviceType === 'backup') {
       handleBackupConnection(io, socket);
+    } else if (deviceType === 'probe') {
+      handleProbeConnection(io, socket);
     }
   });
 
@@ -371,6 +390,53 @@ function handleBackupConnection(io, socket) {
     if (io.backupAgent?.socketId === socket.id) {
       io.backupAgent = null;
       io.emit('backup:agent-status', { online: false });
+    }
+  });
+}
+
+// ── Health probe подключение (Python daemon на main Pi) ──
+// Один probe-сокет в io.probeSocket. При `pi:health` — сохраняем snapshot в
+// Mongo + broadcast всем браузерам как `system:status:update`.
+async function handleProbeConnection(io, socket) {
+  console.log(`Health probe connected: ${socket.id}`);
+
+  // Если уже был подключен — отключаем старого, пусть переподключится заново.
+  const prev = io.probeSocket;
+  if (prev && prev !== socket.id) {
+    const oldSocket = io.sockets.sockets.get(prev);
+    if (oldSocket) {
+      console.log(`Disconnecting previous probe: ${prev}`);
+      oldSocket.disconnect(true);
+    }
+  }
+  io.probeSocket = socket.id;
+
+  // Сообщить браузерам — чтоб UI включил индикатор "probe: online"
+  io.emit('system:probe-status', { online: true });
+
+  socket.on('pi:health', async (payload) => {
+    try {
+      // Ленивый импорт, чтобы не тянуть модель если probe не используется
+      const { default: SystemStatusSnapshot } = await import('../models/SystemStatusSnapshot.js');
+      const snap = await SystemStatusSnapshot.create({
+        timestamp: payload?.timestamp ? new Date(payload.timestamp) : new Date(),
+        host: payload?.host || 'unknown',
+        durationMs: payload?.durationMs,
+        checks: payload?.checks || {},
+        rawPayload: payload,
+      });
+      // Broadcast всем браузерам — UI сразу обновится
+      io.emit('system:status:update', snap.toObject());
+    } catch (err) {
+      console.error('pi:health save failed:', err?.message);
+    }
+  });
+
+  socket.on('disconnect', (reason) => {
+    console.log(`Health probe disconnected: ${socket.id} (${reason})`);
+    if (io.probeSocket === socket.id) {
+      io.probeSocket = null;
+      io.emit('system:probe-status', { online: false });
     }
   });
 }

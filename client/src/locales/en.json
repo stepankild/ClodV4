@@ -64,7 +64,28 @@
     "auditLog": "Audit Log",
     "trash": "Trash",
     "backups": "Backups",
+    "systemStatus": "Pi Status",
     "iot": "IoT Monitoring"
+  },
+  "systemStatus": {
+    "title": "Pi Health",
+    "description": "Live monitoring of critical main-Pi components: services, scanner, scale, Home Assistant, Tailscale, Pi Zero, disk/CPU. The probe runs checks every 5 minutes; use Refresh for an on-demand run.",
+    "probe": "Probe",
+    "probeOnline": "online",
+    "probeOffline": "offline",
+    "lastSnapshot": "Last snapshot",
+    "refreshNow": "Refresh now",
+    "refreshing": "Refreshing...",
+    "summaryOk": "All systems healthy",
+    "summaryWarn": "Warnings detected",
+    "summaryFail": "Problems detected",
+    "errorProbeOffline": "Probe on Pi is offline — Refresh unavailable. Check pi-health-probe service.",
+    "errorRefresh": "Could not request fresh snapshot",
+    "loading": "Loading...",
+    "noSnapshots": "No snapshots yet. Make sure pi-health-probe is running on the Pi.",
+    "host": "Host",
+    "probeTook": "probe took",
+    "takenAt": "taken at"
   },
   "backups": {
     "title": "Portal Backups",

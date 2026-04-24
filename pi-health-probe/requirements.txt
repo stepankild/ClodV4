@@ -1,0 +1,4 @@
+python-socketio[client]>=5.10
+python-dotenv>=1.0
+evdev>=1.6
+websocket-client>=1.7

@@ -1,0 +1,20 @@
+[Unit]
+Description=True Source Pi Health Probe (emits pi:health snapshots to Railway)
+After=network-online.target scale-client.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stepan
+WorkingDirectory=/home/stepan/pi-health-probe
+EnvironmentFile=-/home/stepan/pi-health-probe/.env
+# sudo нужен только для iptables -S OUTPUT; чтоб не запускать весь демон от root,
+# даём stepan NOPASSWD iptables через /etc/sudoers.d/ (install.sh это настраивает).
+ExecStart=/home/stepan/pi-health-probe/venv/bin/python probe.py
+Restart=always
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

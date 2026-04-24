@@ -64,7 +64,28 @@
     "auditLog": "Лог действий",
     "trash": "Корзина",
     "backups": "Бэкапы",
+    "systemStatus": "Состояние Pi",
     "iot": "IoT мониторинг"
+  },
+  "systemStatus": {
+    "title": "Состояние Pi",
+    "description": "Живой мониторинг критичных компонентов main Pi: сервисы, сканер, весы, Home Assistant, Tailscale, Pi Zero, диск/CPU. Probe гонит чеки каждые 5 минут; нажми Refresh для внеочередного прогона.",
+    "probe": "Probe",
+    "probeOnline": "онлайн",
+    "probeOffline": "оффлайн",
+    "lastSnapshot": "Последний snapshot",
+    "refreshNow": "Обновить сейчас",
+    "refreshing": "Обновляем...",
+    "summaryOk": "Все системы в норме",
+    "summaryWarn": "Есть предупреждения",
+    "summaryFail": "Обнаружены проблемы",
+    "errorProbeOffline": "Probe на Pi не подключён — Refresh недоступен. Посмотри сервис pi-health-probe.",
+    "errorRefresh": "Не удалось запросить свежий snapshot",
+    "loading": "Загружаем...",
+    "noSnapshots": "Snapshot'ов ещё нет. Убедись что pi-health-probe запущен на Pi.",
+    "host": "Хост",
+    "probeTook": "probe выполнялся",
+    "takenAt": "снят"
   },
   "backups": {
     "title": "Бэкапы портала",

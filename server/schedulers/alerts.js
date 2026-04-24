@@ -918,6 +918,57 @@ export async function sendTestAlert(chatId) {
  */
 const startedAt = Date.now();
 
+// Health probe silent alert: если Pi-resident daemon не прислал snapshot
+// больше PROBE_SILENT_MIN минут — что-то не так (Pi off, probe crashed,
+// Tailscale down). Zone-agnostic, не привязан к конкретной зоне.
+const PROBE_SILENT_MIN = 15;
+const PROBE_ALERT_COOLDOWN_MIN = 60;
+
+async function checkProbeFreshness() {
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!chatId) return;
+  const { default: SystemStatusSnapshot } = await import('../models/SystemStatusSnapshot.js');
+  const latest = await SystemStatusSnapshot.findOne({}).sort({ timestamp: -1 }).select('timestamp host').lean();
+  const key = 'probe:silent';
+
+  if (!latest) {
+    // Probe никогда не присылал snapshot — не алертим; вероятно он ещё не установлен.
+    return;
+  }
+
+  const silentMs = Date.now() - new Date(latest.timestamp).getTime();
+  const isSilent = silentMs > PROBE_SILENT_MIN * 60 * 1000;
+
+  if (isSilent) {
+    if (!activeAlerts.get(key) && cooldownPassed(key, PROBE_ALERT_COOLDOWN_MIN)) {
+      const silentMin = Math.floor(silentMs / 60000);
+      const msg =
+        `⚠️ <b>Health probe молчит</b>\n` +
+        `Host: <b>${latest.host || '?'}</b>\n` +
+        `Последний snapshot: ${silentMin} мин назад\n` +
+        `💡 Проверьте pi-health-probe.service на Pi и сеть (Tailscale).\n` +
+        `🕐 ${formatTime()}`;
+      const ok = await sendTelegram(chatId, msg);
+      if (ok) {
+        recordAlert(key);
+        activeAlerts.set(key, true);
+        await AlertLog.create({
+          zoneId: 'system', metric: 'probe_silent', type: 'alert',
+          message: msg,
+        });
+      }
+    }
+  } else if (activeAlerts.get(key)) {
+    const msg =
+      `✅ <b>Health probe снова в строю</b>\n` +
+      `Host: <b>${latest.host || '?'}</b>\n` +
+      `🕐 ${formatTime()}`;
+    await sendTelegram(chatId, msg);
+    activeAlerts.delete(key);
+    resetCooldown(key);
+  }
+}
+
 export async function initAlertScheduler() {
   await seedCooldownsFromDb();
   console.log('[alerts] Scheduler started (30s interval, daily summary at 9:00 Prague, 2min warmup)');
@@ -925,6 +976,8 @@ export async function initAlertScheduler() {
     // Skip alerts for first 2 minutes after server start (deploy restart causes false offline alerts)
     if (Date.now() - startedAt < 2 * 60 * 1000) return;
     checkAlerts();
+    // Probe freshness не зависит от зон — своим тиком
+    checkProbeFreshness().catch(err => console.error('[alerts] probe freshness check failed:', err?.message));
   }, 30 * 1000);
   setInterval(checkDailySummary, 30 * 1000);
 }

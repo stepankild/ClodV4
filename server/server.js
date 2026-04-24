@@ -36,6 +36,7 @@ import sensorIngestRoutes from './routes/sensorIngest.js';
 import cameraRoutes from './routes/camera.js';
 import timelapseRoutes from './routes/timelapse.js';
 import backupRoutes from './routes/backups.js';
+import systemStatusRoutes from './routes/systemStatus.js';
 import { detectLanguage } from './middleware/lang.js';
 
 console.log('=== IMPORTS DONE ===');
@@ -67,6 +68,7 @@ import './models/CameraCapture.js';
 import './models/IrrigationSchedule.js';
 import './models/IrrigationLog.js';
 import './models/BackupLog.js';
+import './models/SystemStatusSnapshot.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Load .env from server folder (Railway uses Variables, so MONGODB_URI must be set there)
 dotenv.config({ path: path.join(__dirname, '.env') });
@@ -160,6 +162,7 @@ app.use('/api/sensor-data', sensorIngestRoutes);
 app.use('/api/camera', cameraRoutes);
 app.use('/api/timelapse', timelapseRoutes);
 app.use('/api/backups', backupRoutes);
+app.use('/api/system-status', systemStatusRoutes);
 
 // Health check (Railway and load balancers ping this or /)
 app.get('/api/health', (req, res) => {
