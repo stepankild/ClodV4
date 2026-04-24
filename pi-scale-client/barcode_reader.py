@@ -63,6 +63,7 @@ class BarcodeReader:
         self.device_name_filter = device_name_filter or 'Honeywell'
         self.device = None
         self._buffer = ''
+        self._grabbed = False
 
     def find_device(self):
         """
@@ -97,7 +98,20 @@ class BarcodeReader:
         return candidates[0] if candidates else None
 
     def connect(self):
-        """Подключиться к сканеру (без grab — headless Pi не требует)."""
+        """Подключиться к сканеру с эксклюзивным захватом (grab).
+
+        На Pi с GUI (labwc/X11) окно-менеджер тоже открывает /dev/input/eventN
+        и перехватывает HID-клавиатурные события сканера как обычный ввод.
+        Без grab() события разлетаются по обоим читающим: часть ловит wm
+        (печатая штрихкод в фокусное окно), часть — никто, портал молчит.
+
+        grab() эксклюзивно захватывает устройство — только наш процесс
+        получает события, wm не видит их (сканер не "печатает" на экране).
+
+        Если захватить не удалось (устройство уже grab'нуто кем-то другим,
+        или работаем действительно headless без wm) — продолжаем без grab,
+        предупреждение в лог.
+        """
         path = self.device_path or self.find_device()
         if not path:
             raise FileNotFoundError(
@@ -108,11 +122,17 @@ class BarcodeReader:
         self.device = InputDevice(path)
         self.device_path = path
 
-        # НЕ используем grab() — на headless Pi без X11 grab конфликтует
-        # с kbd handler ядра и блокирует получение событий
+        try:
+            self.device.grab()
+            self._grabbed = True
+            grab_note = ' [grabbed exclusively]'
+        except (IOError, OSError) as e:
+            # errno 16 EBUSY = устройство уже grab'нуто, 13 EACCES = нет прав
+            self._grabbed = False
+            grab_note = f' [grab failed: {e}]'
 
         self._buffer = ''
-        print(f'[Barcode] Connected: {self.device.name} ({self.device.path})')
+        print(f'[Barcode] Connected: {self.device.name} ({self.device.path}){grab_note}')
 
     def is_connected(self):
         """Проверить, подключён ли сканер."""
@@ -191,8 +211,14 @@ class BarcodeReader:
             return None
 
     def close(self):
-        """Закрыть соединение со сканером."""
+        """Закрыть соединение со сканером (с ungrab, если был захвачен)."""
         if self.device:
+            if self._grabbed:
+                try:
+                    self.device.ungrab()
+                except (OSError, IOError):
+                    pass
+                self._grabbed = False
             try:
                 self.device.close()
             except (OSError, IOError):
