@@ -10,7 +10,8 @@ WorkingDirectory=/home/stepan/pi-health-probe
 EnvironmentFile=-/home/stepan/pi-health-probe/.env
 # sudo нужен только для iptables -S OUTPUT; чтоб не запускать весь демон от root,
 # даём stepan NOPASSWD iptables через /etc/sudoers.d/ (install.sh это настраивает).
-ExecStart=/home/stepan/pi-health-probe/venv/bin/python probe.py
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/home/stepan/pi-health-probe/venv/bin/python -u probe.py
 Restart=always
 RestartSec=15
 StandardOutput=journal
