@@ -25,3 +25,8 @@ Thumbs.db
 
 # Backups — только top-level (не задевает client/src/pages/Backups/ на Windows)
 /backups/
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
