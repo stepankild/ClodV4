@@ -45,7 +45,31 @@ load_dotenv()
 # ── Конфигурация ──
 SERVER_URL = os.getenv('SERVER_URL', 'http://localhost:5000')
 SCALE_API_KEY = os.getenv('SCALE_API_KEY', '')
-SERIAL_PORT = os.getenv('SERIAL_PORT', '/dev/ttyUSB0')
+def _autodetect_scale_port():
+    """
+    Найти USB-serial адаптер весов Ohaus в /dev/serial/by-id/.
+    Ключ: 'prolific' (Ohaus R31P3 подключён через Prolific USB-Serial Controller).
+    Явно НЕ матчим 'silicon_labs' — это Sonoff Zigbee-dongle, другое устройство.
+    Возвращает стабильный путь /dev/serial/by-id/... или None.
+    """
+    by_id_dir = '/dev/serial/by-id'
+    try:
+        entries = os.listdir(by_id_dir)
+    except OSError:
+        return None
+    for entry in entries:
+        entry_lower = entry.lower()
+        if 'prolific' in entry_lower and 'silicon_labs' not in entry_lower:
+            return os.path.join(by_id_dir, entry)
+    return None
+
+
+# Scale serial port: .env SERIAL_PORT → autodetect by-id → legacy /dev/ttyUSB0 fallback
+SERIAL_PORT = os.getenv('SERIAL_PORT') or _autodetect_scale_port() or '/dev/ttyUSB0'
+if SERIAL_PORT.startswith('/dev/ttyUSB'):
+    print(f'[!] SERIAL_PORT uses unstable path {SERIAL_PORT}. '
+          f'After reboot/re-plug the number may change. '
+          f'Use /dev/serial/by-id/... instead (see CLAUDE.md).')
 BAUD_RATE = int(os.getenv('BAUD_RATE', '9600'))
 READ_INTERVAL = float(os.getenv('READ_INTERVAL', '0.05'))  # секунды между чтениями
 SCALE_MODE = os.getenv('SCALE_MODE', 'continuous')
