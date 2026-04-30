@@ -38,6 +38,15 @@ function pragueDayStart(now = new Date()) {
 const SUSTAIN_MIN = 5;
 const RECOVER_MARGIN_PCT = 0.05;  // 5% of the configured min↔max range
 
+// Pi self-health: temperature and throttle bitfield from `vcgencmd
+// get_throttled` reported by sensor_node.py. Sustained over-temp or any
+// throttle/under-voltage flag means the Pi is being squeezed and may
+// drop network shortly. Cooldown 4h to avoid spamming hardware issues.
+const PI_TEMP_HOT_C = 75;          // °C — above this we alert
+const PI_TEMP_COOL_C = 65;         // °C — recovery hysteresis
+const PI_TEMP_SUSTAIN_MIN = 5;     // sustained that long before firing
+const PI_HEALTH_COOLDOWN_MIN = 4 * 60;
+
 // Zigbee gateway liveness: tracked via the authoritative
 // zigbee2mqtt/bridge/state MQTT topic instead of guessing from device
 // silence. Z2M publishes this as a retained message and MQTT last-will
@@ -504,6 +513,113 @@ async function checkZigbeeGateway(zoneId, zoneName, chatId) {
   }
 }
 
+/**
+ * Pi self-health check: CPU temperature + throttle bitfield from vcgencmd.
+ *
+ * Two distinct alerts:
+ *   1. pi_temp > PI_TEMP_HOT_C sustained for PI_TEMP_SUSTAIN_MIN. Cools
+ *      with hysteresis (must drop below PI_TEMP_COOL_C to clear).
+ *   2. pi_throttled bitfield non-zero — under-voltage / freq-cap /
+ *      throttling either NOW (bits 0-3) or since boot (bits 16-19). Any
+ *      nonzero value is reported with a decoded breakdown.
+ */
+async function checkPiHealth(zoneId, zoneName, chatId) {
+  const since = new Date(Date.now() - PI_TEMP_SUSTAIN_MIN * 60 * 1000);
+  const window = await SensorReading.find(
+    { zoneId, timestamp: { $gte: since } },
+    { pi_temp: 1, pi_throttled: 1, pi_load: 1, timestamp: 1 }
+  ).sort({ timestamp: 1 }).lean();
+
+  // ── 1. Sustained hot CPU ──
+  const tempKey = `${zoneId}:pi_hot`;
+  const temps = window.map(r => r.pi_temp).filter(v => v != null);
+  if (temps.length >= 3) {
+    const allHot = temps.every(t => t > PI_TEMP_HOT_C);
+    const allCool = temps.every(t => t < PI_TEMP_COOL_C);
+    if (allHot) {
+      if (cooldownPassed(tempKey, PI_HEALTH_COOLDOWN_MIN)) {
+        const last = temps[temps.length - 1];
+        const peak = Math.max(...temps);
+        const msg =
+          `🌡 <b>Pi перегревается</b>\n` +
+          `Зона: <b>${zoneName}</b>\n` +
+          `CPU: ${last}°C (пик ${peak}°C, держится ≥${PI_TEMP_SUSTAIN_MIN} мин)\n` +
+          `Если ≥80°C — вступит throttle, сеть может отвалиться.\n` +
+          `💡 Радиатор / вентиляция / уменьшить нагрузку\n` +
+          `🕐 ${formatTime()}`;
+        if (await sendTelegram(chatId, msg)) {
+          recordAlert(tempKey);
+          activeAlerts.set(tempKey, true);
+          await AlertLog.create({ zoneId, metric: 'pi_temp', type: 'alert', value: peak, message: msg });
+        }
+      }
+    } else if (allCool && activeAlerts.get(tempKey)) {
+      const last = temps[temps.length - 1];
+      const msg = `✅ <b>Pi остыл</b>\nЗона: <b>${zoneName}</b>\nCPU: ${last}°C\n🕐 ${formatTime()}`;
+      await sendTelegram(chatId, msg);
+      activeAlerts.delete(tempKey);
+      resetCooldown(tempKey);
+      await AlertLog.create({ zoneId, metric: 'pi_temp', type: 'recovery', value: last, message: msg });
+    }
+  }
+
+  // ── 2. Throttle / under-voltage flags ──
+  const flagKey = `${zoneId}:pi_throttled`;
+  const flags = window.map(r => r.pi_throttled).filter(v => v != null);
+  if (flags.length >= 3) {
+    // Any non-zero flag in the recent window. Once it sets a "since boot"
+    // bit (16-19), it stays set until the Pi reboots, so we don't try to
+    // recover from those — only from the "now" bits (0-3) by checking the
+    // most recent reading.
+    const latest = flags[flags.length - 1] || 0;
+    const NOW_MASK = 0xF; // bits 0-3
+    const HIST_MASK = 0xF0000; // bits 16-19
+
+    const decode = (val) => {
+      const labels = {
+        0: 'низкое напряжение СЕЙЧАС',
+        1: 'частота ARM урезана СЕЙЧАС',
+        2: 'throttling СЕЙЧАС',
+        3: 'soft temp limit СЕЙЧАС',
+        16: 'было низкое напряжение с момента boot',
+        17: 'была урезана частота с момента boot',
+        18: 'был throttling с момента boot',
+        19: 'был soft temp limit с момента boot',
+      };
+      return Object.entries(labels)
+        .filter(([b]) => val & (1 << +b))
+        .map(([, d]) => `• ${d}`)
+        .join('\n');
+    };
+
+    const hasIssue = latest !== 0;
+    if (hasIssue) {
+      if (cooldownPassed(flagKey, PI_HEALTH_COOLDOWN_MIN)) {
+        const isNow = (latest & NOW_MASK) !== 0;
+        const msg =
+          `⚡ <b>Pi: ${isNow ? 'проблема с питанием/тротлинг' : 'был сбой питания/throttle'}</b>\n` +
+          `Зона: <b>${zoneName}</b>\n` +
+          `Throttle flag: <code>0x${latest.toString(16)}</code>\n` +
+          `${decode(latest)}\n\n` +
+          `💡 ${isNow ? 'Проверьте блок питания (5V/3A) и температуру' : 'История с момента последней загрузки'}\n` +
+          `🕐 ${formatTime()}`;
+        if (await sendTelegram(chatId, msg)) {
+          recordAlert(flagKey);
+          activeAlerts.set(flagKey, true);
+          await AlertLog.create({ zoneId, metric: 'pi_throttled', type: 'alert', value: latest, message: msg });
+        }
+      }
+    } else if (activeAlerts.get(flagKey) && (latest & HIST_MASK) === 0) {
+      // Latest reading reports clean and history bits cleared (= rebooted)
+      const msg = `✅ <b>Pi: throttle сброшен</b>\nЗона: <b>${zoneName}</b>\n🕐 ${formatTime()}`;
+      await sendTelegram(chatId, msg);
+      activeAlerts.delete(flagKey);
+      resetCooldown(flagKey);
+      await AlertLog.create({ zoneId, metric: 'pi_throttled', type: 'recovery', message: msg });
+    }
+  }
+}
+
 async function checkAlerts() {
   try {
     const configs = await AlertConfig.find({ enabled: true }).lean();
@@ -639,6 +755,7 @@ async function checkAlerts() {
       // Skips event-based Zigbee sensors which legitimately report only on change.
       await checkStuckSensors(zoneId, zoneName, chatId);
       await checkZigbeeGateway(zoneId, zoneName, chatId);
+      await checkPiHealth(zoneId, zoneName, chatId);
 
       // ── Light anomaly detection ──
       // Learns normal schedule from last 7 days, alerts only on deviations

@@ -29,6 +29,35 @@ def load_config():
         return yaml.safe_load(f)
 
 
+# ── Pi self-health ──
+import re as _re_health, subprocess as _subprocess_health
+
+def read_pi_health():
+    """Return {'pi_temp', 'pi_throttled', 'pi_load'} for the Raspberry Pi
+    running this script. None for any field we can't read on this hardware.
+    pi_throttled is the raw 32-bit flag from 'vcgencmd get_throttled' —
+    0 means clean, non-zero means under-voltage or thermal events occurred.
+    """
+    out = {}
+    try:
+        with open('/sys/class/thermal/thermal_zone0/temp') as f:
+            out['pi_temp'] = round(int(f.read().strip()) / 1000.0, 1)
+    except Exception:
+        out['pi_temp'] = None
+    try:
+        r = _subprocess_health.run(['vcgencmd', 'get_throttled'], capture_output=True, timeout=2, text=True)
+        m = _re_health.search(r'0x([0-9a-fA-F]+)', r.stdout)
+        out['pi_throttled'] = int(m.group(1), 16) if m else None
+    except Exception:
+        out['pi_throttled'] = None
+    try:
+        with open('/proc/loadavg') as f:
+            out['pi_load'] = round(float(f.read().split()[0]), 2)
+    except Exception:
+        out['pi_load'] = None
+    return out
+
+
 # ── SQLite offline buffer ──
 class SensorBuffer:
     """Persistent FIFO queue for sensor readings when MQTT is down.
@@ -962,6 +991,12 @@ def main():
                 })
             if sht_rh is not None:
                 payload["humidity_sht45"] = sht_rh
+
+            # Read Pi self-health (CPU temp, throttle flags, load)
+            try:
+                payload.update(read_pi_health())
+            except Exception as _e:
+                pass
 
             # Read BH1750 (Light)
             lux = read_bh1750()

@@ -198,6 +198,9 @@ export const getReadings = async (req, res) => {
             humidity_sht45: { $avg: '$humidity_sht45' },
             co2: { $avg: '$co2' },
             light: { $avg: '$light' },
+            pi_temp: { $avg: '$pi_temp' },
+            pi_throttled_max: { $max: '$pi_throttled' },
+            pi_load: { $avg: '$pi_load' },
             count: { $sum: 1 },
           }
         },
@@ -211,6 +214,9 @@ export const getReadings = async (req, res) => {
             humidity_sht45: { $round: ['$humidity_sht45', 1] },
             co2: { $round: ['$co2', 0] },
             light: { $round: ['$light', 0] },
+            pi_temp: { $round: ['$pi_temp', 1] },
+            pi_throttled: '$pi_throttled_max',
+            pi_load: { $round: ['$pi_load', 2] },
             count: 1,
           }
         }

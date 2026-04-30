@@ -232,10 +232,14 @@ async function handleSensorData(zoneId, data) {
     timestamp: data.timestamp || new Date(),
     temperatures: data.temperatures || [],
     humidity: data.humidity ?? null,
+    humidity_sht45: data.humidity_sht45 ?? null,
     temperature: data.temperature ?? null,
     co2: data.co2 ?? null,
     light: data.light ?? null,
     humidifierState: data.humidifierState ?? null,
+    pi_temp: data.pi_temp ?? null,
+    pi_throttled: data.pi_throttled ?? null,
+    pi_load: data.pi_load ?? null,
   });
 
   await reading.save();

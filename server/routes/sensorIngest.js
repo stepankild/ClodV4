@@ -115,6 +115,9 @@ router.post('/', requireApiKey, async (req, res) => {
         co2: data.co2 ?? null,
         light: data.light ?? null,
         humidifierState: data.humidifierState ?? null,
+        pi_temp: data.pi_temp ?? null,
+        pi_throttled: data.pi_throttled ?? null,
+        pi_load: data.pi_load ?? null,
       });
 
       // Log humidifier state changes

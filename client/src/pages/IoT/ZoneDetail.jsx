@@ -418,6 +418,19 @@ const ZoneDetail = () => {
       });
     }
 
+    // Pi self-health (CPU temperature) — shared right axis is in different
+    // unit, so reuse left °C axis. Off by default in visibleSeries.
+    if (readings.some(r => r.pi_temp != null)) {
+      series.push({
+        key: 'pi_temp',
+        label: '🖥 Pi temp',
+        color: '#fb7185', // rose-400, distinguishable from regular temps
+        yAxisId: 'left',
+        unit: '°C',
+        defaultHidden: true,
+      });
+    }
+
     return series;
   }, [readings, t]);
 
@@ -430,7 +443,7 @@ const ZoneDetail = () => {
     } else {
       // Default: all visible
       const defaults = {};
-      availableSeries.forEach(s => { defaults[s.key] = true; });
+      availableSeries.forEach(s => { defaults[s.key] = !s.defaultHidden; });
       setVisibleSeries(defaults);
     }
   }, [availableSeries, zoneId]);
@@ -453,6 +466,7 @@ const ZoneDetail = () => {
         humidity_sht45: r.humidity_sht45 ?? null,
         co2: r.co2 ?? null,
         light: r.light ?? null,
+        pi_temp: r.pi_temp ?? null,
       };
       // Per-sensor temperatures
       if (r.temperatures?.length) {
@@ -559,6 +573,51 @@ const ZoneDetail = () => {
         <span className={`text-sm ${isOnline ? 'text-green-400' : 'text-red-400'}`}>
           {isOnline ? t('iot.online') : t('iot.offline')}
         </span>
+        {/* Pi self-health pill */}
+        {(() => {
+          const last = live?.lastData ?? zone?.lastData;
+          const t = last?.pi_temp;
+          const flag = last?.pi_throttled;
+          const load = last?.pi_load;
+          if (t == null && flag == null) return null;
+          // Color: <60 OK (grey), 60-70 warm (amber), >70 hot (red).
+          // If any throttle/under-volt flag is set → red regardless.
+          const flagsBad = typeof flag === 'number' && flag !== 0;
+          const tone = flagsBad || (t != null && t > 70)
+            ? 'bg-red-900/40 text-red-300 border-red-700/50'
+            : t != null && t > 60
+              ? 'bg-amber-900/40 text-amber-300 border-amber-700/50'
+              : 'bg-dark-700/40 text-dark-300 border-dark-600/50';
+          // Tooltip decodes the throttle bitfield for the user
+          const flagTip = (() => {
+            if (flag == null) return '';
+            if (flag === 0) return 'Pi: throttle clean (0x0)';
+            const bits = {
+              0: 'НИЗКОЕ напряжение СЕЙЧАС',
+              1: 'Частота ARM урезана СЕЙЧАС',
+              2: 'Throttling СЕЙЧАС',
+              3: 'Soft temp limit СЕЙЧАС',
+              16: 'было низкое напряжение',
+              17: 'была урезана частота ARM',
+              18: 'был throttling',
+              19: 'был soft temp limit',
+            };
+            const set = Object.entries(bits)
+              .filter(([b]) => flag & (1 << +b))
+              .map(([, d]) => d);
+            return `Pi throttle 0x${flag.toString(16)}:\n• ${set.join('\n• ')}`;
+          })();
+          return (
+            <span
+              className={`text-xs px-2 py-0.5 rounded border flex items-center gap-1.5 ${tone}`}
+              title={`${t != null ? `CPU ${t}°C` : ''}${load != null ? `, load ${load}` : ''}${flagTip ? `\n\n${flagTip}` : ''}`.trim()}
+            >
+              <span className="opacity-70">🖥</span>
+              {t != null ? `${t}°C` : '—'}
+              {flagsBad && <span className="text-red-400 font-bold">⚠</span>}
+            </span>
+          );
+        })()}
       </div>
 
       {/* Live values */}
@@ -1295,6 +1354,26 @@ const ZoneDetail = () => {
                         если условие <b>держится непрерывно ≥5 мин</b>. Восстановление
                         («в норме») приходит только когда значение вернулось с запасом 5% от диапазона.
                         Колебания прямо у границы не вызывают чередование alert↔recovery.
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-dark-500 flex-shrink-0">🌡</span>
+                      <div>
+                        <span className="text-dark-300">Pi перегревается</span> —
+                        если температура CPU Pi <b>&gt;75°C</b> держится ≥5 мин подряд, придёт алерт.
+                        В районе 80°C Pi начинает throttle и часто роняет WiFi.
+                        Recovery с гистерезисом — нужно охлаждение ниже 65°C.
+                        Кулдаун 4 ч.
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <span className="text-dark-500 flex-shrink-0">⚡</span>
+                      <div>
+                        <span className="text-dark-300">Pi: throttle / низкое питание</span> —
+                        флаг <code>vcgencmd get_throttled</code> ≠ 0. Ловит эпизоды
+                        когда Pi был на под-напряжении или его CPU была урезана. В сообщении
+                        расшифровывается какие именно биты выставлены (СЕЙЧАС vs с момента boot).
+                        Кулдаун 4 ч.
                       </div>
                     </div>
                     <div className="flex items-start gap-2">
