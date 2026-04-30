@@ -21,7 +21,7 @@ import paho.mqtt.client as mqtt
 # ── Load config ──
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 BUFFER_DB_PATH = Path(__file__).parent / "sensor_buffer.db"
-MAX_BUFFER_SIZE = 10000  # ~83 hours at 30s interval
+MAX_BUFFER_SIZE = 50000  # ~17 days at 30s interval (was 10000 — too small after night-long outage)
 
 
 def load_config():
@@ -832,8 +832,16 @@ def create_mqtt_client(config):
 
 
 def flush_buffer(mqtt_client, buffer):
-    """Send buffered readings when MQTT reconnects."""
+    """Send buffered readings when MQTT reconnects.
+
+    CRITICAL: only deletes SQLite rows after broker confirms (PUBACK via
+    wait_for_publish). Returning MQTT_ERR_SUCCESS from publish() only means
+    the bytes were handed to the TCP stack — if WiFi drops in the next 100ms,
+    the message never reaches the broker. Previously we trusted that and
+    permanently lost ~700 readings during the 2026-04-30 outage.
+    """
     sent = 0
+    failed = 0
     while True:
         batch = buffer.peek_batch(20)
         if not batch:
@@ -841,21 +849,29 @@ def flush_buffer(mqtt_client, buffer):
         sent_ids = []
         for row_id, topic, payload_json in batch:
             try:
-                result = mqtt_client.publish(topic, payload_json, qos=1)
-                if result.rc == mqtt.MQTT_ERR_SUCCESS:
-                    sent_ids.append(row_id)
-                    sent += 1
-                else:
-                    break  # MQTT busy, retry later
-            except Exception:
+                info = mqtt_client.publish(topic, payload_json, qos=1)
+                if info.rc != mqtt.MQTT_ERR_SUCCESS:
+                    break  # broker busy or disconnected — retry next cycle
+                # Wait for PUBACK from broker (max 5s). Raises on disconnect.
+                info.wait_for_publish(timeout=5)
+                sent_ids.append(row_id)
+                sent += 1
+            except (RuntimeError, ValueError) as e:
+                # wait_for_publish failed — broker did NOT confirm receipt.
+                # Leave row in SQLite for the next reconnect cycle.
+                failed += 1
+                print(f"[Buffer] PUBACK timeout (id={row_id}): {e} — keeping in buffer")
                 break
-            time.sleep(0.05)  # 50ms between messages
+            except Exception as e:
+                print(f"[Buffer] Flush error (id={row_id}): {e}")
+                break
+            time.sleep(0.02)
         buffer.remove_batch(sent_ids)
         if len(sent_ids) < len(batch):
-            break  # not all sent, retry next cycle
-    if sent > 0:
+            break  # not the whole batch went through, stop and retry later
+    if sent > 0 or failed > 0:
         remaining = buffer.size()
-        print(f"[Buffer] Flushed {sent} buffered reading(s), {remaining} remaining")
+        print(f"[Buffer] Flushed {sent} reading(s), {remaining} remaining (failed: {failed})")
 
 
 # ── Main loop ──
@@ -1040,14 +1056,19 @@ def main():
                 if buffer.size() > 0:
                     flush_buffer(mqtt_client, buffer)
 
-                # Publish current reading
-                result = mqtt_client.publish(topic, msg, qos=1)
-                if result.rc == mqtt.MQTT_ERR_SUCCESS:
-                    print(f"[PUB] {topic}: {msg[:120]}...")
-                else:
-                    # Publish failed, buffer it
+                # Publish current reading. Buffer locally until broker confirms.
+                info = mqtt_client.publish(topic, msg, qos=1)
+                published_ok = False
+                if info.rc == mqtt.MQTT_ERR_SUCCESS:
+                    try:
+                        info.wait_for_publish(timeout=5)
+                        published_ok = True
+                        print(f"[PUB] {topic}: {msg[:120]}...")
+                    except (RuntimeError, ValueError) as e:
+                        print(f"[BUFFERED] PUBACK timeout: {e}")
+                if not published_ok:
                     size = buffer.push(topic, msg)
-                    print(f"[BUFFERED] Publish failed (rc={result.rc}), buffered ({size} total)")
+                    print(f"[BUFFERED] live publish unconfirmed (rc={info.rc}), buffered ({size} total)")
             else:
                 # MQTT disconnected — buffer locally
                 size = buffer.push(topic, msg)
